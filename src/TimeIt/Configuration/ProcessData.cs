@@ -2,7 +2,7 @@
 
 namespace TimeIt.Configuration
 {
-    class ProcessData
+    public class ProcessData
 	{
 		[JsonProperty("processName")]
         public string? ProcessName { get; set; }

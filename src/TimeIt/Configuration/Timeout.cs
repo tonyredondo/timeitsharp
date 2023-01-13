@@ -3,7 +3,7 @@ using Newtonsoft.Json;
 
 namespace TimeIt.Configuration
 {
-    class Timeout
+    public class Timeout
 	{
 		[JsonProperty("maxDuration")]
 		public int MaxDuration { get; set; }

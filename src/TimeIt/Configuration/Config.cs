@@ -2,7 +2,7 @@
 
 namespace TimeIt.Configuration
 {
-    class Config : ProcessData
+    public class Config : ProcessData
 	{
 		[JsonIgnore]
 		public string FilePath { get; set; }
@@ -19,6 +19,8 @@ namespace TimeIt.Configuration
 		public bool EnableDatadog { get; set; }
 		[JsonProperty("scenarios")]
 		public List<Scenario> Scenarios { get; set; }
+		[JsonProperty("jsonExporterFilePath")]
+		public string JsonExporterFilePath { get; set; }
 
 		public Config()
 		{
@@ -29,6 +31,7 @@ namespace TimeIt.Configuration
 			Count = 0;
 			EnableDatadog = false;
 			Scenarios = new List<Scenario>();
+			JsonExporterFilePath = string.Empty;
 		}
 
 		public static Config LoadConfiguration(string filePath)
