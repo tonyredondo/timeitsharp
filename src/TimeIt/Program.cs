@@ -114,7 +114,7 @@ static void PrepareScenario(Scenario scenario, Config configuration)
 static async Task<ScenarioResult> ProcessScenarioAsync(Scenario scenario, Config configuration)
 {
     Stopwatch watch = null;
-    AnsiConsole.MarkupLine("[blue1]Scenario: {0}[/]", scenario.Name);
+    AnsiConsole.MarkupLine("[blue1]Scenario:[/] {0}", scenario.Name);
     AnsiConsole.Markup("  [gold3_1]Warming up[/]");
     watch = Stopwatch.StartNew();
     await RunScenarioAsync(configuration.WarmUpCount, scenario).ConfigureAwait(false);
