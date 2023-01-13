@@ -1,4 +1,7 @@
-﻿using Newtonsoft.Json;
+﻿// using Newtonsoft.Json;
+
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TimeIt.Common.Configuration;
 
@@ -6,20 +9,26 @@ public class Config : ProcessData
 {
     [JsonIgnore]
     public string FilePath { get; set; }
+
     [JsonIgnore]
     public string Path { get; set; }
+
     [JsonIgnore]
     public string FileName { get; set; }
 
-    [JsonProperty("warmUpCount")]
+    [JsonPropertyName("warmUpCount")]
     public int WarmUpCount { get; set; }
-    [JsonProperty("count")]
+
+    [JsonPropertyName("count")]
     public int Count { get; set; }
-    [JsonProperty("enableDatadog")]
+
+    [JsonPropertyName("enableDatadog")]
     public bool EnableDatadog { get; set; }
-    [JsonProperty("scenarios")]
+
+    [JsonPropertyName("scenarios")]
     public List<Scenario> Scenarios { get; set; }
-    [JsonProperty("jsonExporterFilePath")]
+
+    [JsonPropertyName("jsonExporterFilePath")]
     public string JsonExporterFilePath { get; set; }
 
     public Config()
@@ -41,12 +50,8 @@ public class Config : ProcessData
             throw new FileNotFoundException("Configuration file not found.");
         }
 
-        var serializer = new JsonSerializer();
         using var fStream = File.OpenRead(filePath);
-        using var sReader = new StreamReader(fStream);
-        using var jsonReader = new JsonTextReader(sReader);
-
-        if (serializer.Deserialize<Config>(jsonReader) is { } config)
+        if (JsonSerializer.Deserialize<Config>(fStream) is { } config)
         {
             config.FilePath = filePath;
             config.FileName = System.IO.Path.GetFileName(filePath);

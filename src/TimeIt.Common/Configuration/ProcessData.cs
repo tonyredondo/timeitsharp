@@ -1,20 +1,25 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace TimeIt.Common.Configuration;
 
 public class ProcessData
 {
-    [JsonProperty("processName")]
+    [JsonPropertyName("processName")]
     public string? ProcessName { get; set; }
-    [JsonProperty("processArguments")]
+
+    [JsonPropertyName("processArguments")]
     public string? ProcessArguments { get; set; }
-    [JsonProperty("workingDirectory")]
+
+    [JsonPropertyName("workingDirectory")]
     public string? WorkingDirectory { get; set; }
-    [JsonProperty("environmentVariables")]
+
+    [JsonPropertyName("environmentVariables")]
     public Dictionary<string, string> EnvironmentVariables { get; set; }
-    [JsonProperty("timeout")]
+
+    [JsonPropertyName("timeout")]
     public Timeout? Timeout { get; set; }
-    [JsonProperty("tags")]
+
+    [JsonPropertyName("tags")]
     public Dictionary<string, string> Tags { get; set; }
 
     public ProcessData()

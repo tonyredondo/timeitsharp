@@ -1,15 +1,17 @@
-﻿using System;
-using Newtonsoft.Json;
+﻿
+using System.Text.Json.Serialization;
 
 namespace TimeIt.Common.Configuration;
 
 public class Timeout
 {
-    [JsonProperty("maxDuration")]
+    [JsonPropertyName("maxDuration")]
     public int MaxDuration { get; set; }
-    [JsonProperty("processName")]
+
+    [JsonPropertyName("processName")]
     public string? ProcessName { get; set; }
-    [JsonProperty("processArguments")]
+
+    [JsonPropertyName("processArguments")]
     public string? ProcessArguments { get; set; }
 
     public Timeout()
