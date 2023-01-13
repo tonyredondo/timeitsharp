@@ -17,7 +17,7 @@ public class ProcessData
     public Dictionary<string, string> EnvironmentVariables { get; set; }
 
     [JsonPropertyName("timeout")]
-    public Timeout? Timeout { get; set; }
+    public Timeout Timeout { get; set; }
 
     [JsonPropertyName("tags")]
     public Dictionary<string, string> Tags { get; set; }
@@ -25,6 +25,7 @@ public class ProcessData
     public ProcessData()
     {
         EnvironmentVariables = new Dictionary<string, string>();
+        Timeout = new Timeout();
         Tags = new Dictionary<string, string>();
     }
 
