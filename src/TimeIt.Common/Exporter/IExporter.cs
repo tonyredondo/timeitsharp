@@ -1,6 +1,6 @@
-﻿using TimeIt.Configuration;
+﻿using TimeIt.Common.Configuration;
 
-namespace TimeIt.Exporter;
+namespace TimeIt.Common.Exporter;
 
 public interface IExporter
 {

@@ -15,6 +15,6 @@ for (var i = 0; i < 10; i++)
     Console.WriteLine(result.RunTime.TotalMilliseconds);
 }
 
-var config = TimeIt.Configuration.Config.LoadConfiguration(args[0]);
+var config = TimeIt.Common.Configuration.Config.LoadConfiguration(args[0]);
 
 Console.WriteLine(config);
