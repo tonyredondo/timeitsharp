@@ -55,7 +55,7 @@ if (config is { Count: > 0, Scenarios.Count: > 0 })
     if (scenarioWithErrors < config.Scenarios.Count)
     {
 	    // Print results in a table
-	    // TODO: print results in a table
+	    // TODO: print results in a table (https://spectreconsole.net/widgets/table)
 	    
 	    // Export data
 	    foreach (var exporter in exporters)
