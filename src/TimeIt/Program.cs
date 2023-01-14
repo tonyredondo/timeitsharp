@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using CliWrap;
 using CliWrap.Buffered;
+using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeIt;
 using TimeIt.Common.Configuration;
@@ -49,6 +50,35 @@ if (config is { Count: > 0, Scenarios.Count: > 0 })
         }
 
         scenariosResults.Add(result);
+    }
+    
+    if (scenarioWithErrors < config.Scenarios.Count)
+    {
+	    // Print results in a table
+	    // TODO: print results in a table
+	    
+	    // Export data
+	    foreach (var exporter in exporters)
+	    {
+		    exporter.SetConfiguration(config);
+		    if (exporter.Enabled)
+		    {
+			    exporter.Export(scenariosResults);
+		    }
+	    }
+    }
+    else
+    {
+	    for (var i = 0; i < scenariosResults.Count; i++)
+	    {
+		    if (!string.IsNullOrEmpty(scenariosResults[i].Error))
+		    {
+			    AnsiConsole.MarkupLine("Error in Scenario: {0}", i);
+			    AnsiConsole.WriteLine(scenariosResults[i].Error);
+		    }
+	    }
+
+	    Environment.Exit(1);
     }
 }
 
@@ -113,20 +143,118 @@ static void PrepareScenario(Scenario scenario, Config configuration)
 
 static async Task<ScenarioResult> ProcessScenarioAsync(Scenario scenario, Config configuration)
 {
-    Stopwatch watch = null;
+    Stopwatch? watch = null;
     AnsiConsole.MarkupLine("[blue1]Scenario:[/] {0}", scenario.Name);
     AnsiConsole.Markup("  [gold3_1]Warming up[/]");
     watch = Stopwatch.StartNew();
     await RunScenarioAsync(configuration.WarmUpCount, scenario).ConfigureAwait(false);
     AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
     AnsiConsole.Markup("  [green3]Run[/]");
+    var start = DateTime.UtcNow;
     watch = Stopwatch.StartNew();
     var dataPoints = await RunScenarioAsync(configuration.Count, scenario).ConfigureAwait(false);
+    watch.Stop();
     AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
     AnsiConsole.WriteLine();
 
-    // TODO: All stats
-    return new ScenarioResult();
+    var durations = new List<double>();
+    var metricsData = new Dictionary<string, List<double>>();
+    var mapErrors = new HashSet<string>();
+    foreach (var item in dataPoints)
+    {
+	    durations.Add(item.Duration.TotalNanoseconds);
+	    if (!string.IsNullOrEmpty(item.Error))
+	    {
+		    mapErrors.Add(item.Error);
+	    }
+
+	    foreach (var kv in item.Metrics)
+	    {
+		    if (!metricsData.TryGetValue(kv.Key, out var metricsItem))
+		    {
+			    metricsItem = new List<double>();
+			    metricsData[kv.Key] = metricsItem;
+		    }
+
+		    metricsItem.Add(kv.Value);
+	    }
+    }
+
+    var errorString = string.Join(Environment.NewLine, mapErrors);
+    
+    // Get outliers
+    var newDurations = Utils.RemoveOutliers(durations, 2.0).ToList();
+    var outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
+    var durationsCount = durations.Count;
+    var outliersCount = durationsCount - newDurations.Count;
+
+    var mean = newDurations.Mean();
+    var max = newDurations.Maximum();
+    var min = newDurations.Minimum();
+
+    for (var i = 0; i < outliersCount; i++)
+    {
+	    newDurations.Add(mean);
+    }
+
+    var stdev = newDurations.StandardDeviation();
+    var p99 = newDurations.Percentile(99);
+    var p95 = newDurations.Percentile(95);
+    var p90 = newDurations.Percentile(90);
+    var stderr = stdev / Math.Sqrt(durationsCount);
+    
+    // Calculate metrics stats
+    var metricsStats = new Dictionary<string, double>();
+    foreach (var kv in metricsData)
+    {
+        var mMean = kv.Value.Mean();
+        var mMax = kv.Value.Maximum();
+        var mMin = kv.Value.Minimum();
+        var mStdDev = kv.Value.StandardDeviation();
+        var mStdErr = mStdDev / Math.Sqrt(durationsCount);
+        var mP99 = kv.Value.Percentile(99);
+        var mP95 = kv.Value.Percentile(95);
+        var mP90 = kv.Value.Percentile(90);
+
+        metricsStats[kv.Key + ".mean"] = mMean;
+        metricsStats[kv.Key + ".max"] = mMax;
+        metricsStats[kv.Key + ".min"] = mMin;
+        metricsStats[kv.Key + ".std_dev"] = mStdDev;
+        metricsStats[kv.Key + ".std_err"] = mStdErr;
+        metricsStats[kv.Key + ".p99"] = mP99;
+        metricsStats[kv.Key + ".p95"] = mP95;
+        metricsStats[kv.Key + ".p90"] = mP90;
+    }
+
+    return new ScenarioResult
+    {
+        Count = configuration.Count,
+        WarmUpCount = configuration.WarmUpCount,
+        Data = dataPoints,
+        Durations = newDurations,
+        Outliers = outliers,
+        Mean = mean,
+        Max = max,
+        Min = min,
+        Stdev = stdev,
+        StdErr = stderr,
+        P99 = p99,
+        P95 = p95,
+        P90 = p90,
+        Metrics = metricsStats,
+        MetricsData = metricsData,
+        Start = start,
+        End = start + watch.Elapsed,
+        Duration = watch.Elapsed,
+        Error = errorString,
+        Name = scenario.Name,
+        ProcessName = scenario.ProcessName,
+        ProcessArguments = scenario.ProcessArguments,
+        EnvironmentVariables = scenario.EnvironmentVariables,
+        WorkingDirectory = scenario.WorkingDirectory,
+        Timeout = scenario.Timeout,
+        Tags = scenario.Tags,
+    };
 }
 
 static async Task<List<DataPoint>> RunScenarioAsync(int count, Scenario scenario)

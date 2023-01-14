@@ -30,7 +30,7 @@ public class ProcessData
     }
 
     public ProcessData(string? processName, string? processArguments, string? workingDirectory,
-        Dictionary<string, string> environmentVariables, Timeout? timeout, Dictionary<string, string> tags)
+        Dictionary<string, string> environmentVariables, Timeout timeout, Dictionary<string, string> tags)
     {
         ProcessName = processName;
         ProcessArguments = processArguments;
