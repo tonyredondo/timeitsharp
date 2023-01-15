@@ -422,7 +422,7 @@ static void PrintResultsTable(List<ScenarioResult> results, Config configuration
         .RoundedBorder();
     
     // Add columns
-    resultsTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1]{r.Name}[/]").Centered()).ToArray());
+    resultsTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
     
     // Add rows
     for (var i = 0; i < configuration.Count; i++)
@@ -440,7 +440,7 @@ static void PrintResultsTable(List<ScenarioResult> results, Config configuration
         .RoundedBorder();
     
     // Add columns
-    outliersTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1]{r.Name}[/]").Centered()).ToArray());
+    outliersTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
 
     // Add rows
     var maxOutliersCount = results.Select(r => r.Outliers.Count).Max();
@@ -468,14 +468,14 @@ static void PrintResultsTable(List<ScenarioResult> results, Config configuration
     
     // Add columns
     summaryTable.AddColumns(
-        "[dodgerblue1]Name[/]",
-        "[dodgerblue1]Mean[/]",
-        "[dodgerblue1]StdDev[/]",
-        "[dodgerblue1]StdErr[/]",
-        "[dodgerblue1]P99[/]",
-        "[dodgerblue1]P95[/]",
-        "[dodgerblue1]P90[/]",
-        "[dodgerblue1]Outliers[/]");
+        "[dodgerblue1 bold]Name[/]",
+        "[dodgerblue1 bold]Mean[/]",
+        "[dodgerblue1 bold]StdDev[/]",
+        "[dodgerblue1 bold]StdErr[/]",
+        "[dodgerblue1 bold]P99[/]",
+        "[dodgerblue1 bold]P95[/]",
+        "[dodgerblue1 bold]P90[/]",
+        "[dodgerblue1 bold]Outliers[/]");
 
     // Add rows
     foreach (var result in results)
