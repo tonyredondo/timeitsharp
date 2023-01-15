@@ -1,0 +1,52 @@
+﻿{
+  "enableDatadog": true,
+  "warmUpCount": 10,
+  "count": 50,
+  "scenarios": [
+    {
+      "name": "Callsite",
+      "environmentVariables": {
+        "DD_TRACE_CALLTARGET_ENABLED": "false",
+        "DD_CLR_ENABLE_INLINING": "false"
+      }
+    },
+    {
+      "name": "CallTarget",
+      "environmentVariables": {
+        "DD_TRACE_CALLTARGET_ENABLED": "true",
+        "DD_CLR_ENABLE_INLINING": "false"
+      }
+    },
+    {
+      "name": "CallTarget\u002BInlining",
+      "environmentVariables": {
+        "DD_TRACE_CALLTARGET_ENABLED": "true",
+        "DD_CLR_ENABLE_INLINING": "true"
+      }
+    }
+  ],
+  "processName": "dotnet",
+  "processArguments": "--version",
+  "workingDirectory": "$(CWD)/",
+  "processTimeout": 15,
+  "environmentVariables": {
+    "CORECLR_ENABLE_PROFILING": "1",
+    "CORECLR_PROFILER": "{846F5F1C-F9AE-4B07-969E-05C26BC060D8}",
+    "CORECLR_PROFILER_PATH": "/Datadog.Trace.ClrProfiler.Native.dylib",
+    "DD_DOTNET_TRACER_HOME": "/",
+    "DD_INTEGRATIONS": "/integrations.json"
+  },
+  "tags": {
+    "runtime.architecture" : "x86",
+    "runtime.name" : ".NET Framework",
+    "runtime.version" : "4.6.1",
+    "benchmark.job.runtime.name" : ".NET Framework 4.6.1",
+    "benchmark.job.runtime.moniker" : "net461"
+  },
+  "metricsFilePath": "metrics*.json",
+  "timeout" : {
+    "maxDuration": 15,
+    "processName": "dotnet-dump",
+    "processArguments": "collect --process-id %pid%"
+  }
+}

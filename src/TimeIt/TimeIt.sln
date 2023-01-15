@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt", "TimeIt.csproj", "{9CAA5BB7-BED2-40CC-9D31-983232256B04}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.Common", "..\TimeIt.Common\TimeIt.Common.csproj", "{1F229A9A-492E-4C76-B97E-6BCAC621B018}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9CAA5BB7-BED2-40CC-9D31-983232256B04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CAA5BB7-BED2-40CC-9D31-983232256B04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CAA5BB7-BED2-40CC-9D31-983232256B04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CAA5BB7-BED2-40CC-9D31-983232256B04}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1F229A9A-492E-4C76-B97E-6BCAC621B018}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1F229A9A-492E-4C76-B97E-6BCAC621B018}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1F229A9A-492E-4C76-B97E-6BCAC621B018}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1F229A9A-492E-4C76-B97E-6BCAC621B018}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
