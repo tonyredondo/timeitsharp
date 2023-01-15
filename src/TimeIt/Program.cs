@@ -9,7 +9,7 @@ using TimeIt.Common.Configuration;
 using TimeIt.Common.Exporter;
 using TimeIt.Common.Results;
 
-AnsiConsole.MarkupLine("[bold aqua]TimeIt by Tony Redondo[/]\n");
+AnsiConsole.MarkupLine("[bold aqua underline]TimeIt by Tony Redondo[/]\n");
 
 // Check arguments
 if (args.Length < 1)
@@ -27,10 +27,10 @@ config.JsonExporterFilePath = Utils.ReplaceCustomVars(config.JsonExporterFilePat
 var exporters = new List<IExporter>();
 exporters.Add(new JsonExporter());
 
-AnsiConsole.MarkupLine("[blue1]Warmup count:[/] {0}", config.WarmUpCount);
-AnsiConsole.MarkupLine("[blue1]Count:[/] {0}", config.WarmUpCount);
-AnsiConsole.MarkupLine("[blue1]Number of Scenarios:[/] {0}", config.Scenarios.Count);
-AnsiConsole.MarkupLine("[blue1]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
+AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
+AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.WarmUpCount);
+AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
+AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
 AnsiConsole.WriteLine();
 
 var scenariosResults = new List<ScenarioResult>();
@@ -55,7 +55,7 @@ if (config is { Count: > 0, Scenarios.Count: > 0 })
     if (scenarioWithErrors < config.Scenarios.Count)
     {
 	    // Print results in a table
-	    // TODO: print results in a table (https://spectreconsole.net/widgets/table)
+        PrintResultsTable(scenariosResults, config);
 	    
 	    // Export data
 	    foreach (var exporter in exporters)
@@ -144,7 +144,7 @@ static void PrepareScenario(Scenario scenario, Config configuration)
 static async Task<ScenarioResult> ProcessScenarioAsync(Scenario scenario, Config configuration)
 {
     Stopwatch? watch = null;
-    AnsiConsole.MarkupLine("[blue1]Scenario:[/] {0}", scenario.Name);
+    AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
     AnsiConsole.Markup("  [gold3_1]Warming up[/]");
     watch = Stopwatch.StartNew();
     await RunScenarioAsync(configuration.WarmUpCount, scenario).ConfigureAwait(false);
@@ -411,4 +411,92 @@ static async Task RunTimeoutProcessCmdAsync(TimeSpan timeout, string timeoutCmd,
     {
         targetCancellation?.Invoke();
     }
+}
+
+static void PrintResultsTable(List<ScenarioResult> results, Config configuration)
+{
+    // ****************************************
+    // Results table
+    var resultsTable = new Table()
+        .Title("Results", new Style(foreground: Color.Aqua, decoration: Decoration.Bold | Decoration.Underline))
+        .RoundedBorder();
+    
+    // Add columns
+    resultsTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1]{r.Name}[/]").Centered()).ToArray());
+    
+    // Add rows
+    for (var i = 0; i < configuration.Count; i++)
+    {
+        resultsTable.AddRow(results.Select(r => FromNanosecondsToMilliseconds(r.Durations[i]) + "ms").ToArray());
+    }
+    
+    // Write table
+    AnsiConsole.Write(resultsTable);
+    
+    // ****************************************
+    // Outliers table
+    var outliersTable = new Table()
+        .Title("Outliers", new Style(foreground: Color.Aqua, decoration: Decoration.Bold | Decoration.Underline))
+        .RoundedBorder();
+    
+    // Add columns
+    outliersTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1]{r.Name}[/]").Centered()).ToArray());
+
+    // Add rows
+    var maxOutliersCount = results.Select(r => r.Outliers.Count).Max();
+    for (var i = 0; i < maxOutliersCount; i++)
+    {
+        outliersTable.AddRow(results.Select(r =>
+        {
+            if (i < r.Outliers.Count)
+            {
+                return FromNanosecondsToMilliseconds(r.Outliers[i]) + "ms";
+            }
+
+            return "-";
+        }).ToArray());
+    }
+    
+    // Write table
+    AnsiConsole.Write(outliersTable);
+    
+    // ****************************************
+    // Summary table
+    var summaryTable = new Table()
+        .Title("Summary", new Style(foreground: Color.Aqua, decoration: Decoration.Bold | Decoration.Underline))
+        .RoundedBorder();
+    
+    // Add columns
+    summaryTable.AddColumns(
+        "[dodgerblue1]Name[/]",
+        "[dodgerblue1]Mean[/]",
+        "[dodgerblue1]StdDev[/]",
+        "[dodgerblue1]StdErr[/]",
+        "[dodgerblue1]P99[/]",
+        "[dodgerblue1]P95[/]",
+        "[dodgerblue1]P90[/]",
+        "[dodgerblue1]Outliers[/]");
+
+    // Add rows
+    foreach (var result in results)
+    {
+        summaryTable.AddRow(
+            result.Name,
+            FromNanosecondsToMilliseconds(result.Mean) + "ms",
+            FromNanosecondsToMilliseconds(result.Stdev) + "ms",
+            FromNanosecondsToMilliseconds(result.StdErr) + "ms",
+            FromNanosecondsToMilliseconds(result.P99) + "ms",
+            FromNanosecondsToMilliseconds(result.P95) + "ms",
+            FromNanosecondsToMilliseconds(result.P90) + "ms",
+            result.Outliers.Count.ToString());
+    }
+
+    // Write table
+    AnsiConsole.Write(summaryTable);
+    AnsiConsole.WriteLine();
+}
+
+static double FromNanosecondsToMilliseconds(double nanoseconds)
+{
+    return TimeSpan.FromTicks((long)nanoseconds / 100).TotalMilliseconds;
 }
