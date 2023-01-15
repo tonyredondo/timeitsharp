@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using CliWrap;
 using CliWrap.Buffered;
 using MathNet.Numerics.Statistics;
@@ -119,6 +120,31 @@ static void PrepareScenario(Scenario scenario, Config configuration)
         {
             scenario.EnvironmentVariables[item.Key] = value;
         }
+    }
+    
+    // Add the .NET startup hook to collect metrics
+    const string startupHookEnvironmentVariable = "DOTNET_STARTUP_HOOKS";
+    if (typeof(StartupHook).Assembly.Location is { Length: > 0 } startupHookLocation)
+    {
+        if (scenario.EnvironmentVariables.TryGetValue(startupHookEnvironmentVariable, out var startupHook))
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                scenario.EnvironmentVariables[startupHookEnvironmentVariable] = $"{startupHook};{startupHookLocation}";
+            }
+            else
+            {
+                scenario.EnvironmentVariables[startupHookEnvironmentVariable] = $"{startupHook}:{startupHookLocation}";
+            }
+        }
+        else
+        {
+            scenario.EnvironmentVariables[startupHookEnvironmentVariable] = startupHookLocation;
+        }
+    }
+    else
+    {
+        AnsiConsole.MarkupLine("[red]Startup hook location is empty.[/]");
     }
 
     if (scenario.Timeout.MaxDuration <= 0 && configuration.Timeout.MaxDuration > 0)
