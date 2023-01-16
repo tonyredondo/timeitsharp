@@ -1,4 +1,5 @@
-﻿using Spectre.Console;
+﻿using MathNet.Numerics.Statistics;
+using Spectre.Console;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Exporter;
 using TimeIt.Common.Results;
@@ -97,51 +98,74 @@ public class ConsoleExporter : IExporter
         // Add rows
         foreach (var result in results)
         {
-            summaryTable.AddRow(
-                result.Name,
-                Utils.FromNanosecondsToMilliseconds(result.Mean) + "ms",
-                Utils.FromNanosecondsToMilliseconds(result.Stdev) + "ms",
-                Utils.FromNanosecondsToMilliseconds(result.StdErr) + "ms",
-                Utils.FromNanosecondsToMilliseconds(result.P99) + "ms",
-                Utils.FromNanosecondsToMilliseconds(result.P95) + "ms",
-                Utils.FromNanosecondsToMilliseconds(result.P90) + "ms",
-                result.Outliers.Count.ToString());
-            
-/*
- *
-		totalNum := len(resScenario[scidx].MetricsData)
-		if totalNum > 0 {
-			for idx, item := range orderByKey(resScenario[scidx].MetricsData) {
-				mMean, _ := stats.Mean(item.value)
-				mStdDev, _ := stats.StandardDeviation(item.value)
-				mStdErr := mStdDev / math.Sqrt(float64(len(resScenario[scidx].DataFloat)))
-				mP99, _ := stats.Percentile(item.value, 99)
-				mP95, _ := stats.Percentile(item.value, 95)
-				mP90, _ := stats.Percentile(item.value, 90)
+            var totalNum = result.MetricsData.Count;
 
-				var name string
-				if idx < totalNum-1 {
-					name = fmt.Sprintf("├>%v", item.key)
-				} else {
-					name = fmt.Sprintf("└>%v", item.key)
-				}
+            if (totalNum > 0)
+            {
+                summaryTable.AddRow(
+                    $"[aqua]{result.Name}[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P99)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P95)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P90)}ms[/]",
+                    $"[aqua]{result.Outliers.Count}[/]");
 
-				summaryTable.Append([]string{
-					name,
-					fmt.Sprint(toFixed(mMean, 6)),
-					fmt.Sprint(toFixed(mStdDev, 6)),
-					fmt.Sprint(toFixed(mStdErr, 6)),
-					fmt.Sprint(toFixed(mP99, 6)),
-					fmt.Sprint(toFixed(mP95, 6)),
-					fmt.Sprint(toFixed(mP90, 6)),
-					"",
-				})
-			}
+                var orderedMetricsData = result.MetricsData.OrderBy(item => item.Key).ToList();
+                for (var i = 0; i < totalNum; i++)
+                {
+                    var item = orderedMetricsData[i];
+                    var mMean = item.Value.Mean();
+                    var mStdDev = item.Value.StandardDeviation();
+                    var mStdErr = mStdDev / Math.Sqrt(item.Value.Count);
+                    var mP99 = item.Value.Percentile(99);
+                    var mP95 = item.Value.Percentile(95);
+                    var mP90 = item.Value.Percentile(90);
 
-			summaryTable.Append([]string{"", "", "", "", "", "", "", ""})
-		}
- * 
- */
+                    string name;
+                    if (i < totalNum - 1)
+                    {
+                        name = "├>" + item.Key;
+                    }
+                    else
+                    {
+                        name = "└>" + item.Key;
+                    }
+                    
+                    summaryTable.AddRow(
+                        name,
+                        Math.Round(mMean, 6).ToString(),
+                        Math.Round(mStdDev, 6).ToString(),
+                        Math.Round(mStdErr, 6).ToString(),
+                        Math.Round(mP99, 6).ToString(),
+                        Math.Round(mP95, 6).ToString(),
+                        Math.Round(mP90, 6).ToString(),
+                        string.Empty);
+                }
+
+                summaryTable.AddRow(
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty);
+            }
+            else
+            {
+                summaryTable.AddRow(
+                    result.Name,
+                    $"{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms",
+                    $"{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms",
+                    $"{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms",
+                    $"{Utils.FromNanosecondsToMilliseconds(result.P99)}ms",
+                    $"{Utils.FromNanosecondsToMilliseconds(result.P95)}ms",
+                    $"{Utils.FromNanosecondsToMilliseconds(result.P90)}ms",
+                    result.Outliers.Count.ToString());
+            }
         }
 
         // Write table
