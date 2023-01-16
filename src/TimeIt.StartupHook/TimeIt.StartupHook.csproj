@@ -7,4 +7,10 @@
         <LangVersion>11</LangVersion>
     </PropertyGroup>
 
+    <ItemGroup>
+      <Compile Include="..\TimeIt\Constants.cs">
+        <Link>Constants.cs</Link>
+      </Compile>
+    </ItemGroup>
+
 </Project>
