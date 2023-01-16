@@ -50,7 +50,7 @@ public class FileStatsd : IDogStatsd
     
     public class FileStatsdPayload
     {
-        public FileStatsdPayload(string type, string name, object value)
+        public FileStatsdPayload(string type, string name, double value)
         {
             Type = type;
             Name = name;
@@ -62,6 +62,6 @@ public class FileStatsd : IDogStatsd
         [JsonProperty("name")]
         public string? Name { get; set; }
         [JsonProperty("value")]
-        public object? Value { get; set; }
+        public double Value { get; set; }
     }
 }

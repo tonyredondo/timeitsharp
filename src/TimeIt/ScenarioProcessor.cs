@@ -1,12 +1,14 @@
 ﻿using System.Collections;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using CliWrap;
 using CliWrap.Buffered;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Results;
+using TimeIt.RuntimeMetrics;
 
 namespace TimeIt;
 
@@ -349,8 +351,52 @@ public class ScenarioProcessor
         {
             if (File.Exists(metricsFilePath))
             {
-                AnsiConsole.MarkupLine("[dodgerblue1 bold]### Metrics[/]");
-                AnsiConsole.WriteLine(File.ReadAllText(metricsFilePath));
+                var metrics = new Dictionary<string, double>();
+                var metricsCount = new Dictionary<string, int>();
+                foreach (var metricJsonItem in await File.ReadAllLinesAsync(metricsFilePath).ConfigureAwait(false))
+                {
+                    if (JsonSerializer.Deserialize<FileStatsd.FileStatsdPayload>(metricJsonItem, new JsonSerializerOptions(JsonSerializerDefaults.Web)) is { } metricItem)
+                    {
+                        if (metricItem.Name is not null)
+                        {
+                            if (metricItem.Type == "counter")
+                            {
+                                metrics[metricItem.Name] = metricItem.Value;
+                            }
+                            else if (metricItem.Type is "gauge" or "timer")
+                            {
+                                if (metrics.TryGetValue(metricItem.Name, out var oldValue))
+                                {
+                                    metrics[metricItem.Name] = oldValue + metricItem.Value;
+                                    metricsCount[metricItem.Name]++;
+                                }
+                                else
+                                {
+                                    metrics[metricItem.Name] = metricItem.Value;
+                                    metricsCount[metricItem.Name] = 1;
+                                }
+                            }
+                            else if (metricItem.Type == "increment")
+                            {
+                                if (metrics.TryGetValue(metricItem.Name, out var oldValue))
+                                {
+                                    metrics[metricItem.Name] = oldValue + metricItem.Value;
+                                }
+                                else
+                                {
+                                    metrics[metricItem.Name] = metricItem.Value;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                foreach (var mItem in metricsCount)
+                {
+                    metrics[mItem.Key] /= mItem.Value;
+                }
+
+                dataPoint.Metrics = metrics;
 
                 try
                 {
