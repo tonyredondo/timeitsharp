@@ -77,10 +77,6 @@ public class ScenarioProcessor
             {
                 scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] = startupHookLocation;
             }
-
-            scenario.MetricsJsonFilePath = Path.GetTempFileName();
-            scenario.EnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] =
-                scenario.MetricsJsonFilePath;
         }
         else
         {
@@ -109,18 +105,6 @@ public class ScenarioProcessor
 
     public void CleanScenario(Scenario scenario)
     {
-        // Try to clean the metrics temporal file
-        if (!string.IsNullOrEmpty(scenario.MetricsJsonFilePath) && File.Exists(scenario.MetricsJsonFilePath))
-        {
-            try
-            {
-                File.Delete(scenario.MetricsJsonFilePath);
-            }
-            catch
-            {
-                // do nothing
-            }
-        }
     }
 
     public async Task<ScenarioResult> ProcessScenarioAsync(Scenario scenario)
@@ -284,6 +268,11 @@ public class ScenarioProcessor
             cmdEnvironmentVariables[envVar.Key] = envVar.Value;
         }
 
+        if (cmdEnvironmentVariables.ContainsKey(Constants.StartupHookEnvironmentVariable))
+        {
+            cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = Path.GetTempFileName();
+        }
+
         // Setup the command
         var cmd = Cli.Wrap(cmdString)
             .WithEnvironmentVariables(cmdEnvironmentVariables)
@@ -351,6 +340,26 @@ public class ScenarioProcessor
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
                 dataPoint.Error = "Process timeout.";
+            }
+        }
+
+        // Write metrics
+        if (cmdEnvironmentVariables.TryGetValue(Constants.TimeItMetricsTemporalPathEnvironmentVariable,
+                out var metricsFilePath))
+        {
+            if (File.Exists(metricsFilePath))
+            {
+                AnsiConsole.MarkupLine("[dodgerblue1 bold]### Metrics[/]");
+                AnsiConsole.WriteLine(File.ReadAllText(metricsFilePath));
+
+                try
+                {
+                    File.Delete(metricsFilePath);
+                }
+                catch
+                {
+                    // Do nothing
+                }
             }
         }
 

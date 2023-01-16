@@ -111,21 +111,5 @@ public class ConsoleExporter : IExporter
         // Write table
         AnsiConsole.Write(summaryTable);
         AnsiConsole.WriteLine();
-        
-        // Write metrics
-        try
-        {
-            foreach (var scenario in _configuration.Scenarios)
-            {
-                if (scenario.MetricsJsonFilePath is not null)
-                {
-                    AnsiConsole.WriteLine(File.ReadAllText(scenario.MetricsJsonFilePath));
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.WriteException(ex);
-        }
     }
 }

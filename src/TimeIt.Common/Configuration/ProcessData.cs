@@ -22,9 +22,6 @@ public class ProcessData
     [JsonPropertyName("tags")]
     public Dictionary<string, string> Tags { get; set; }
 
-    [JsonIgnore]
-    public string? MetricsJsonFilePath { get; set; }
-    
     public ProcessData()
     {
         EnvironmentVariables = new Dictionary<string, string>();

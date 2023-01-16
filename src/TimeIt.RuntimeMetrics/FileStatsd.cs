@@ -17,7 +17,7 @@ public class FileStatsd : IDogStatsd
     {
         lock (_filePath)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("counter", statName, value, sampleRate, tags));
+            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("counter", statName, value));
             File.AppendAllLines(_filePath, _lines);
         }
     }
@@ -26,7 +26,7 @@ public class FileStatsd : IDogStatsd
     {
         lock (_filePath)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("gauge", statName, value, sampleRate, tags));
+            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("gauge", statName, value));
             File.AppendAllLines(_filePath, _lines);
         }
     }
@@ -35,7 +35,7 @@ public class FileStatsd : IDogStatsd
     {
         lock (_filePath)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("increment", statName, value, sampleRate, tags));
+            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("increment", statName, value));
             File.AppendAllLines(_filePath, _lines);
         }
     }
@@ -44,7 +44,7 @@ public class FileStatsd : IDogStatsd
     {
         lock (_filePath)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("timer", statName, value, sampleRate, tags));
+            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("timer", statName, value));
             File.AppendAllLines(_filePath, _lines);
         }
     }
@@ -59,14 +59,12 @@ public class FileStatsd : IDogStatsd
         {
             Date = DateTime.UtcNow.ToBinary();
         }
-        public FileStatsdPayload(string type, string name, object value, double sampleRate, string[]? tags)
+        public FileStatsdPayload(string type, string name, object value)
         {
             Date = DateTime.UtcNow.ToBinary();
             Type = type;
             Name = name;
             Value = value;
-            SampleRate = sampleRate;
-            Tags = tags;
         }
 
         [JsonProperty("date")]
@@ -77,9 +75,5 @@ public class FileStatsd : IDogStatsd
         public string? Name { get; set; }
         [JsonProperty("value")]
         public object? Value { get; set; }
-        [JsonProperty("sampleRate")]
-        public double? SampleRate { get; set; }
-        [JsonProperty("tags")]
-        public string[]? Tags { get; set; }
     }
 }
