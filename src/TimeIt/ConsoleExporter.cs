@@ -106,6 +106,42 @@ public class ConsoleExporter : IExporter
                 Utils.FromNanosecondsToMilliseconds(result.P95) + "ms",
                 Utils.FromNanosecondsToMilliseconds(result.P90) + "ms",
                 result.Outliers.Count.ToString());
+            
+/*
+ *
+		totalNum := len(resScenario[scidx].MetricsData)
+		if totalNum > 0 {
+			for idx, item := range orderByKey(resScenario[scidx].MetricsData) {
+				mMean, _ := stats.Mean(item.value)
+				mStdDev, _ := stats.StandardDeviation(item.value)
+				mStdErr := mStdDev / math.Sqrt(float64(len(resScenario[scidx].DataFloat)))
+				mP99, _ := stats.Percentile(item.value, 99)
+				mP95, _ := stats.Percentile(item.value, 95)
+				mP90, _ := stats.Percentile(item.value, 90)
+
+				var name string
+				if idx < totalNum-1 {
+					name = fmt.Sprintf("├>%v", item.key)
+				} else {
+					name = fmt.Sprintf("└>%v", item.key)
+				}
+
+				summaryTable.Append([]string{
+					name,
+					fmt.Sprint(toFixed(mMean, 6)),
+					fmt.Sprint(toFixed(mStdDev, 6)),
+					fmt.Sprint(toFixed(mStdErr, 6)),
+					fmt.Sprint(toFixed(mP99, 6)),
+					fmt.Sprint(toFixed(mP95, 6)),
+					fmt.Sprint(toFixed(mP90, 6)),
+					"",
+				})
+			}
+
+			summaryTable.Append([]string{"", "", "", "", "", "", "", ""})
+		}
+ * 
+ */
         }
 
         // Write table
