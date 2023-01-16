@@ -68,128 +68,162 @@ timeit [configuration file.json]
 TimeIt by Tony Redondo
 
 Warmup count: 10
-Count: 10
+Count: 80
 Number of Scenarios: 3
 Exporters: ConsoleExporter, JsonExporter
 
 Scenario: Callsite
   Warming up ..........
-    Duration: 1,3538563s
-  Run ..................................................
-    Duration: 6,5443463s
+    Duration: 1,3290525s
+  Run ................................................................................
+    Duration: 10,6179024s
 
 Scenario: CallTarget
   Warming up ..........
-    Duration: 1,3713682s
-  Run ..................................................
-    Duration: 6,6169059s
+    Duration: 1,2654448s
+  Run ................................................................................
+    Duration: 10,200122s
 
 Scenario: CallTarget+Inlining
   Warming up ..........
-    Duration: 1,3205544s
-  Run ..................................................
-    Duration: 6,3888984s
+    Duration: 1,2619734s
+  Run ................................................................................
+    Duration: 10,2538028s
 
 ### Results:
                                                  
 |  Callsite  | CallTarget | CallTarget+Inlining |
 | :--------: | :--------: | :-----------------: |
-| 109,334ms  |  115,6ms   |      121,619ms      |
-| 109,737ms  | 122,537ms  |      120,768ms      |
-|  111,71ms  | 122,254ms  |      112,194ms      |
-| 112,685ms  |  119,83ms  |      113,11ms       |
-| 110,852ms  | 119,016ms  |      113,263ms      |
-| 108,575ms  | 114,041ms  |      116,125ms      |
-| 109,793ms  | 121,068ms  |      117,323ms      |
-| 111,941ms  |  116,12ms  |      122,281ms      |
-| 109,261ms  | 116,185ms  |      117,457ms      |
-| 109,579ms  | 118,404ms  |      116,245ms      |
-| 108,864ms  | 118,534ms  |      118,856ms      |
-| 110,643ms  | 117,967ms  |      112,563ms      |
-| 110,702ms  | 122,789ms  |      119,844ms      |
-| 118,292ms  | 120,328ms  |      115,943ms      |
-| 120,461ms  | 119,685ms  |      119,703ms      |
-| 113,675ms  | 124,181ms  |      113,333ms      |
-| 115,551ms  | 125,233ms  |      113,177ms      |
-| 115,489ms  | 119,958ms  |      109,846ms      |
-| 114,901ms  | 127,513ms  |      114,445ms      |
-| 115,601ms  | 121,601ms  |      114,337ms      |
-| 115,262ms  | 121,416ms  |      115,231ms      |
-| 115,526ms  | 121,744ms  |      114,866ms      |
-| 120,075ms  |  114,25ms  |      119,769ms      |
-| 120,693ms  | 120,043ms  |      120,465ms      |
-| 121,227ms  | 118,185ms  |      123,716ms      |
-|  112,53ms  | 117,928ms  |      115,699ms      |
-| 114,026ms  | 119,366ms  |      115,906ms      |
-| 116,888ms  | 117,186ms  |      113,216ms      |
-| 118,915ms  | 121,757ms  |      109,157ms      |
-| 117,816ms  | 113,227ms  |      121,888ms      |
-| 118,696ms  | 120,657ms  |      122,184ms      |
-| 115,323ms  | 115,121ms  |      116,798ms      |
-|  119,7ms   | 117,609ms  |      116,39ms       |
-| 117,526ms  | 114,412ms  |      109,859ms      |
-| 115,925ms  | 117,259ms  |      110,167ms      |
-| 119,581ms  | 120,812ms  |      116,255ms      |
-| 118,314ms  | 115,755ms  |      116,995ms      |
-| 114,137ms  | 118,485ms  |      110,39ms       |
-| 113,176ms  | 115,072ms  |      120,838ms      |
-| 118,309ms  | 120,798ms  |      110,542ms      |
-| 114,998ms  | 117,595ms  |      111,404ms      |
-| 120,186ms  | 120,636ms  |      110,691ms      |
-| 121,146ms  | 120,158ms  |      109,556ms      |
-| 122,491ms  | 117,122ms  |      109,151ms      |
-|  133,15ms  | 116,653ms  |      110,774ms      |
-| 133,618ms  | 120,259ms  |      108,807ms      |
-| 129,431ms  | 127,583ms  |      111,232ms      |
-| 134,756ms  | 119,2325ms |      112,167ms      |
-| 134,328ms  | 119,2325ms |      109,252ms      |
-| 117,0488ms | 119,2325ms |     115,0162ms      |
+| 114,958ms  |  108,1ms   |      114,048ms      |
+| 113,419ms  | 113,912ms  |      118,255ms      |
+| 111,386ms  | 115,954ms  |      110,892ms      |
+| 115,377ms  | 111,923ms  |      109,914ms      |
+| 119,044ms  | 114,958ms  |      113,83ms       |
+| 112,556ms  | 118,489ms  |      112,664ms      |
+| 114,535ms  | 113,936ms  |      110,353ms      |
+| 112,296ms  | 116,996ms  |      113,218ms      |
+| 126,395ms  | 110,091ms  |      116,359ms      |
+| 114,088ms  | 110,032ms  |      113,012ms      |
+| 113,116ms  | 112,452ms  |       115,3ms       |
+|  115,08ms  | 114,179ms  |      116,529ms      |
+| 119,278ms  | 108,782ms  |      117,401ms      |
+| 116,149ms  | 111,753ms  |      114,363ms      |
+| 119,402ms  | 108,724ms  |      111,78ms       |
+| 124,311ms  | 110,961ms  |      112,531ms      |
+| 118,242ms  | 115,258ms  |      111,385ms      |
+| 113,532ms  |  108,87ms  |      109,271ms      |
+| 121,131ms  | 108,495ms  |      108,179ms      |
+| 118,323ms  |  111,95ms  |      108,362ms      |
+| 116,078ms  | 112,262ms  |      110,989ms      |
+| 115,277ms  | 109,323ms  |      109,59ms       |
+|  122,74ms  | 113,474ms  |      113,685ms      |
+| 117,081ms  | 108,166ms  |      114,221ms      |
+| 118,404ms  | 112,661ms  |      110,733ms      |
+| 117,197ms  |  110,28ms  |      116,139ms      |
+| 117,504ms  | 109,644ms  |      109,398ms      |
+| 118,294ms  | 110,881ms  |      108,069ms      |
+| 124,936ms  | 107,754ms  |      111,875ms      |
+| 123,953ms  | 116,419ms  |      115,009ms      |
+| 124,029ms  | 113,084ms  |      113,113ms      |
+| 121,522ms  | 110,044ms  |      110,198ms      |
+| 119,776ms  | 114,037ms  |      113,869ms      |
+| 117,903ms  | 111,018ms  |      112,267ms      |
+| 113,112ms  | 113,101ms  |      110,932ms      |
+| 115,609ms  | 115,765ms  |      111,937ms      |
+| 125,398ms  | 115,865ms  |      119,381ms      |
+| 116,528ms  | 111,068ms  |      109,974ms      |
+| 112,642ms  | 112,083ms  |      111,547ms      |
+| 114,113ms  | 109,297ms  |      106,43ms       |
+| 117,481ms  | 114,384ms  |      107,193ms      |
+| 115,182ms  | 111,384ms  |      111,701ms      |
+| 114,776ms  | 112,181ms  |      110,182ms      |
+|  112,62ms  | 111,593ms  |      107,986ms      |
+| 112,166ms  | 110,675ms  |      108,396ms      |
+| 111,001ms  | 108,227ms  |      111,591ms      |
+| 116,012ms  | 109,519ms  |      116,806ms      |
+| 117,271ms  | 107,344ms  |      110,55ms       |
+| 117,395ms  | 111,272ms  |      113,728ms      |
+| 117,475ms  | 112,879ms  |      109,747ms      |
+| 118,163ms  | 108,842ms  |      120,066ms      |
+| 113,539ms  | 115,485ms  |      107,603ms      |
+| 117,539ms  | 109,445ms  |       108,7ms       |
+| 111,781ms  | 110,746ms  |      111,628ms      |
+| 116,978ms  | 111,459ms  |      110,438ms      |
+|  113,76ms  | 116,496ms  |      114,036ms      |
+| 116,023ms  | 110,049ms  |      114,598ms      |
+| 114,149ms  | 116,412ms  |      108,332ms      |
+| 114,828ms  | 111,745ms  |      112,269ms      |
+| 120,443ms  | 109,909ms  |      107,286ms      |
+| 114,479ms  | 111,436ms  |      112,488ms      |
+| 113,945ms  | 112,848ms  |      109,629ms      |
+| 118,046ms  | 110,998ms  |      110,901ms      |
+| 108,598ms  |  107,85ms  |      109,553ms      |
+| 110,477ms  | 110,551ms  |      115,832ms      |
+|  113,93ms  | 109,699ms  |      114,991ms      |
+| 108,122ms  | 117,246ms  |      109,27ms       |
+|  112,01ms  | 110,673ms  |      112,469ms      |
+| 110,091ms  |  109,76ms  |      107,862ms      |
+| 119,245ms  | 108,077ms  |      109,73ms       |
+| 113,854ms  | 108,836ms  |      118,656ms      |
+| 114,681ms  | 110,064ms  |      116,897ms      |
+| 114,711ms  | 111,186ms  |      115,513ms      |
+| 108,506ms  | 107,682ms  |      116,577ms      |
+| 111,924ms  | 114,462ms  |      117,471ms      |
+|  118,11ms  | 116,755ms  |      105,918ms      |
+| 116,1055ms | 113,187ms  |      108,618ms      |
+| 116,1055ms | 108,162ms  |     112,1066ms      |
+| 116,1055ms | 111,6866ms |     112,1066ms      |
+| 116,1055ms | 111,6866ms |     112,1066ms      |
                                                  
 ### Outliers:
                                                 
 | Callsite  | CallTarget | CallTarget+Inlining |
 | :-------: | :--------: | :-----------------: |
-| 167,888ms | 137,783ms  |      125,812ms      |
-|     -     | 107,544ms  |          -          |
-|     -     | 132,417ms  |          -          |
+| 129,807ms | 123,682ms  |      121,057ms      |
+| 129,602ms |  126,17ms  |      120,365ms      |
+| 127,994ms |     -      |      127,635ms      |
+| 134,758ms |     -      |          -          |
                                                 
 ### Summary:
-                                                                                                                                 
-| Name                                      | Mean       | StdDev   | StdErr   | P99       | P95        | P90        | Outliers |
-| ----------------------------------------- | ---------- | -------- | -------- | --------- | ---------- | ---------- | -------- |
-| Callsite                                  | 117,0488ms | 6,6027ms | 0,9337ms | 134,756ms | 133,7245ms | 126,8863ms | 1        |
-| ├>runtime.dotnet.cpu.percent              | 0,127333   | 0,03791  | 0,005361 | 0,233333  | 0,205      | 0,166667   |          |
-| ├>runtime.dotnet.cpu.system               | 2,401203   | 0,260201 | 0,036798 | 3,844667  | 2,787167   | 2,592778   |          |
-| ├>runtime.dotnet.cpu.user                 | 12,02938   | 3,474718 | 0,491399 | 19,699333 | 18,763333  | 17,372333  |          |
-| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0         | 0          | 0          |          |
-| ├>runtime.dotnet.threads.contention_count | 2,28       | 1,750102 | 0,247502 | 5         | 5          | 5          |          |
-| ├>runtime.dotnet.threads.contention_time  | 1,14857    | 1,685792 | 0,238407 | 6,66257   | 5,324206   | 3,336175   |          |
-| ├>runtime.dotnet.threads.count            | 15,845     | 0,525433 | 0,074307 | 17,333333 | 16,333333  | 16,333333  |          |
-| └>runtime.dotnet.threads.workers_count    | 1,666667   | 0,322968 | 0,045675 | 2         | 2          | 2          |          |
-|                                           |            |          |          |           |            |            |          |
-| CallTarget                                | 119,2325ms | 3,1686ms | 0,4481ms | 127,583ms | 125,575ms  | 122,6966ms | 3        |
-| ├>runtime.dotnet.cpu.percent              | 0,141333   | 0,041818 | 0,005914 | 0,233333  | 0,233333   | 0,2        |          |
-| ├>runtime.dotnet.cpu.system               | 2,545667   | 0,413704 | 0,058507 | 4,184     | 4,057233   | 2,598089   |          |
-| ├>runtime.dotnet.cpu.user                 | 13,140453  | 3,530084 | 0,499229 | 18,141333 | 17,8378    | 17,498778  |          |
-| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0         | 0          | 0          |          |
-| ├>runtime.dotnet.threads.contention_count | 3,24       | 1,597958 | 0,225985 | 5         | 5          | 5          |          |
-| ├>runtime.dotnet.threads.contention_time  | 0,807424   | 1,149245 | 0,162528 | 5,082097  | 3,534911   | 2,703825   |          |
-| ├>runtime.dotnet.threads.count            | 16,093333  | 0,398637 | 0,056376 | 16,333333 | 16,333333  | 16,333333  |          |
-| └>runtime.dotnet.threads.workers_count    | 1,846667   | 0,253859 | 0,035901 | 2         | 2          | 2          |          |
-|                                           |            |          |          |           |            |            |          |
-| CallTarget+Inlining                       | 115,0162ms | 4,2097ms | 0,5953ms | 123,716ms | 122,1985ms | 121,3326ms | 1        |
-| ├>runtime.dotnet.cpu.percent              | 0,12       | 0,030117 | 0,004259 | 0,2       | 0,171667   | 0,166667   |          |
-| ├>runtime.dotnet.cpu.system               | 2,38676    | 0,242779 | 0,034334 | 3,847333  | 2,638833   | 2,576689   |          |
-| ├>runtime.dotnet.cpu.user                 | 11,25992   | 2,876793 | 0,40684  | 17,722667 | 17,121833  | 16,936533  |          |
-| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0         | 0          | 0          |          |
-| ├>runtime.dotnet.threads.contention_count | 2,04       | 1,5513   | 0,219387 | 6         | 5          | 4          |          |
-| ├>runtime.dotnet.threads.contention_time  | 0,821975   | 1,551486 | 0,219413 | 6,661681  | 4,86841    | 3,331557   |          |
-| ├>runtime.dotnet.threads.count            | 15,766667  | 0,522726 | 0,073925 | 17,333333 | 16,333333  | 16,333333  |          |
-| └>runtime.dotnet.threads.workers_count    | 1,586667   | 0,312694 | 0,044222 | 2         | 2          | 2          |          |
-|                                           |            |          |          |           |            |            |          |
-                                                                                                                                 
+                                                                                                                                  
+| Name                                      | Mean       | StdDev   | StdErr   | P99        | P95        | P90        | Outliers |
+| ----------------------------------------- | ---------- | -------- | -------- | ---------- | ---------- | ---------- | -------- |
+| Callsite                                  | 116,1055ms | 3,8681ms | 0,4324ms | 126,2587ms | 124,2123ms | 121,3786ms | 4        |
+| ├>process.start.time_ms                   | 23,20444   | 1,021072 | 0,114159 | 27,451093  | 24,64418   | 24,359393  |          |
+| ├>runtime.dotnet.cpu.percent              | 0,0525     | 0,010966 | 0,001226 | 0,1        | 0,0825     | 0,05       |          |
+| ├>runtime.dotnet.cpu.system               | 1,704012   | 0,089846 | 0,010045 | 1,939583   | 1,8794     | 1,831633   |          |
+| ├>runtime.dotnet.cpu.user                 | 6,89675    | 0,276045 | 0,030863 | 7,506807   | 7,42765    | 7,3534     |          |
+| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_count | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_time  | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.count            | 13,55      | 0,21932  | 0,024521 | 14,5       | 14,15      | 13,5       |          |
+| └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0          | 0          | 0          |          |
+|                                           |            |          |          |            |            |            |          |
+| CallTarget                                | 111,6866ms | 2,7056ms | 0,3025ms | 118,3191ms | 116,6643ms | 115,9213ms | 2        |
+| ├>process.start.time_ms                   | 22,31021   | 0,885134 | 0,098961 | 28,368075  | 23,40332   | 22,814607  |          |
+| ├>runtime.dotnet.cpu.percent              | 0,05       | 0        | 0        | 0,05       | 0,05       | 0,05       |          |
+| ├>runtime.dotnet.cpu.system               | 1,6156     | 0,04551  | 0,005088 | 1,775907   | 1,70035    | 1,674267   |          |
+| ├>runtime.dotnet.cpu.user                 | 6,565987   | 0,135456 | 0,015144 | 6,971843   | 6,84675    | 6,7787     |          |
+| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_count | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_time  | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.count            | 13,6375    | 0,346547 | 0,038745 | 14,5       | 14,5       | 14,5       |          |
+| └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0          | 0          | 0          |          |
+|                                           |            |          |          |            |            |            |          |
+| CallTarget+Inlining                       | 112,1066ms | 3,2255ms | 0,3606ms | 119,9723ms | 117,9806ms | 116,722ms  | 3        |
+| ├>process.start.time_ms                   | 22,449442  | 0,650316 | 0,072708 | 24,750904  | 23,52246   | 23,208593  |          |
+| ├>runtime.dotnet.cpu.percent              | 0,05       | 0        | 0        | 0,05       | 0,05       | 0,05       |          |
+| ├>runtime.dotnet.cpu.system               | 1,6254     | 0,056876 | 0,006359 | 1,80749    | 1,74265    | 1,696367   |          |
+| ├>runtime.dotnet.cpu.user                 | 6,615888   | 0,206348 | 0,02307  | 7,1458     | 7,03495    | 6,954533   |          |
+| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_count | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_time  | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.count            | 13,5875    | 0,284349 | 0,031791 | 14,5       | 14,5       | 13,5       |          |
+| └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0          | 0          | 0          |          |
+|                                           |            |          |          |            |            |            |          |
+                                                                                                                                  
 
-The json file '/Users/tony.redondo/repos/github/tonyredondo/timeitsharp/src/TimeIt/bin/Debug/net7.0/jsonexporter_1420335707.json' was exported.
+The json file '/Users/tony.redondo/repos/github/tonyredondo/timeitsharp/src/TimeIt/bin/Debug/net7.0/jsonexporter_1342382910.json' was exported.
 
 ```
 
@@ -199,55 +233,60 @@ Example:
 
 ### Results:
 
-| Callsite  | CallTarget | CallTarget+Inlining |
-| :-------: | :--------: | :-----------------: |
-| 72,8958ms | 70,1548ms  |      72,0776ms      |
-| 72,1798ms | 70,7505ms  |      72,0274ms      |
-| 71,4647ms | 70,1769ms  |      71,2185ms      |
-| 73,184ms  | 70,9668ms  |      71,436ms       |
-| 71,6795ms | 70,7545ms  |      70,5807ms      |
+|  Callsite  | CallTarget | CallTarget+Inlining |
+| :--------: | :--------: | :-----------------: |
+| 114,958ms  |  108,1ms   |      114,048ms      |
+| 113,419ms  | 113,912ms  |      118,255ms      |
+| 111,386ms  | 115,954ms  |      110,892ms      |
+| 115,377ms  | 111,923ms  |      109,914ms      |
+| 119,044ms  | 114,958ms  |      113,83ms       |
+| 112,556ms  | 118,489ms  |      112,664ms      |
 ...
 
 ### Outliers:
 
 | Callsite  | CallTarget | CallTarget+Inlining |
 | :-------: | :--------: | :-----------------: |
-| 73,9385ms | 73,1094ms  |      73,5732ms      |
-| 70,154ms  | 73,1236ms  |       73,51ms       |
-|     -     | 72,6894ms  |      74,2013ms      |
+| 129,807ms | 123,682ms  |      121,057ms      |
+| 129,602ms |  126,17ms  |      120,365ms      |
+| 127,994ms |     -      |      127,635ms      |
+| 134,758ms |     -      |          -          |
 
 ### Summary:
 
-| Name                                      | Mean       | StdDev   | StdErr   | P99       | P95        | P90        | Outliers |
-| ----------------------------------------- | ---------- | -------- | -------- | --------- | ---------- | ---------- | -------- |
-| Callsite                                  | 117,0488ms | 6,6027ms | 0,9337ms | 134,756ms | 133,7245ms | 126,8863ms | 1        |
-| ├>runtime.dotnet.cpu.percent              | 0,127333   | 0,03791  | 0,005361 | 0,233333  | 0,205      | 0,166667   |          |
-| ├>runtime.dotnet.cpu.system               | 2,401203   | 0,260201 | 0,036798 | 3,844667  | 2,787167   | 2,592778   |          |
-| ├>runtime.dotnet.cpu.user                 | 12,02938   | 3,474718 | 0,491399 | 19,699333 | 18,763333  | 17,372333  |          |
-| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0         | 0          | 0          |          |
-| ├>runtime.dotnet.threads.contention_count | 2,28       | 1,750102 | 0,247502 | 5         | 5          | 5          |          |
-| ├>runtime.dotnet.threads.contention_time  | 1,14857    | 1,685792 | 0,238407 | 6,66257   | 5,324206   | 3,336175   |          |
-| ├>runtime.dotnet.threads.count            | 15,845     | 0,525433 | 0,074307 | 17,333333 | 16,333333  | 16,333333  |          |
-| └>runtime.dotnet.threads.workers_count    | 1,666667   | 0,322968 | 0,045675 | 2         | 2          | 2          |          |
-|                                           |            |          |          |           |            |            |          |
-| CallTarget                                | 119,2325ms | 3,1686ms | 0,4481ms | 127,583ms | 125,575ms  | 122,6966ms | 3        |
-| ├>runtime.dotnet.cpu.percent              | 0,141333   | 0,041818 | 0,005914 | 0,233333  | 0,233333   | 0,2        |          |
-| ├>runtime.dotnet.cpu.system               | 2,545667   | 0,413704 | 0,058507 | 4,184     | 4,057233   | 2,598089   |          |
-| ├>runtime.dotnet.cpu.user                 | 13,140453  | 3,530084 | 0,499229 | 18,141333 | 17,8378    | 17,498778  |          |
-| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0         | 0          | 0          |          |
-| ├>runtime.dotnet.threads.contention_count | 3,24       | 1,597958 | 0,225985 | 5         | 5          | 5          |          |
-| ├>runtime.dotnet.threads.contention_time  | 0,807424   | 1,149245 | 0,162528 | 5,082097  | 3,534911   | 2,703825   |          |
-| ├>runtime.dotnet.threads.count            | 16,093333  | 0,398637 | 0,056376 | 16,333333 | 16,333333  | 16,333333  |          |
-| └>runtime.dotnet.threads.workers_count    | 1,846667   | 0,253859 | 0,035901 | 2         | 2          | 2          |          |
-|                                           |            |          |          |           |            |            |          |
-| CallTarget+Inlining                       | 115,0162ms | 4,2097ms | 0,5953ms | 123,716ms | 122,1985ms | 121,3326ms | 1        |
-| ├>runtime.dotnet.cpu.percent              | 0,12       | 0,030117 | 0,004259 | 0,2       | 0,171667   | 0,166667   |          |
-| ├>runtime.dotnet.cpu.system               | 2,38676    | 0,242779 | 0,034334 | 3,847333  | 2,638833   | 2,576689   |          |
-| ├>runtime.dotnet.cpu.user                 | 11,25992   | 2,876793 | 0,40684  | 17,722667 | 17,121833  | 16,936533  |          |
-| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0         | 0          | 0          |          |
-| ├>runtime.dotnet.threads.contention_count | 2,04       | 1,5513   | 0,219387 | 6         | 5          | 4          |          |
-| ├>runtime.dotnet.threads.contention_time  | 0,821975   | 1,551486 | 0,219413 | 6,661681  | 4,86841    | 3,331557   |          |
-| ├>runtime.dotnet.threads.count            | 15,766667  | 0,522726 | 0,073925 | 17,333333 | 16,333333  | 16,333333  |          |
-| └>runtime.dotnet.threads.workers_count    | 1,586667   | 0,312694 | 0,044222 | 2         | 2          | 2          |          |
-|                                           |            |          |          |           |            |            |          |
-    
+| Name                                      | Mean       | StdDev   | StdErr   | P99        | P95        | P90        | Outliers |
+| ----------------------------------------- | ---------- | -------- | -------- | ---------- | ---------- | ---------- | -------- |
+| Callsite                                  | 116,1055ms | 3,8681ms | 0,4324ms | 126,2587ms | 124,2123ms | 121,3786ms | 4        |
+| ├>process.start.time_ms                   | 23,20444   | 1,021072 | 0,114159 | 27,451093  | 24,64418   | 24,359393  |          |
+| ├>runtime.dotnet.cpu.percent              | 0,0525     | 0,010966 | 0,001226 | 0,1        | 0,0825     | 0,05       |          |
+| ├>runtime.dotnet.cpu.system               | 1,704012   | 0,089846 | 0,010045 | 1,939583   | 1,8794     | 1,831633   |          |
+| ├>runtime.dotnet.cpu.user                 | 6,89675    | 0,276045 | 0,030863 | 7,506807   | 7,42765    | 7,3534     |          |
+| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_count | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_time  | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.count            | 13,55      | 0,21932  | 0,024521 | 14,5       | 14,15      | 13,5       |          |
+| └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0          | 0          | 0          |          |
+|                                           |            |          |          |            |            |            |          |
+| CallTarget                                | 111,6866ms | 2,7056ms | 0,3025ms | 118,3191ms | 116,6643ms | 115,9213ms | 2        |
+| ├>process.start.time_ms                   | 22,31021   | 0,885134 | 0,098961 | 28,368075  | 23,40332   | 22,814607  |          |
+| ├>runtime.dotnet.cpu.percent              | 0,05       | 0        | 0        | 0,05       | 0,05       | 0,05       |          |
+| ├>runtime.dotnet.cpu.system               | 1,6156     | 0,04551  | 0,005088 | 1,775907   | 1,70035    | 1,674267   |          |
+| ├>runtime.dotnet.cpu.user                 | 6,565987   | 0,135456 | 0,015144 | 6,971843   | 6,84675    | 6,7787     |          |
+| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_count | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_time  | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.count            | 13,6375    | 0,346547 | 0,038745 | 14,5       | 14,5       | 14,5       |          |
+| └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0          | 0          | 0          |          |
+|                                           |            |          |          |            |            |            |          |
+| CallTarget+Inlining                       | 112,1066ms | 3,2255ms | 0,3606ms | 119,9723ms | 117,9806ms | 116,722ms  | 3        |
+| ├>process.start.time_ms                   | 22,449442  | 0,650316 | 0,072708 | 24,750904  | 23,52246   | 23,208593  |          |
+| ├>runtime.dotnet.cpu.percent              | 0,05       | 0        | 0        | 0,05       | 0,05       | 0,05       |          |
+| ├>runtime.dotnet.cpu.system               | 1,6254     | 0,056876 | 0,006359 | 1,80749    | 1,74265    | 1,696367   |          |
+| ├>runtime.dotnet.cpu.user                 | 6,615888   | 0,206348 | 0,02307  | 7,1458     | 7,03495    | 6,954533   |          |
+| ├>runtime.dotnet.mem.committed            | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_count | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.contention_time  | 0          | 0        | 0        | 0          | 0          | 0          |          |
+| ├>runtime.dotnet.threads.count            | 13,5875    | 0,284349 | 0,031791 | 14,5       | 14,5       | 13,5       |          |
+| └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0          | 0          | 0          |          |
+|                                           |            |          |          |            |            |            |          |
+  

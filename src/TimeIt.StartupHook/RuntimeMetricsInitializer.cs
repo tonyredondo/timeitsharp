@@ -5,12 +5,13 @@ class RuntimeMetricsInitializer
 {
     private RuntimeMetricsWriter? _metricsWriter;
 
-    public RuntimeMetricsInitializer()
+    public RuntimeMetricsInitializer(DateTime startDate)
     {
         if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is
             { Length: > 0 } metricsPath)
         {
             var fileStatsd = new FileStatsd(metricsPath);
+            fileStatsd.Gauge(Constants.ProcessStartUtcMetricName, startDate.ToBinary());
             _metricsWriter = new RuntimeMetricsWriter(fileStatsd, TimeSpan.FromMilliseconds(50));
             _metricsWriter.PushEvents();
 

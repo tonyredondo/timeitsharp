@@ -58,31 +58,34 @@ public class ScenarioProcessor
             }
         }
 
-        // Add the .NET startup hook to collect metrics
-        if (typeof(StartupHook).Assembly.Location is { Length: > 0 } startupHookLocation)
+        if (_configuration.EnableMetrics)
         {
-            if (scenario.EnvironmentVariables.TryGetValue(Constants.StartupHookEnvironmentVariable,
-                    out var startupHook))
+            // Add the .NET startup hook to collect metrics
+            if (typeof(StartupHook).Assembly.Location is { Length: > 0 } startupHookLocation)
             {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                if (scenario.EnvironmentVariables.TryGetValue(Constants.StartupHookEnvironmentVariable,
+                        out var startupHook))
                 {
-                    scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] =
-                        $"{startupHookLocation};{startupHook}";
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] =
+                            $"{startupHookLocation};{startupHook}";
+                    }
+                    else
+                    {
+                        scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] =
+                            $"{startupHookLocation}:{startupHook}";
+                    }
                 }
                 else
                 {
-                    scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] =
-                        $"{startupHookLocation}:{startupHook}";
+                    scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] = startupHookLocation;
                 }
             }
             else
             {
-                scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] = startupHookLocation;
+                AnsiConsole.MarkupLine("[red]Startup hook location is empty.[/]");
             }
-        }
-        else
-        {
-            AnsiConsole.MarkupLine("[red]Startup hook location is empty.[/]");
         }
 
         if (scenario.Timeout.MaxDuration <= 0 && _configuration.Timeout.MaxDuration > 0)
@@ -359,6 +362,13 @@ public class ScenarioProcessor
                     {
                         if (metricItem.Name is not null)
                         {
+                            if (metricItem.Name == Constants.ProcessStartUtcMetricName)
+                            {
+                                var startupHookDate = DateTime.FromBinary((long)metricItem.Value);
+                                metrics[metricItem.Name + "_ms"] = (startupHookDate - dataPoint.Start).TotalMilliseconds;
+                                continue;
+                            }
+
                             if (metricItem.Type == "counter")
                             {
                                 metrics[metricItem.Name] = metricItem.Value;

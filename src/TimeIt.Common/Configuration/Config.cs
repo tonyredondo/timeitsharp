@@ -24,6 +24,9 @@ public class Config : ProcessData
 
     [JsonPropertyName("enableDatadog")]
     public bool EnableDatadog { get; set; }
+    
+    [JsonPropertyName("enableMetrics")]
+    public bool EnableMetrics { get; set; }
 
     [JsonPropertyName("scenarios")]
     public List<Scenario> Scenarios { get; set; }
@@ -39,6 +42,7 @@ public class Config : ProcessData
         WarmUpCount = 0;
         Count = 0;
         EnableDatadog = false;
+        EnableMetrics = true;
         Scenarios = new List<Scenario>();
         JsonExporterFilePath = string.Empty;
     }

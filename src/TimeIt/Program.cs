@@ -27,7 +27,7 @@ exporters.Add(new ConsoleExporter());
 exporters.Add(new JsonExporter());
 
 AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
-AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.WarmUpCount);
+AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.Count);
 AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
 AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
 AnsiConsole.WriteLine();

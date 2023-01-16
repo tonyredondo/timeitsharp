@@ -8,8 +8,9 @@ public class StartupHook
 
     public static void Initialize()
     {
+        var startDate = DateTime.UtcNow;
         AssemblyLoadContext.Default.Resolving += DefaultOnResolving;
-        _runtimeMetrics = new RuntimeMetricsInitializer();
+        _runtimeMetrics = new RuntimeMetricsInitializer(startDate);
     }
 
     private static Assembly? DefaultOnResolving(AssemblyLoadContext ctx, AssemblyName assemblyName)
