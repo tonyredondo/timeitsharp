@@ -10,7 +10,7 @@ public class JsonExporter : IExporter
 {
     private Config? _configuration;
 
-    public string Name => "JsonExporter";
+    public string Name => nameof(JsonExporter);
     
     public bool Enabled => true;
 
