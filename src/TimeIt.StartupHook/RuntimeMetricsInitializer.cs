@@ -1,5 +1,4 @@
-﻿using System.Runtime.Loader;
-using TimeIt;
+﻿using TimeIt;
 using TimeIt.RuntimeMetrics;
 
 class RuntimeMetricsInitializer
