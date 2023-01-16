@@ -4,71 +4,59 @@ namespace TimeIt.RuntimeMetrics;
 
 public class FileStatsd : IDogStatsd
 {
-    private readonly string _filePath;
-    private readonly string[] _lines;
+    private readonly StreamWriter _streamWriter;
 
     public FileStatsd(string filePath)
     {
-        _filePath = filePath;
-        _lines = new string[1];
+        _streamWriter = new StreamWriter(filePath, true);
     }
 
     public void Counter(string statName, double value, double sampleRate = 1, string[]? tags = null)
     {
-        lock (_filePath)
+        lock (_streamWriter)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("counter", statName, value));
-            File.AppendAllLines(_filePath, _lines);
+            _streamWriter.WriteLine(JsonConvert.SerializeObject(new FileStatsdPayload("counter", statName, value)));
         }
     }
 
     public void Gauge(string statName, double value, double sampleRate = 1, string[]? tags = null)
     {
-        lock (_filePath)
+        lock (_streamWriter)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("gauge", statName, value));
-            File.AppendAllLines(_filePath, _lines);
+            _streamWriter.WriteLine(JsonConvert.SerializeObject(new FileStatsdPayload("gauge", statName, value)));
         }
     }
 
     public void Increment(string statName, int value = 1, double sampleRate = 1, string[]? tags = null)
     {
-        lock (_filePath)
+        lock (_streamWriter)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("increment", statName, value));
-            File.AppendAllLines(_filePath, _lines);
+            _streamWriter.WriteLine(JsonConvert.SerializeObject(new FileStatsdPayload("increment", statName, value)));
         }
     }
 
     public void Timer(string statName, double value, double sampleRate = 1, string[]? tags = null)
     {
-        lock (_filePath)
+        lock (_streamWriter)
         {
-            _lines[0] = JsonConvert.SerializeObject(new FileStatsdPayload("timer", statName, value));
-            File.AppendAllLines(_filePath, _lines);
+            _streamWriter.WriteLine(JsonConvert.SerializeObject(new FileStatsdPayload("timer", statName, value)));
         }
     }
 
     public void Dispose()
     {
+        _streamWriter.Dispose();
     }
     
     public class FileStatsdPayload
     {
-        public FileStatsdPayload()
-        {
-            Date = DateTime.UtcNow.ToBinary();
-        }
         public FileStatsdPayload(string type, string name, object value)
         {
-            Date = DateTime.UtcNow.ToBinary();
             Type = type;
             Name = name;
             Value = value;
         }
 
-        [JsonProperty("date")]
-        public long Date { get; set; }
         [JsonProperty("type")]
         public string? Type { get; set; }
         [JsonProperty("name")]

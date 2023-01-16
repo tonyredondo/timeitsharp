@@ -11,12 +11,14 @@ class RuntimeMetricsInitializer
         if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is
             { Length: > 0 } metricsPath)
         {
-            _metricsWriter = new RuntimeMetricsWriter(new FileStatsd(metricsPath), TimeSpan.FromMilliseconds(50));
+            var fileStatsd = new FileStatsd(metricsPath);
+            _metricsWriter = new RuntimeMetricsWriter(fileStatsd, TimeSpan.FromMilliseconds(50));
             _metricsWriter.PushEvents();
 
             AppDomain.CurrentDomain.ProcessExit += (sender, args) =>
             {
                 _metricsWriter.PushEvents();
+                fileStatsd.Dispose();
             };
         }
     }
