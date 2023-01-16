@@ -287,7 +287,8 @@ public class ScenarioProcessor
         // Setup the command
         var cmd = Cli.Wrap(cmdString)
             .WithEnvironmentVariables(cmdEnvironmentVariables)
-            .WithWorkingDirectory(workingDirectory);
+            .WithWorkingDirectory(workingDirectory)
+            .WithValidation(CommandResultValidation.None);
         if (!string.IsNullOrEmpty(cmdArguments))
         {
             cmd = cmd.WithArguments(cmdArguments);
@@ -367,7 +368,8 @@ public class ScenarioProcessor
                 timeoutCmd = timeoutCmd.Replace("%pid%", targetPid.ToString());
                 timeoutArgument = timeoutArgument.Replace("%pid%", targetPid.ToString());
                 var cmd = Cli.Wrap(timeoutCmd)
-                    .WithWorkingDirectory(workingDirectory);
+                    .WithWorkingDirectory(workingDirectory)
+                    .WithValidation(CommandResultValidation.None);
                 if (!string.IsNullOrEmpty(timeoutArgument))
                 {
                     cmd = cmd.WithArguments(timeoutArgument);
