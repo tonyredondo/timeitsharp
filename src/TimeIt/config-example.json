@@ -1,7 +1,8 @@
 ﻿{
   "enableDatadog": true,
+  "enableMetrics": true,
   "warmUpCount": 10,
-  "count": 50,
+  "count": 80,
   "scenarios": [
     {
       "name": "Callsite",

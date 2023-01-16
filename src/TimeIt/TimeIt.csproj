@@ -21,6 +21,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
+      <ProjectReference Include="..\TimeIt.StartupHook\TimeIt.StartupHook.csproj" />
     </ItemGroup>
     
 </Project>
