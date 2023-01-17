@@ -5,16 +5,21 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>11</LangVersion>
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     </PropertyGroup>
 
     <ItemGroup>
-      <Compile Include="..\TimeIt\Constants.cs">
-        <Link>Constants.cs</Link>
-      </Compile>
+        <Compile Include="..\TimeIt\Constants.cs">
+            <Link>Constants.cs</Link>
+        </Compile>
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\TimeIt.RuntimeMetrics\TimeIt.RuntimeMetrics.csproj" />
+        <ProjectReference Include="..\TimeIt.RuntimeMetrics\TimeIt.RuntimeMetrics.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All"/>
     </ItemGroup>
 
 </Project>

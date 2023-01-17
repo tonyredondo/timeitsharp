@@ -25,4 +25,9 @@ static class Utils
     {
         return TimeSpan.FromTicks((long)nanoseconds / 100).TotalMilliseconds;
     }
+    
+    public static double FromTimeSpanToNanoseconds(TimeSpan timeSpan)
+    {
+        return (double)timeSpan.Ticks * 100;
+    }
 }
