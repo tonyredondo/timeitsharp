@@ -90,7 +90,8 @@ public class ConsoleExporter : IExporter
             "[dodgerblue1 bold]Mean[/]",
             "[dodgerblue1 bold]StdDev[/]",
             "[dodgerblue1 bold]StdErr[/]",
-            "[dodgerblue1 bold]P99[/]",
+            "[dodgerblue1 bold]Min[/]",
+            "[dodgerblue1 bold]Max[/]",
             "[dodgerblue1 bold]P95[/]",
             "[dodgerblue1 bold]P90[/]",
             "[dodgerblue1 bold]Outliers[/]");
@@ -107,7 +108,8 @@ public class ConsoleExporter : IExporter
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms[/]",
-                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P99)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Min)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Max)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P95)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P90)}ms[/]",
                     $"[aqua]{result.Outliers.Count}[/]");
@@ -116,12 +118,21 @@ public class ConsoleExporter : IExporter
                 for (var i = 0; i < totalNum; i++)
                 {
                     var item = orderedMetricsData[i];
-                    var mMean = item.Value.Mean();
-                    var mStdDev = item.Value.StandardDeviation();
-                    var mStdErr = mStdDev / Math.Sqrt(item.Value.Count);
-                    var mP99 = item.Value.Percentile(99);
-                    var mP95 = item.Value.Percentile(95);
-                    var mP90 = item.Value.Percentile(90);
+                    var itemResult = Utils.RemoveOutliers(item.Value, 2).ToList();
+                    int? outliersCount = item.Value.Count - itemResult.Count;
+                    if (outliersCount > (_configuration.Count * 5) / 100)
+                    {
+                        itemResult = item.Value;
+                        outliersCount = null;
+                    }
+
+                    var mMean = itemResult.Mean();
+                    var mStdDev = itemResult.StandardDeviation();
+                    var mStdErr = mStdDev / Math.Sqrt(itemResult.Count);
+                    var mMin = itemResult.Min();
+                    var mMax = itemResult.Max();
+                    var mP95 = itemResult.Percentile(95);
+                    var mP90 = itemResult.Percentile(90);
 
                     string name;
                     if (i < totalNum - 1)
@@ -138,10 +149,11 @@ public class ConsoleExporter : IExporter
                         Math.Round(mMean, 6).ToString(),
                         Math.Round(mStdDev, 6).ToString(),
                         Math.Round(mStdErr, 6).ToString(),
-                        Math.Round(mP99, 6).ToString(),
+                        Math.Round(mMin, 6).ToString(),
+                        Math.Round(mMax, 6).ToString(),
                         Math.Round(mP95, 6).ToString(),
                         Math.Round(mP90, 6).ToString(),
-                        string.Empty);
+                        outliersCount?.ToString() ?? "N/A");
                 }
 
                 summaryTable.AddRow(
