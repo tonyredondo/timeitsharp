@@ -354,6 +354,8 @@ public class ScenarioProcessor
         {
             if (File.Exists(metricsFilePath))
             {
+                DateTime? inProcStartDate = null;
+                DateTime? inProcEndDate = null;
                 var metrics = new Dictionary<string, double>();
                 var metricsCount = new Dictionary<string, int>();
                 foreach (var metricJsonItem in await File.ReadAllLinesAsync(metricsFilePath).ConfigureAwait(false))
@@ -362,10 +364,27 @@ public class ScenarioProcessor
                     {
                         if (metricItem.Name is not null)
                         {
-                            if (metricItem.Name == Constants.ProcessStartUtcMetricName)
+                            if (metricItem.Name == Constants.ProcessStartTimeUtcMetricName)
                             {
-                                var startupHookDate = DateTime.FromBinary((long)metricItem.Value);
-                                metrics[metricItem.Name + "_ms"] = (startupHookDate - dataPoint.Start).TotalMilliseconds;
+                                inProcStartDate = DateTime.FromBinary((long)metricItem.Value);
+                                metrics[Constants.ProcessTimeToStartMetricName] = (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
+                                if (inProcEndDate != null)
+                                {
+                                    metrics[Constants.ProcessInternalDurationMetricName] = (inProcEndDate.Value - inProcStartDate.Value).TotalMilliseconds;
+                                }
+
+                                continue;
+                            }
+
+                            if (metricItem.Name == Constants.ProcessEndTimeUtcMetricName)
+                            {
+                                inProcEndDate = DateTime.FromBinary((long)metricItem.Value);
+                                metrics[Constants.ProcessTimeToEndMetricName] = (dataPoint.End - inProcEndDate.Value).TotalMilliseconds;
+                                if (inProcStartDate != null)
+                                {
+                                    metrics[Constants.ProcessInternalDurationMetricName] = (inProcEndDate.Value - inProcStartDate.Value).TotalMilliseconds;
+                                }
+                                
                                 continue;
                             }
 
