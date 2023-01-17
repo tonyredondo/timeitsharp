@@ -15,13 +15,14 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>dotnet-timeit</ToolCommandName>
         <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+        <PackageId>TimeItSharp</PackageId>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="CliWrap" Version="3.5.0"/>
-        <PackageReference Include="MathNet.Numerics" Version="5.0.0"/>
-        <PackageReference Include="Spectre.Console" Version="0.45.0"/>
-        <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All"/>
+        <PackageReference Include="CliWrap" Version="3.5.0" />
+        <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+        <PackageReference Include="Spectre.Console" Version="0.45.0" />
+        <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All" />
     </ItemGroup>
 
     <ItemGroup>
@@ -31,8 +32,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj"/>
-        <ProjectReference Include="..\TimeIt.StartupHook\TimeIt.StartupHook.csproj"/>
+        <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
+        <ProjectReference Include="..\TimeIt.StartupHook\TimeIt.StartupHook.csproj" />
     </ItemGroup>
 
 </Project>
