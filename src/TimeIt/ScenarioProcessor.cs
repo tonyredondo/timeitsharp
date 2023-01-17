@@ -133,7 +133,11 @@ public class ScenarioProcessor
         var mapErrors = new HashSet<string>();
         foreach (var item in dataPoints)
         {
+#if NET7_0_OR_GREATER
             durations.Add(item.Duration.TotalNanoseconds);
+#else
+            durations.Add(Utils.FromTimeSpanToNanoseconds(item.Duration));
+#endif
             if (!string.IsNullOrEmpty(item.Error))
             {
                 mapErrors.Add(item.Error);

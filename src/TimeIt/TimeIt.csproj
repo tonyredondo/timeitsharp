@@ -2,26 +2,42 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net7.0</TargetFramework>
+        <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <LangVersion>11</LangVersion>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <Version>0.0.2</Version>
+        <Authors>Tony Redondo</Authors>
+        <Description>Command execution time meter</Description>
+        <Copyright>Tony Redondo @ 2023</Copyright>
+        <PackageTags>timeit, benchmark, performance</PackageTags>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>dotnet-timeit</ToolCommandName>
+        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+        <PackageId>TimeItSharp</PackageId>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="CliWrap" Version="3.5.0" />
         <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
         <PackageReference Include="Spectre.Console" Version="0.45.0" />
+        <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.1.1" PrivateAssets="All" />
     </ItemGroup>
 
     <ItemGroup>
         <None Update="config-example.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\"/>
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
-      <ProjectReference Include="..\TimeIt.StartupHook\TimeIt.StartupHook.csproj" />
+        <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
+        <ProjectReference Include="..\TimeIt.StartupHook\TimeIt.StartupHook.csproj" />
     </ItemGroup>
-    
+
 </Project>
