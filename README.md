@@ -1,9 +1,14 @@
 # timeit
-Command execution time meter allows to configure multiple scenarios to run benchmarks over CLI apps, output are available in markdown and as datadog traces.
+Command execution time meter allows to configure multiple scenarios to run benchmarks over CLI apps, output are available in markdown and json.
+
+### Install
+```bash
+dotnet tool install --global TimeItSharp
+```
 
 ### Usage
 ```bash
-timeit [configuration file.json]
+dotnet-timeit [configuration file.json]
 ```
 
 ## Sample Configuration
@@ -11,7 +16,7 @@ timeit [configuration file.json]
 ```json
 {
   "warmUpCount": 10,
-  "count": 50,
+  "count": 100,
   "scenarios": [
     {
       "name": "Callsite",

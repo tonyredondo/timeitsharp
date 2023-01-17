@@ -7,7 +7,7 @@
         <Nullable>enable</Nullable>
         <LangVersion>11</LangVersion>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>0.0.1</Version>
+        <Version>0.0.2</Version>
         <Authors>Tony Redondo</Authors>
         <Description>Command execution time meter</Description>
         <Copyright>Tony Redondo @ 2023</Copyright>
@@ -16,6 +16,7 @@
         <ToolCommandName>dotnet-timeit</ToolCommandName>
         <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
         <PackageId>TimeItSharp</PackageId>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>
 
     <ItemGroup>
@@ -29,6 +30,7 @@
         <None Update="config-example.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <None Include="..\..\README.md" Pack="true" PackagePath="\"/>
     </ItemGroup>
 
     <ItemGroup>
