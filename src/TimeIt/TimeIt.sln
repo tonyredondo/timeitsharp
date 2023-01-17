@@ -7,6 +7,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{023A1498-D8B9-40B1-AB41-FD3BCD90D16C}"
 	ProjectSection(SolutionItems) = preProject
 		..\..\README.md = ..\..\README.md
+		..\..\LICENSE = ..\..\LICENSE
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.StartupHook", "..\TimeIt.StartupHook\TimeIt.StartupHook.csproj", "{5B08763D-5ECF-4300-81F5-73B68E23B6BB}"
