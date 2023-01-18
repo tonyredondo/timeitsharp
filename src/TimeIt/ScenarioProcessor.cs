@@ -160,36 +160,29 @@ public class ScenarioProcessor
         // Get outliers
         var newDurations = Utils.RemoveOutliers(durations, 2.0).ToList();
         var outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
-        var durationsCount = durations.Count;
-        var outliersCount = durationsCount - newDurations.Count;
-
         var mean = newDurations.Mean();
         var max = newDurations.Maximum();
         var min = newDurations.Minimum();
-
-        for (var i = 0; i < outliersCount; i++)
-        {
-            newDurations.Add(mean);
-        }
-
         var stdev = newDurations.StandardDeviation();
         var p99 = newDurations.Percentile(99);
         var p95 = newDurations.Percentile(95);
         var p90 = newDurations.Percentile(90);
-        var stderr = stdev / Math.Sqrt(durationsCount);
+        var stderr = stdev / Math.Sqrt(newDurations.Count);
 
         // Calculate metrics stats
         var metricsStats = new Dictionary<string, double>();
         foreach (var kv in metricsData)
         {
-            var mMean = kv.Value.Mean();
-            var mMax = kv.Value.Maximum();
-            var mMin = kv.Value.Minimum();
-            var mStdDev = kv.Value.StandardDeviation();
-            var mStdErr = mStdDev / Math.Sqrt(durationsCount);
-            var mP99 = kv.Value.Percentile(99);
-            var mP95 = kv.Value.Percentile(95);
-            var mP90 = kv.Value.Percentile(90);
+            var metricsValue = kv.Value;
+            var newMetricsValue = Utils.RemoveOutliers(metricsValue, 3.0).ToList();
+            var mMean = newMetricsValue.Mean();
+            var mMax = newMetricsValue.Maximum();
+            var mMin = newMetricsValue.Minimum();
+            var mStdDev = newMetricsValue.StandardDeviation();
+            var mStdErr = mStdDev / Math.Sqrt(newMetricsValue.Count);
+            var mP99 = newMetricsValue.Percentile(99);
+            var mP95 = newMetricsValue.Percentile(95);
+            var mP90 = newMetricsValue.Percentile(90);
 
             metricsStats[kv.Key + ".mean"] = mMean;
             metricsStats[kv.Key + ".max"] = mMax;
@@ -199,6 +192,7 @@ public class ScenarioProcessor
             metricsStats[kv.Key + ".p99"] = mP99;
             metricsStats[kv.Key + ".p95"] = mP95;
             metricsStats[kv.Key + ".p90"] = mP90;
+            metricsStats[kv.Key + ".outliers"] = metricsValue.Count - newMetricsValue.Count;
         }
 
         return new ScenarioResult

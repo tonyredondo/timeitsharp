@@ -45,7 +45,15 @@ public class ConsoleExporter : IExporter
         // Add rows
         for (var i = 0; i < _configuration.Count; i++)
         {
-            resultsTable.AddRow(results.Select(r => Utils.FromNanosecondsToMilliseconds(r.Durations[i]) + "ms").ToArray());
+            resultsTable.AddRow(results.Select(r =>
+            {
+                if (i < r.Durations.Count)
+                {
+                    return Utils.FromNanosecondsToMilliseconds(r.Durations[i]) + "ms";
+                }
+                
+                return "-";
+            }).ToArray());
         }
         
         // Write table
@@ -118,7 +126,7 @@ public class ConsoleExporter : IExporter
                 for (var i = 0; i < totalNum; i++)
                 {
                     var item = orderedMetricsData[i];
-                    var itemResult = Utils.RemoveOutliers(item.Value, 2).ToList();
+                    var itemResult = Utils.RemoveOutliers(item.Value, 3).ToList();
                     int? outliersCount = item.Value.Count - itemResult.Count;
                     if (outliersCount > (_configuration.Count * 5) / 100)
                     {
