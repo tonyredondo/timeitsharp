@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="DatadogTestLogger" Version="0.0.36" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
+    </ItemGroup>
+
+</Project>
