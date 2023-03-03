@@ -1,5 +1,6 @@
 ﻿namespace TimeIt;
 
+#if !NOCONSTANTS
 public static class Constants
 {
     public const string StartupHookEnvironmentVariable = "DOTNET_STARTUP_HOOKS";
@@ -10,3 +11,4 @@ public static class Constants
     public const string ProcessStartTimeUtcMetricName = "process.start";
     public const string ProcessEndTimeUtcMetricName = "process.end";
 }
+#endif

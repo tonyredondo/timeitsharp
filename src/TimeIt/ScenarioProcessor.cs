@@ -171,28 +171,30 @@ public class ScenarioProcessor
 
         // Calculate metrics stats
         var metricsStats = new Dictionary<string, double>();
-        foreach (var kv in metricsData)
+        foreach (var key in metricsData.Keys)
         {
-            var metricsValue = kv.Value;
-            var newMetricsValue = Utils.RemoveOutliers(metricsValue, 3.0).ToList();
-            var mMean = newMetricsValue.Mean();
-            var mMax = newMetricsValue.Maximum();
-            var mMin = newMetricsValue.Minimum();
-            var mStdDev = newMetricsValue.StandardDeviation();
-            var mStdErr = mStdDev / Math.Sqrt(newMetricsValue.Count);
-            var mP99 = newMetricsValue.Percentile(99);
-            var mP95 = newMetricsValue.Percentile(95);
-            var mP90 = newMetricsValue.Percentile(90);
+            var originalMetricsValue = metricsData[key];
+            var metricsValue = Utils.RemoveOutliers(originalMetricsValue, 3.0).ToList();
+            metricsData[key] = metricsValue;
+            var mMean = metricsValue.Mean();
+            var mMax = metricsValue.Maximum();
+            var mMin = metricsValue.Minimum();
+            var mStdDev = metricsValue.StandardDeviation();
+            var mStdErr = mStdDev / Math.Sqrt(metricsValue.Count);
+            var mP99 = metricsValue.Percentile(99);
+            var mP95 = metricsValue.Percentile(95);
+            var mP90 = metricsValue.Percentile(90);
 
-            metricsStats[kv.Key + ".mean"] = mMean;
-            metricsStats[kv.Key + ".max"] = mMax;
-            metricsStats[kv.Key + ".min"] = mMin;
-            metricsStats[kv.Key + ".std_dev"] = mStdDev;
-            metricsStats[kv.Key + ".std_err"] = mStdErr;
-            metricsStats[kv.Key + ".p99"] = mP99;
-            metricsStats[kv.Key + ".p95"] = mP95;
-            metricsStats[kv.Key + ".p90"] = mP90;
-            metricsStats[kv.Key + ".outliers"] = metricsValue.Count - newMetricsValue.Count;
+            metricsStats[key + ".n"] = metricsValue.Count;
+            metricsStats[key + ".mean"] = mMean;
+            metricsStats[key + ".max"] = mMax;
+            metricsStats[key + ".min"] = mMin;
+            metricsStats[key + ".std_dev"] = mStdDev;
+            metricsStats[key + ".std_err"] = mStdErr;
+            metricsStats[key + ".p99"] = mP99;
+            metricsStats[key + ".p95"] = mP95;
+            metricsStats[key + ".p90"] = mP90;
+            metricsStats[key + ".outliers"] = originalMetricsValue.Count - metricsValue.Count;
         }
 
         return new ScenarioResult

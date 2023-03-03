@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <InternalsAssemblyUseEmptyMethodBodies>false</InternalsAssemblyUseEmptyMethodBodies>
+        <NoWarn>0436</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsAssemblyName Include="DatadogTestLogger" />
+        <InternalsAssemblyName Include="Datadog.testlogger" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.6.0" />
+        <PackageReference Include="DatadogTestLogger" Version="0.0.36" />
+        <PackageReference Include="Spectre.Console" Version="0.45.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
+    </ItemGroup>
+
+</Project>
