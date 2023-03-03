@@ -3,6 +3,7 @@ using TimeIt;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Exporter;
 using TimeIt.Common.Results;
+using TimeIt.DatadogExporter;
 
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt by Tony Redondo[/]\n");
 
@@ -25,6 +26,7 @@ var processor = new ScenarioProcessor(config);
 var exporters = new List<IExporter>();
 exporters.Add(new ConsoleExporter());
 exporters.Add(new JsonExporter());
+exporters.Add(new TimeItDatadogExporter());
 
 AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
 AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.Count);
