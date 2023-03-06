@@ -8,7 +8,6 @@
         <PackageTags>timeit, benchmark, performance</PackageTags>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>dotnet-timeit</ToolCommandName>
-        <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
         <PackageId>TimeItSharp</PackageId>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
