@@ -8,7 +8,7 @@ dotnet tool install --global TimeItSharp
 
 ### Usage
 ```bash
-dotnet-timeit [configuration file.json]
+dotnet timeit [configuration file.json]
 ```
 
 ## Sample Configuration
@@ -329,3 +329,13 @@ Example:
 | ├>runtime.dotnet.threads.count            | 13,5       | 0        | 0        | 13,5      | 13,5      | 13,5       | 13,5       | 3        |
 | └>runtime.dotnet.threads.workers_count    | 0          | 0        | 0        | 0         | 0         | 0          | 0          | 2        |
 |                                           |            |          |          |           |           |            |            |          |
+
+## Datadog Exporter:
+
+The datadog exporter send all the data using the CI Test Visibility public api:
+
+### Benchmark data:
+<img width="1519" alt="image" src="https://user-images.githubusercontent.com/69803/223069595-c6531c45-2085-4fbc-8d4f-79854c0ca58d.png">
+
+### Metrics from the startup hook:
+<img width="818" alt="image" src="https://user-images.githubusercontent.com/69803/223069816-c3caf562-1cd2-46d3-8803-f42c6679647e.png">
