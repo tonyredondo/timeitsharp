@@ -5,7 +5,7 @@ using TimeIt.Common.Exporter;
 using TimeIt.Common.Results;
 using TimeIt.DatadogExporter;
 
-AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt by Tony Redondo[/]\n");
+AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt (v. {0}) by Tony Redondo[/]\n", typeof(Utils).Assembly.GetName().Version?.ToString() ?? "unknown");
 
 // Check arguments
 if (args.Length < 1)

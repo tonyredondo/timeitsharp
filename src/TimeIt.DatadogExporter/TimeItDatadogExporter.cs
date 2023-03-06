@@ -9,7 +9,6 @@ namespace TimeIt.DatadogExporter;
 
 public class TimeItDatadogExporter : IExporter
 {
-    private const string VERSION = "0.0.1";
     private Config? _configuration;
     private readonly TestSession _testSession;
     private readonly TestModule _testModule;
@@ -17,7 +16,7 @@ public class TimeItDatadogExporter : IExporter
     public TimeItDatadogExporter()
     {
         _testSession = TestSession.GetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
-        _testModule = _testSession.CreateModule("all-modules", "time-it", VERSION);
+        _testModule = _testSession.CreateModule("all-modules", "time-it", typeof(TimeItDatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)");
     }
     
     /// <inheritdoc />
