@@ -352,6 +352,7 @@ public class ScenarioProcessor
         if (cmdEnvironmentVariables.TryGetValue(Constants.TimeItMetricsTemporalPathEnvironmentVariable,
                 out var metricsFilePath))
         {
+            metricsFilePath ??= string.Empty;
             if (File.Exists(metricsFilePath))
             {
                 DateTime? inProcStartDate = null;
