@@ -54,6 +54,16 @@ public class Config : ProcessData
             throw new FileNotFoundException("Configuration file not found.");
         }
 
+#if NET5_0
+        var jsonBytes = File.ReadAllBytes(filePath);
+        if (JsonSerializer.Deserialize<Config>(jsonBytes) is { } config)
+        {
+            config.FilePath = filePath;
+            config.FileName = System.IO.Path.GetFileName(filePath);
+            config.Path = System.IO.Path.GetDirectoryName(filePath) ?? string.Empty;
+            return config;
+        }
+#else
         using var fStream = File.OpenRead(filePath);
         if (JsonSerializer.Deserialize<Config>(fStream) is { } config)
         {
@@ -62,6 +72,7 @@ public class Config : ProcessData
             config.Path = System.IO.Path.GetDirectoryName(filePath) ?? string.Empty;
             return config;
         }
+#endif
 
         return new Config();
     }
