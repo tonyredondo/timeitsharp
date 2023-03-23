@@ -21,6 +21,7 @@ public class Scenario : ProcessData
             ProcessArguments = processData.ProcessArguments;
             WorkingDirectory = processData.WorkingDirectory;
             EnvironmentVariables = processData.EnvironmentVariables;
+            PathValidations = processData.PathValidations;
             Timeout = processData.Timeout;
             Tags = processData.Tags;
         }

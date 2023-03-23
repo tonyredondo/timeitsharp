@@ -74,11 +74,13 @@ if (config is { Count: > 0, Scenarios.Count: > 0 })
     }
     else
     {
+	    AnsiConsole.WriteLine();
+
 	    for (var i = 0; i < scenariosResults.Count; i++)
 	    {
 		    if (!string.IsNullOrEmpty(scenariosResults[i].Error))
 		    {
-			    AnsiConsole.MarkupLine("Error in Scenario: {0}", i);
+			    AnsiConsole.MarkupLine("[red]Error in Scenario[/]: {0}", scenariosResults[i].Name);
 			    AnsiConsole.WriteLine(scenariosResults[i].Error);
 		    }
 	    }
