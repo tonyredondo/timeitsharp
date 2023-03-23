@@ -58,6 +58,21 @@ public class ScenarioProcessor
             }
         }
 
+        for (var i = 0; i < scenario.PathValidations.Count; i++)
+        {
+            scenario.PathValidations[i] = Utils.ReplaceCustomVars(scenario.PathValidations[i]);
+        }
+
+        foreach (var item in _configuration.PathValidations)
+        {
+            var value = Utils.ReplaceCustomVars(item);
+            var idx = scenario.PathValidations.IndexOf(value);
+            if (idx == -1)
+            {
+                scenario.PathValidations.Add(value);
+            }
+        }
+
         if (_configuration.EnableMetrics)
         {
             // Add the .NET startup hook to collect metrics
@@ -116,6 +131,42 @@ public class ScenarioProcessor
     {
         Stopwatch? watch = null;
         AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
+        if (scenario.PathValidations.Count > 0)
+        {
+            AnsiConsole.MarkupLine("  [gold3_1]Path validations.[/]");
+            string? validationErrors = null;
+            foreach (var path in scenario.PathValidations)
+            {
+                if (!File.Exists(path))
+                {
+                    validationErrors += $"File '{path}' from path validations not found.{Environment.NewLine}";
+                }
+            }
+
+            if (!string.IsNullOrEmpty(validationErrors))
+            {
+                return new ScenarioResult
+                {
+                    Count = _configuration.Count,
+                    WarmUpCount = _configuration.WarmUpCount,
+                    Data = new List<DataPoint>(),
+                    Durations = new List<double>(),
+                    Outliers = new List<double>(),
+                    Metrics = new Dictionary<string, double>(),
+                    MetricsData = new Dictionary<string, List<double>>(),
+                    Error = validationErrors,
+                    Name = scenario.Name,
+                    ProcessName = scenario.ProcessName,
+                    ProcessArguments = scenario.ProcessArguments,
+                    EnvironmentVariables = scenario.EnvironmentVariables,
+                    PathValidations = scenario.PathValidations,
+                    WorkingDirectory = scenario.WorkingDirectory,
+                    Timeout = scenario.Timeout,
+                    Tags = scenario.Tags,
+                };
+            }
+        }
+
         AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
         await RunScenarioAsync(_configuration.WarmUpCount, scenario).ConfigureAwait(false);
@@ -222,6 +273,7 @@ public class ScenarioProcessor
             ProcessName = scenario.ProcessName,
             ProcessArguments = scenario.ProcessArguments,
             EnvironmentVariables = scenario.EnvironmentVariables,
+            PathValidations = scenario.PathValidations,
             WorkingDirectory = scenario.WorkingDirectory,
             Timeout = scenario.Timeout,
             Tags = scenario.Tags,

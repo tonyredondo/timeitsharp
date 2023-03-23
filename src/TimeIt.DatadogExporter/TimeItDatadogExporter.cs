@@ -11,12 +11,13 @@ public class TimeItDatadogExporter : IExporter
 {
     private Config? _configuration;
     private readonly TestSession _testSession;
-    private readonly TestModule _testModule;
+    private readonly DateTime _startDate;
+    private TestModule? _testModule;
 
     public TimeItDatadogExporter()
     {
         _testSession = TestSession.GetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
-        _testModule = _testSession.CreateModule("all-modules", "time-it", typeof(TimeItDatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)");
+        _startDate = DateTime.UtcNow;
     }
     
     /// <inheritdoc />
@@ -29,13 +30,16 @@ public class TimeItDatadogExporter : IExporter
     public void SetConfiguration(Config configuration)
     {
         _configuration = configuration;
+        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(TimeItDatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
     }
 
     /// <inheritdoc />
     public void Export(IEnumerable<ScenarioResult> results)
     {
         var errors = false;
-        var testSuite = _testModule.GetOrCreateSuite("export", results.Select(r => r.Start).Min());
+        var minStartDate = results.Select(r => r.Start).Min();
+        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(TimeItDatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
+        var testSuite = _testModule.GetOrCreateSuite("scenarios", minStartDate);
         try
         {
             foreach (var scenarioResult in results)
