@@ -330,6 +330,10 @@ public class ScenarioProcessor
             cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = Path.GetTempFileName();
         }
 
+        // add working directory as a path to resolve binary
+        var pathWithWorkingDir = workingDirectory + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
+        Environment.SetEnvironmentVariable("PATH", pathWithWorkingDir);
+
         // Setup the command
         var cmd = Cli.Wrap(cmdString)
             .WithEnvironmentVariables(cmdEnvironmentVariables)
@@ -437,7 +441,7 @@ public class ScenarioProcessor
                                 {
                                     metrics[Constants.ProcessInternalDurationMetricName] = (inProcEndDate.Value - inProcStartDate.Value).TotalMilliseconds;
                                 }
-                                
+
                                 continue;
                             }
 
