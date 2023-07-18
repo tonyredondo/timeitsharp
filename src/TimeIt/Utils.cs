@@ -4,11 +4,6 @@ namespace TimeIt;
 
 static class Utils
 {
-    public static string ReplaceCustomVars(string value)
-    {
-        return value.Replace("$(CWD)", Environment.CurrentDirectory);
-    }
-
     public static IEnumerable<double> RemoveOutliers(IEnumerable<double> data, double threshold)
     {
         if (data is not List<double>)
