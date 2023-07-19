@@ -58,6 +58,15 @@ public class ScenarioProcessor
             }
         }
 
+        foreach (var (tagName, tagValue) in _configuration.Tags)
+        {
+            var value = Utils.ReplaceCustomVars(tagValue);
+            if (!scenario.Tags.ContainsKey(tagName))
+            {
+                scenario.Tags[tagName] = value;
+            }
+        }
+
         for (var i = 0; i < scenario.PathValidations.Count; i++)
         {
             scenario.PathValidations[i] = Utils.ReplaceCustomVars(scenario.PathValidations[i]);
@@ -131,6 +140,7 @@ public class ScenarioProcessor
     {
         Stopwatch? watch = null;
         AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
+
         if (scenario.PathValidations.Count > 0)
         {
             AnsiConsole.MarkupLine("  [gold3_1]Path validations.[/]");
