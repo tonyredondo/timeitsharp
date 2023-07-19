@@ -20,12 +20,12 @@ static class Utils
         var stdDev = data.StandardDeviation();
         return data.Where(x => Math.Abs(x - mean) <= threshold * stdDev).ToList();
     }
-    
+
     public static double FromNanosecondsToMilliseconds(double nanoseconds)
     {
         return TimeSpan.FromTicks((long)nanoseconds / 100).TotalMilliseconds;
     }
-    
+
     public static double FromTimeSpanToNanoseconds(TimeSpan timeSpan)
     {
         return (double)timeSpan.Ticks * 100;
