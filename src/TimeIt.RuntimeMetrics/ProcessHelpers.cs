@@ -18,15 +18,21 @@ public static class ProcessHelpers
     /// </summary>
     /// <param name="userProcessorTime">CPU time in user mode</param>
     /// <param name="systemCpuTime">CPU time in kernel mode</param>
+    /// <param name="totalProcessorTime">Total processor time</param>
     /// <param name="threadCount">Number of threads</param>
     /// <param name="privateMemorySize">Committed memory size</param>
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public static void GetCurrentProcessRuntimeMetrics(out TimeSpan userProcessorTime, out TimeSpan systemCpuTime,
-        out int threadCount, out long privateMemorySize)
+    public static void GetCurrentProcessRuntimeMetrics(
+        out TimeSpan userProcessorTime,
+        out TimeSpan systemCpuTime,
+        out TimeSpan totalProcessorTime,
+        out int threadCount,
+        out long privateMemorySize)
     {
         using var process = Process.GetCurrentProcess();
         userProcessorTime = process.UserProcessorTime;
         systemCpuTime = process.PrivilegedProcessorTime;
+        totalProcessorTime = process.TotalProcessorTime;
         threadCount = process.Threads.Count;
         privateMemorySize = process.PrivateMemorySize64;
     }

@@ -7,8 +7,11 @@ public static class MetricsNames
     public const string ExceptionsCount = "runtime.dotnet.exceptions.count";
 
     public const string Gen0CollectionsCount = "runtime.dotnet.gc.count.gen0";
+    public const string Gen0CompactingCollectionsCount = "runtime.dotnet.gc.count.compacting_gen0";
     public const string Gen1CollectionsCount = "runtime.dotnet.gc.count.gen1";
+    public const string Gen1CompactingCollectionsCount = "runtime.dotnet.gc.count.compacting_gen1";
     public const string Gen2CollectionsCount = "runtime.dotnet.gc.count.gen2";
+    public const string Gen2CompactingCollectionsCount = "runtime.dotnet.gc.count.compacting_gen2";
 
     public const string GcPauseTime = "runtime.dotnet.gc.pause_time";
     public const string GcMemoryLoad = "runtime.dotnet.gc.memory_load";
@@ -21,6 +24,9 @@ public static class MetricsNames
     public const string ContentionTime = "runtime.dotnet.threads.contention_time";
     public const string ContentionCount = "runtime.dotnet.threads.contention_count";
 
+    public const string ProcessorTime = "runtime.process.processor_time";
+    public const string PrivateBytes = "runtime.process.private_bytes";
+    
     public const string ThreadPoolWorkersCount = "runtime.dotnet.threads.workers_count";
 
     public const string ThreadsCount = "runtime.dotnet.threads.count";

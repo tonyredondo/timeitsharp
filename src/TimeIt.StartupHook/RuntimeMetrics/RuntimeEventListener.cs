@@ -13,10 +13,6 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
     private const string AspNetCoreHostingEventSourceName = "Microsoft.AspNetCore.Hosting";
     private const string AspNetCoreKestrelEventSourceName = "Microsoft-AspNetCore-Server-Kestrel";
 
-    private const string GcHeapStatsMetrics = $"{MetricsNames.Gen0HeapSize}, {MetricsNames.Gen1HeapSize}, {MetricsNames.Gen2HeapSize}, {MetricsNames.LohSize}";
-    private const string GcGlobalHeapMetrics = $"{MetricsNames.GcMemoryLoad}, runtime.dotnet.gc.count.gen#";
-    private const string ThreadStatsMetrics = $"{MetricsNames.ContentionTime}, {MetricsNames.ContentionCount}, {MetricsNames.ThreadPoolWorkersCount}";
-
     private const int EventGcSuspendBegin = 9;
     private const int EventGcRestartEnd = 3;
     private const int EventGcHeapStats = 4;
@@ -24,34 +20,17 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
     private const int EventGcGlobalHeapHistory = 205;
 
     private static readonly string[] GcCountMetricNames = { MetricsNames.Gen0CollectionsCount, MetricsNames.Gen1CollectionsCount, MetricsNames.Gen2CollectionsCount };
-    private static readonly string[] CompactingGcTags = { "compacting_gc:true" };
-    private static readonly string[] NotCompactingGcTags = { "compacting_gc:false" };
-
-    private static readonly IReadOnlyDictionary<string, string> MetricsMapping;
+    private static readonly string[] GcCompactingCountMetricNames = { MetricsNames.Gen0CompactingCollectionsCount, MetricsNames.Gen1CompactingCollectionsCount, MetricsNames.Gen2CompactingCollectionsCount };
 
     private readonly IDogStatsd _statsd;
 
-    private readonly Timing _contentionTime = new Timing();
+    private readonly Timing _contentionTime = new();
 
     private readonly string _delayInSeconds;
 
     private long _contentionCount;
 
     private DateTime? _gcStart;
-
-    static RuntimeEventListener()
-    {
-        MetricsMapping = new Dictionary<string, string>
-        {
-            ["current-requests"] = MetricsNames.AspNetCoreCurrentRequests,
-            ["failed-requests"] = MetricsNames.AspNetCoreFailedRequests,
-            ["total-requests"] = MetricsNames.AspNetCoreTotalRequests,
-            ["request-queue-length"] = MetricsNames.AspNetCoreRequestQueueLength,
-            ["current-connections"] = MetricsNames.AspNetCoreCurrentConnections,
-            ["connection-queue-length"] = MetricsNames.AspNetCoreConnectionQueueLength,
-            ["total-connections"] = MetricsNames.AspNetCoreTotalConnections
-        };
-    }
 
     public RuntimeEventListener(IDogStatsd statsd, TimeSpan delay)
     {
@@ -94,11 +73,9 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
             }
             else if (eventData.EventId == EventGcRestartEnd)
             {
-                var start = _gcStart;
-
-                if (start != null)
+                if (_gcStart is { } start)
                 {
-                    _statsd.Timer(MetricsNames.GcPauseTime, (eventData.TimeStamp - start.Value).TotalMilliseconds);
+                    _statsd.Timer(MetricsNames.GcPauseTime, (eventData.TimeStamp - start).TotalMilliseconds);
                 }
             }
             else
@@ -128,8 +105,12 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
                         _statsd.Gauge(MetricsNames.GcMemoryLoad, heapHistory.MemoryLoad.Value);
                     }
 
-                    _statsd.Increment(GcCountMetricNames[heapHistory.Generation], 1,
-                        tags: heapHistory.Compacting ? CompactingGcTags : NotCompactingGcTags);
+                    if (heapHistory.Compacting)
+                    {
+                        _statsd.Increment(GcCompactingCountMetricNames[heapHistory.Generation], 1);
+                    }
+
+                    _statsd.Increment(GcCountMetricNames[heapHistory.Generation], 1);
                 }
             }
         }
@@ -143,12 +124,12 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
     {
         if (eventSource.Name == RuntimeEventSourceName)
         {
-            var keywords = Keywords.GC | Keywords.Contention;
-
-            EnableEvents(eventSource, EventLevel.Informational, (EventKeywords)keywords);
+            EnableEvents(
+                eventSource,
+                EventLevel.Informational,
+                (EventKeywords)(Keywords.GC | Keywords.Contention));
         }
-        else if (eventSource.Name == AspNetCoreHostingEventSourceName ||
-                 eventSource.Name == AspNetCoreKestrelEventSourceName)
+        else if (eventSource.Name is AspNetCoreHostingEventSourceName or AspNetCoreKestrelEventSourceName)
         {
             var settings = new Dictionary<string, string>
             {
@@ -161,26 +142,60 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
 
     private void ExtractCounters(ReadOnlyCollection<object> payload)
     {
-        for (int i = 0; i < payload.Count; ++i)
+        for (var i = 0; i < payload.Count; ++i)
         {
-            if (!(payload[i] is IDictionary<string, object> eventPayload))
+            if (payload[i] is not IDictionary<string, object> eventPayload)
             {
                 continue;
             }
 
-            if (!eventPayload.TryGetValue("Name", out object name)
-                || !MetricsMapping.TryGetValue(name.ToString(), out var statName))
+            if (!eventPayload.TryGetValue("Name", out var objName))
             {
                 continue;
             }
 
-            if (eventPayload.TryGetValue("Mean", out object rawValue)
-                || eventPayload.TryGetValue("Increment", out rawValue))
+            var name = objName as string ?? objName?.ToString() ?? string.Empty;
+            if (!TryGetMetricsMapping(name, out var statName))
             {
-                var value = (double)rawValue;
-
-                _statsd.Gauge(statName, value);
+                continue;
             }
+
+            if (eventPayload.TryGetValue("Mean", out var rawValue) ||
+                eventPayload.TryGetValue("Increment", out rawValue))
+            {
+                _statsd.Gauge(statName, (double)rawValue);
+            }
+        }
+    }
+
+    private static bool TryGetMetricsMapping(string name, out string statName)
+    {
+        switch (name)
+        {
+            case "current-requests":
+                statName = MetricsNames.AspNetCoreCurrentRequests;
+                return true;
+            case "failed-requests":
+                statName = MetricsNames.AspNetCoreFailedRequests;
+                return true;
+            case "total-requests":
+                statName = MetricsNames.AspNetCoreTotalRequests;
+                return true;
+            case "request-queue-length":
+                statName = MetricsNames.AspNetCoreRequestQueueLength;
+                return true;
+            case "current-connections":
+                statName = MetricsNames.AspNetCoreCurrentConnections;
+                return true;
+            case "connection-queue-length":
+                statName = MetricsNames.AspNetCoreConnectionQueueLength;
+                return true;
+            case "total-connections":
+                statName = MetricsNames.AspNetCoreTotalConnections;
+                return true;
+            default:
+                statName = null;
+                return false;
         }
     }
 }
