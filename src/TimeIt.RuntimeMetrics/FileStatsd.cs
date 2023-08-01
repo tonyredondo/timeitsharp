@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Globalization;
+using System.Runtime.CompilerServices;
 
 namespace TimeIt.RuntimeMetrics;
 
@@ -73,7 +74,7 @@ public class FileStatsd
             }
 
             _streamWriter.Write("\"value\": ");
-            _streamWriter.Write(value);
+            _streamWriter.Write(value.ToString(CultureInfo.InvariantCulture));
             _streamWriter.WriteLine(" }");
         }
     }
