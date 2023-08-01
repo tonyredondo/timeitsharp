@@ -427,7 +427,7 @@ public class ScenarioProcessor
                 var metricsCount = new Dictionary<string, int>();
                 foreach (var metricJsonItem in await File.ReadAllLinesAsync(metricsFilePath).ConfigureAwait(false))
                 {
-                    if (JsonSerializer.Deserialize<FileStatsd.FileStatsdPayload>(metricJsonItem, new JsonSerializerOptions(JsonSerializerDefaults.Web)) is { } metricItem)
+                    if (JsonSerializer.Deserialize<FileStatsdPayload>(metricJsonItem, new JsonSerializerOptions(JsonSerializerDefaults.Web)) is { } metricItem)
                     {
                         if (metricItem.Name is not null)
                         {

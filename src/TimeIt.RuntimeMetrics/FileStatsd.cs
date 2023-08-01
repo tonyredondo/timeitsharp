@@ -1,4 +1,6 @@
-﻿namespace TimeIt.RuntimeMetrics;
+﻿using System.Runtime.CompilerServices;
+
+namespace TimeIt.RuntimeMetrics;
 
 public class FileStatsd : IDogStatsd
 {
@@ -9,21 +11,25 @@ public class FileStatsd : IDogStatsd
         _streamWriter = new StreamWriter(filePath, true);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Counter(string statName, double value, double sampleRate = 1, string[]? tags = null)
     {
         WritePayload("counter", statName, value);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Gauge(string statName, double value, double sampleRate = 1, string[]? tags = null)
     {
         WritePayload("gauge", statName, value);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Increment(string statName, int value = 1, double sampleRate = 1, string[]? tags = null)
     {
         WritePayload("increment", statName, value);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Timer(string statName, double value, double sampleRate = 1, string[]? tags = null)
     {
         WritePayload("timer", statName, value);
@@ -37,6 +43,7 @@ public class FileStatsd : IDogStatsd
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void WritePayload(string type, string name, double value)
     {
         lock (_streamWriter)

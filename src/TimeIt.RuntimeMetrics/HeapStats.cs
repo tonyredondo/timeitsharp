@@ -2,7 +2,7 @@
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-public readonly struct HeapStats
+public readonly ref struct HeapStats
 {
     public readonly ulong Gen0Size;
     public readonly ulong Gen1Size;
