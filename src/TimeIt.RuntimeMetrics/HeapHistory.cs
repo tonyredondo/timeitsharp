@@ -2,13 +2,13 @@
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-public readonly struct HeapHistory
+public readonly ref struct HeapHistory
 {
     public readonly uint? MemoryLoad;
     public readonly uint Generation;
     public readonly bool Compacting;
 
-    public HeapHistory(uint? memoryLoad, uint generation, bool compacting)
+    private HeapHistory(uint? memoryLoad, uint generation, bool compacting)
     {
         MemoryLoad = memoryLoad;
         Generation = generation;

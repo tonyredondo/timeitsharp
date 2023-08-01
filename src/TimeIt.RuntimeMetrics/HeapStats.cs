@@ -2,14 +2,14 @@
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-public readonly struct HeapStats
+public readonly ref struct HeapStats
 {
     public readonly ulong Gen0Size;
     public readonly ulong Gen1Size;
     public readonly ulong Gen2Size;
     public readonly ulong LohSize;
 
-    public HeapStats(ulong gen0Size, ulong gen1Size, ulong gen2Size, ulong lohSize)
+    private HeapStats(ulong gen0Size, ulong gen1Size, ulong gen2Size, ulong lohSize)
     {
         Gen0Size = gen0Size;
         Gen1Size = gen1Size;

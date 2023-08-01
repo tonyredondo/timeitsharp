@@ -7,26 +7,25 @@ namespace TimeIt.RuntimeMetrics;
 
 internal class RuntimeMetricsWriter : IDisposable
 {
-    private const string ProcessMetrics = $"{MetricsNames.ThreadsCount}, {MetricsNames.CommittedMemory}, {MetricsNames.CpuUserTime}, {MetricsNames.CpuSystemTime}, {MetricsNames.CpuPercentage}";
-
-    private static readonly Func<IDogStatsd, TimeSpan, IRuntimeMetricsListener> InitializeListenerFunc = InitializeListener;
+    private static readonly Func<FileStatsd, TimeSpan, RuntimeEventListener> InitializeListenerFunc = InitializeListener;
 
     private readonly TimeSpan _delay;
-    private readonly IDogStatsd _statsd;
+    private readonly FileStatsd _statsd;
     private readonly Timer _timer;
-    private readonly IRuntimeMetricsListener _listener;
+    private readonly RuntimeEventListener _listener;
     private readonly bool _enableProcessMetrics;
     private readonly ConcurrentDictionary<string, int> _exceptionCounts = new();
 
     private TimeSpan _previousUserCpu;
     private TimeSpan _previousSystemCpu;
+    private TimeSpan _previousTotalCpu;
 
-    public RuntimeMetricsWriter(IDogStatsd statsd, TimeSpan delay)
+    public RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay)
         : this(statsd, delay, InitializeListenerFunc)
     {
     }
 
-    internal RuntimeMetricsWriter(IDogStatsd statsd, TimeSpan delay, Func<IDogStatsd, TimeSpan, IRuntimeMetricsListener> initializeListener)
+    internal RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay, Func<FileStatsd, TimeSpan, RuntimeEventListener> initializeListener)
     {
         _delay = delay;
         _statsd = statsd;
@@ -43,10 +42,11 @@ internal class RuntimeMetricsWriter : IDisposable
 
         try
         {
-            ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var userCpu, out var systemCpu, out _, out _);
+            ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var totalCpu, out var userCpu, out var systemCpu, out _, out _);
 
             _previousUserCpu = userCpu;
             _previousSystemCpu = systemCpu;
+            _previousTotalCpu = totalCpu;
 
             _enableProcessMetrics = true;
         }
@@ -65,11 +65,6 @@ internal class RuntimeMetricsWriter : IDisposable
         }
     }
 
-    /// <summary>
-    /// Gets the internal exception counts, to be used for tests
-    /// </summary>
-    internal ConcurrentDictionary<string, int> ExceptionCounts => _exceptionCounts;
-
     public void Dispose()
     {
         AppDomain.CurrentDomain.FirstChanceException -= FirstChanceException;
@@ -86,27 +81,30 @@ internal class RuntimeMetricsWriter : IDisposable
 
             if (_enableProcessMetrics)
             {
-                ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var newUserCpu, out var newSystemCpu,
+                ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var newTotalCpu, out var newUserCpu, out var newSystemCpu,
                     out var threadCount, out var memoryUsage);
 
                 var userCpu = newUserCpu - _previousUserCpu;
                 var systemCpu = newSystemCpu - _previousSystemCpu;
+                var totalCpu = newTotalCpu - _previousTotalCpu;
 
                 _previousUserCpu = newUserCpu;
                 _previousSystemCpu = newSystemCpu;
+                _previousTotalCpu = newTotalCpu;
 
                 // Note: the behavior of Environment.ProcessorCount has changed a lot accross version: https://github.com/dotnet/runtime/issues/622
                 // What we want is the number of cores attributed to the container, which is the behavior in 3.1.2+ (and, I believe, in 2.x)
                 var maximumCpu = Environment.ProcessorCount * _delay.TotalMilliseconds;
-                var totalCpu = userCpu + systemCpu;
 
                 _statsd.Gauge(MetricsNames.ThreadsCount, threadCount);
 
                 _statsd.Gauge(MetricsNames.CommittedMemory, memoryUsage);
+                _statsd.Gauge(MetricsNames.PrivateBytes, memoryUsage);
 
                 // Get CPU time in milliseconds per second
                 _statsd.Gauge(MetricsNames.CpuUserTime, userCpu.TotalMilliseconds / _delay.TotalSeconds);
                 _statsd.Gauge(MetricsNames.CpuSystemTime, systemCpu.TotalMilliseconds / _delay.TotalSeconds);
+                _statsd.Gauge(MetricsNames.ProcessorTime, totalCpu.TotalMilliseconds / _delay.TotalSeconds);
 
                 _statsd.Gauge(MetricsNames.CpuPercentage,
                     Math.Round(totalCpu.TotalMilliseconds * 100 / maximumCpu, 1, MidpointRounding.AwayFromZero));
@@ -131,7 +129,7 @@ internal class RuntimeMetricsWriter : IDisposable
         }
     }
 
-    private static IRuntimeMetricsListener InitializeListener(IDogStatsd statsd, TimeSpan delay)
+    private static RuntimeEventListener InitializeListener(FileStatsd statsd, TimeSpan delay)
     {
         return new RuntimeEventListener(statsd, delay);
     }
