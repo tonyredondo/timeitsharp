@@ -3,7 +3,7 @@ using TimeIt.RuntimeMetrics;
 
 class RuntimeMetricsInitializer
 {
-    private RuntimeMetricsWriter? _metricsWriter;
+    private readonly RuntimeMetricsWriter? MetricsWriter;
 
     public RuntimeMetricsInitializer(DateTime startDate)
     {
@@ -12,13 +12,13 @@ class RuntimeMetricsInitializer
         {
             var fileStatsd = new FileStatsd(metricsPath);
             fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
-            _metricsWriter = new RuntimeMetricsWriter(fileStatsd, TimeSpan.FromMilliseconds(50));
-            _metricsWriter.PushEvents();
+            MetricsWriter = new RuntimeMetricsWriter(fileStatsd, TimeSpan.FromMilliseconds(50));
+            MetricsWriter.PushEvents();
 
             AppDomain.CurrentDomain.ProcessExit += (sender, args) =>
             {
                 fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, DateTime.UtcNow.ToBinary());
-                _metricsWriter.PushEvents();
+                MetricsWriter.PushEvents();
                 fileStatsd.Dispose();
             };
         }

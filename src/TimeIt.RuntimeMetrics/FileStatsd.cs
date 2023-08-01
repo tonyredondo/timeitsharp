@@ -2,7 +2,7 @@
 
 namespace TimeIt.RuntimeMetrics;
 
-public class FileStatsd : IDogStatsd
+public class FileStatsd
 {
     private readonly StreamWriter _streamWriter;
 

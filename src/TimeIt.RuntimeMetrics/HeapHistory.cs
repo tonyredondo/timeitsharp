@@ -8,7 +8,7 @@ public readonly ref struct HeapHistory
     public readonly uint Generation;
     public readonly bool Compacting;
 
-    public HeapHistory(uint? memoryLoad, uint generation, bool compacting)
+    private HeapHistory(uint? memoryLoad, uint generation, bool compacting)
     {
         MemoryLoad = memoryLoad;
         Generation = generation;

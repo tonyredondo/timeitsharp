@@ -7,7 +7,7 @@ namespace TimeIt.RuntimeMetrics;
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-class RuntimeEventListener : EventListener, IRuntimeMetricsListener
+class RuntimeEventListener : EventListener
 {
     private const string RuntimeEventSourceName = "Microsoft-Windows-DotNETRuntime";
     private const string AspNetCoreHostingEventSourceName = "Microsoft.AspNetCore.Hosting";
@@ -22,7 +22,7 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
     private static readonly string[] GcCountMetricNames = { MetricsNames.Gen0CollectionsCount, MetricsNames.Gen1CollectionsCount, MetricsNames.Gen2CollectionsCount };
     private static readonly string[] GcCompactingCountMetricNames = { MetricsNames.Gen0CompactingCollectionsCount, MetricsNames.Gen1CompactingCollectionsCount, MetricsNames.Gen2CompactingCollectionsCount };
 
-    private readonly IDogStatsd _statsd;
+    private readonly FileStatsd _statsd;
 
     private readonly Timing _contentionTime = new();
 
@@ -32,7 +32,7 @@ class RuntimeEventListener : EventListener, IRuntimeMetricsListener
 
     private DateTime? _gcStart;
 
-    public RuntimeEventListener(IDogStatsd statsd, TimeSpan delay)
+    public RuntimeEventListener(FileStatsd statsd, TimeSpan delay)
     {
         _statsd = statsd;
         _delayInSeconds = ((int)delay.TotalSeconds).ToString();

@@ -7,14 +7,12 @@ namespace TimeIt.RuntimeMetrics;
 
 internal class RuntimeMetricsWriter : IDisposable
 {
-    private const string ProcessMetrics = $"{MetricsNames.ThreadsCount}, {MetricsNames.CommittedMemory}, {MetricsNames.CpuUserTime}, {MetricsNames.CpuSystemTime}, {MetricsNames.CpuPercentage}";
-
-    private static readonly Func<IDogStatsd, TimeSpan, IRuntimeMetricsListener> InitializeListenerFunc = InitializeListener;
+    private static readonly Func<FileStatsd, TimeSpan, RuntimeEventListener> InitializeListenerFunc = InitializeListener;
 
     private readonly TimeSpan _delay;
-    private readonly IDogStatsd _statsd;
+    private readonly FileStatsd _statsd;
     private readonly Timer _timer;
-    private readonly IRuntimeMetricsListener _listener;
+    private readonly RuntimeEventListener _listener;
     private readonly bool _enableProcessMetrics;
     private readonly ConcurrentDictionary<string, int> _exceptionCounts = new();
 
@@ -22,12 +20,12 @@ internal class RuntimeMetricsWriter : IDisposable
     private TimeSpan _previousSystemCpu;
     private TimeSpan _previousTotalCpu;
 
-    public RuntimeMetricsWriter(IDogStatsd statsd, TimeSpan delay)
+    public RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay)
         : this(statsd, delay, InitializeListenerFunc)
     {
     }
 
-    internal RuntimeMetricsWriter(IDogStatsd statsd, TimeSpan delay, Func<IDogStatsd, TimeSpan, IRuntimeMetricsListener> initializeListener)
+    internal RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay, Func<FileStatsd, TimeSpan, RuntimeEventListener> initializeListener)
     {
         _delay = delay;
         _statsd = statsd;
@@ -66,11 +64,6 @@ internal class RuntimeMetricsWriter : IDisposable
             // .
         }
     }
-
-    /// <summary>
-    /// Gets the internal exception counts, to be used for tests
-    /// </summary>
-    internal ConcurrentDictionary<string, int> ExceptionCounts => _exceptionCounts;
 
     public void Dispose()
     {
@@ -136,7 +129,7 @@ internal class RuntimeMetricsWriter : IDisposable
         }
     }
 
-    private static IRuntimeMetricsListener InitializeListener(IDogStatsd statsd, TimeSpan delay)
+    private static RuntimeEventListener InitializeListener(FileStatsd statsd, TimeSpan delay)
     {
         return new RuntimeEventListener(statsd, delay);
     }
