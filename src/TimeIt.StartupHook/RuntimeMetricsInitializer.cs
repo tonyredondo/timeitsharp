@@ -17,10 +17,12 @@ class RuntimeMetricsInitializer
 
             AppDomain.CurrentDomain.ProcessExit += (sender, args) =>
             {
-                fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, DateTime.UtcNow.ToBinary());
+                fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
                 MetricsWriter.PushEvents();
                 fileStatsd.Dispose();
             };
+
+            fileStatsd.Gauge(Constants.MainMethodStartTimeUtcMetricName, Clock.UtcNow.ToBinary());
         }
     }
 }

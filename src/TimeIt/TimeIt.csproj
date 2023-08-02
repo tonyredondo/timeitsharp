@@ -12,13 +12,14 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
         <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
+        <NoWarn>NETSDK1138</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="CliWrap" Version="3.6.4" />
         <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-        <PackageReference Include="Spectre.Console" Version="0.45.0" />
+        <PackageReference Include="Spectre.Console" Version="0.47.0" />
     </ItemGroup>
 
     <ItemGroup>

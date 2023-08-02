@@ -14,11 +14,11 @@ internal class RuntimeMetricsWriter : IDisposable
     private readonly Timer _timer;
     private readonly RuntimeEventListener _listener;
     private readonly bool _enableProcessMetrics;
-    private readonly ConcurrentDictionary<string, int> _exceptionCounts = new();
 
     private TimeSpan _previousUserCpu;
     private TimeSpan _previousSystemCpu;
     private TimeSpan _previousTotalCpu;
+    private int _exceptionCounts;
 
     public RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay)
         : this(statsd, delay, InitializeListenerFunc)
@@ -70,7 +70,6 @@ internal class RuntimeMetricsWriter : IDisposable
         AppDomain.CurrentDomain.FirstChanceException -= FirstChanceException;
         _timer.Dispose();
         _listener?.Dispose();
-        _exceptionCounts.Clear();
     }
 
     internal void PushEvents()
@@ -110,17 +109,10 @@ internal class RuntimeMetricsWriter : IDisposable
                     Math.Round(totalCpu.TotalMilliseconds * 100 / maximumCpu, 1, MidpointRounding.AwayFromZero));
             }
 
-            if (!_exceptionCounts.IsEmpty)
+            var exceptionCounts = Interlocked.Exchange(ref _exceptionCounts, 0);
+            if (exceptionCounts > 0)
             {
-                foreach (var element in _exceptionCounts)
-                {
-                    _statsd.Increment(MetricsNames.ExceptionsCount, element.Value,
-                        tags: new[] { $"exception_type:{element.Key}" });
-                }
-
-                // There's a race condition where we could clear items that haven't been pushed
-                // Having an exact exception count is probably not worth the overhead required to fix it
-                _exceptionCounts.Clear();
+                _statsd.Increment(MetricsNames.ExceptionsCount, exceptionCounts);
             }
         }
         catch
@@ -136,7 +128,6 @@ internal class RuntimeMetricsWriter : IDisposable
 
     private void FirstChanceException(object sender, FirstChanceExceptionEventArgs e)
     {
-        var name = e.Exception.GetType().Name;
-        _exceptionCounts.AddOrUpdate(name, 1, (_, count) => count + 1);
+        Interlocked.Increment(ref _exceptionCounts);
     }
 }

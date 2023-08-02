@@ -5,11 +5,11 @@ public class StartupHook
 {
     private static object? _runtimeMetrics;
     private static Assembly? _runtimeMetricsAssemblyCache;
-    private static string _hookFolder;
+    private static string? _hookFolder;
 
     public static void Initialize()
     {
-        var startDate = DateTime.UtcNow;
+        var startDate = Clock.UtcNow;
         _hookFolder = Path.GetDirectoryName(typeof(StartupHook).Assembly.Location) ?? string.Empty;
         AssemblyLoadContext.Default.Resolving += DefaultOnResolving;
         _runtimeMetrics = new RuntimeMetricsInitializer(startDate);
@@ -17,6 +17,11 @@ public class StartupHook
 
     private static Assembly? DefaultOnResolving(AssemblyLoadContext ctx, AssemblyName assemblyName)
     {
+        if (_hookFolder is null)
+        {
+            return null;
+        }
+
         const string runtimeMetricsAssemblyName = "TimeIt.RuntimeMetrics";
         if (assemblyName.Name?.Equals(runtimeMetricsAssemblyName, StringComparison.Ordinal) == true)
         {
