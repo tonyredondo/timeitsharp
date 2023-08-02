@@ -32,7 +32,7 @@ public static class ProcessHelpers
         using var process = Process.GetCurrentProcess();
         userProcessorTime = process.UserProcessorTime;
         systemCpuTime = process.PrivilegedProcessorTime;
-        totalProcessorTime = process.TotalProcessorTime;
+        totalProcessorTime = systemCpuTime + userProcessorTime;
         threadCount = process.Threads.Count;
         privateMemorySize = process.PrivateMemorySize64;
     }

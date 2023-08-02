@@ -13,7 +13,7 @@
     <ItemGroup>
         <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.6.0" />
         <PackageReference Include="DatadogTestLogger" Version="0.0.36" />
-        <PackageReference Include="Spectre.Console" Version="0.45.0" />
+        <PackageReference Include="Spectre.Console" Version="0.47.0" />
     </ItemGroup>
 
     <ItemGroup>
