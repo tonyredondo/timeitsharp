@@ -15,10 +15,12 @@ namespace TimeIt;
 public class ScenarioProcessor
 {
     private readonly Config _configuration;
+    private readonly TemplateVariables _templateVariables;
 
-    public ScenarioProcessor(Config configuration)
+    public ScenarioProcessor(Config configuration, TemplateVariables templateVariables)
     {
         _configuration = configuration;
+        _templateVariables = templateVariables;
     }
 
     public void PrepareScenario(Scenario scenario)
@@ -28,30 +30,30 @@ public class ScenarioProcessor
             scenario.ProcessName = _configuration.ProcessName;
         }
 
-        scenario.ProcessName = Utils.ReplaceCustomVars(scenario.ProcessName ?? string.Empty);
+        scenario.ProcessName = _templateVariables.Expand(scenario.ProcessName ?? string.Empty);
 
         if (string.IsNullOrEmpty(scenario.ProcessArguments))
         {
             scenario.ProcessArguments = _configuration.ProcessArguments;
         }
 
-        scenario.ProcessArguments = Utils.ReplaceCustomVars(scenario.ProcessArguments ?? string.Empty);
+        scenario.ProcessArguments = _templateVariables.Expand(scenario.ProcessArguments ?? string.Empty);
 
         if (string.IsNullOrEmpty(scenario.WorkingDirectory))
         {
             scenario.WorkingDirectory = _configuration.WorkingDirectory;
         }
 
-        scenario.WorkingDirectory = Utils.ReplaceCustomVars(scenario.WorkingDirectory ?? string.Empty);
+        scenario.WorkingDirectory = _templateVariables.Expand(scenario.WorkingDirectory ?? string.Empty);
 
         foreach (var item in scenario.EnvironmentVariables)
         {
-            scenario.EnvironmentVariables[item.Key] = Utils.ReplaceCustomVars(item.Value);
+            scenario.EnvironmentVariables[item.Key] = _templateVariables.Expand(item.Value);
         }
 
         foreach (var item in _configuration.EnvironmentVariables)
         {
-            var value = Utils.ReplaceCustomVars(item.Value);
+            var value = _templateVariables.Expand(item.Value);
             if (!scenario.EnvironmentVariables.ContainsKey(item.Key))
             {
                 scenario.EnvironmentVariables[item.Key] = value;
@@ -60,7 +62,7 @@ public class ScenarioProcessor
 
         foreach (var (tagName, tagValue) in _configuration.Tags)
         {
-            var value = Utils.ReplaceCustomVars(tagValue);
+            var value = _templateVariables.Expand(tagValue);
             if (!scenario.Tags.ContainsKey(tagName))
             {
                 scenario.Tags[tagName] = value;
@@ -69,12 +71,12 @@ public class ScenarioProcessor
 
         for (var i = 0; i < scenario.PathValidations.Count; i++)
         {
-            scenario.PathValidations[i] = Utils.ReplaceCustomVars(scenario.PathValidations[i]);
+            scenario.PathValidations[i] = _templateVariables.Expand(scenario.PathValidations[i]);
         }
 
         foreach (var item in _configuration.PathValidations)
         {
-            var value = Utils.ReplaceCustomVars(item);
+            var value = _templateVariables.Expand(item);
             var idx = scenario.PathValidations.IndexOf(value);
             if (idx == -1)
             {
@@ -122,14 +124,14 @@ public class ScenarioProcessor
             scenario.Timeout.ProcessName = _configuration.Timeout.ProcessName;
         }
 
-        scenario.Timeout.ProcessName = Utils.ReplaceCustomVars(scenario.Timeout.ProcessName ?? string.Empty);
+        scenario.Timeout.ProcessName = _templateVariables.Expand(scenario.Timeout.ProcessName ?? string.Empty);
 
         if (string.IsNullOrEmpty(scenario.Timeout.ProcessArguments))
         {
             scenario.Timeout.ProcessArguments = _configuration.Timeout.ProcessArguments;
         }
 
-        scenario.Timeout.ProcessArguments = Utils.ReplaceCustomVars(scenario.Timeout.ProcessArguments ?? string.Empty);
+        scenario.Timeout.ProcessArguments = _templateVariables.Expand(scenario.Timeout.ProcessArguments ?? string.Empty);
     }
 
     public void CleanScenario(Scenario scenario)
@@ -436,7 +438,7 @@ public class ScenarioProcessor
                             {
                                 inProcStartDate = DateTime.FromBinary((long)metricItem.Value);
                                 metrics[Constants.ProcessTimeToStartMetricName] = (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
-                                
+
 
                                 continue;
                             }
