@@ -10,8 +10,5 @@
         </Compile>
     </ItemGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\TimeIt.RuntimeMetrics\TimeIt.RuntimeMetrics.csproj"/>
-    </ItemGroup>
 
 </Project>
