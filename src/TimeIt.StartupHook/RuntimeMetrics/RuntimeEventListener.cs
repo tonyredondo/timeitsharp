@@ -20,7 +20,6 @@ class RuntimeEventListener : EventListener
     private const int EventGcGlobalHeapHistory = 205;
 
     private static readonly string[] GcCountMetricNames = { MetricsNames.Gen0CollectionsCount, MetricsNames.Gen1CollectionsCount, MetricsNames.Gen2CollectionsCount };
-    private static readonly string[] GcCompactingCountMetricNames = { MetricsNames.Gen0CompactingCollectionsCount, MetricsNames.Gen1CompactingCollectionsCount, MetricsNames.Gen2CompactingCollectionsCount };
 
     private readonly FileStatsd _statsd;
 
@@ -100,17 +99,17 @@ class RuntimeEventListener : EventListener
                 {
                     var heapHistory = HeapHistory.FromPayload(eventData.Payload);
 
-                    if (heapHistory.MemoryLoad != null)
+                    if (heapHistory.MemoryLoad is { } memoryLoad)
                     {
-                        _statsd.Gauge(MetricsNames.GcMemoryLoad, heapHistory.MemoryLoad.Value);
-                    }
-
-                    if (heapHistory.Compacting)
-                    {
-                        _statsd.Increment(GcCompactingCountMetricNames[heapHistory.Generation], 1);
+                        _statsd.Gauge(MetricsNames.GcMemoryLoad, memoryLoad);
                     }
 
                     _statsd.Increment(GcCountMetricNames[heapHistory.Generation], 1);
+
+                    if (heapHistory.Compacting && heapHistory.Generation == 2)
+                    {
+                        _statsd.Increment(MetricsNames.Gen2CompactingCollectionsCount, 1);
+                    }
                 }
             }
         }
