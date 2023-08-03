@@ -54,19 +54,13 @@ public class ScenarioProcessor
         foreach (var item in _configuration.EnvironmentVariables)
         {
             var value = _templateVariables.Expand(item.Value);
-            if (!scenario.EnvironmentVariables.ContainsKey(item.Key))
-            {
-                scenario.EnvironmentVariables[item.Key] = value;
-            }
+            scenario.EnvironmentVariables.TryAdd(item.Key, value);
         }
 
         foreach (var (tagName, tagValue) in _configuration.Tags)
         {
             var value = _templateVariables.Expand(tagValue);
-            if (!scenario.Tags.ContainsKey(tagName))
-            {
-                scenario.Tags[tagName] = value;
-            }
+            scenario.Tags.TryAdd(tagName, value);
         }
 
         for (var i = 0; i < scenario.PathValidations.Count; i++)
