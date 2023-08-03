@@ -12,30 +12,23 @@ class RuntimeEventListener : EventListener
     private const string RuntimeEventSourceName = "Microsoft-Windows-DotNETRuntime";
     private const string AspNetCoreHostingEventSourceName = "Microsoft.AspNetCore.Hosting";
     private const string AspNetCoreKestrelEventSourceName = "Microsoft-AspNetCore-Server-Kestrel";
-
     private const int EventGcSuspendBegin = 9;
     private const int EventGcRestartEnd = 3;
     private const int EventGcHeapStats = 4;
     private const int EventContentionStop = 91;
     private const int EventGcGlobalHeapHistory = 205;
 
-    private static readonly string[] GcCountMetricNames = { MetricsNames.Gen0CollectionsCount, MetricsNames.Gen1CollectionsCount, MetricsNames.Gen2CollectionsCount };
-
     private readonly FileStatsd _statsd;
-
     private readonly Timing _contentionTime = new();
-
     private readonly string _delayInSeconds;
 
     private long _contentionCount;
-
     private DateTime? _gcStart;
 
     public RuntimeEventListener(FileStatsd statsd, TimeSpan delay)
     {
         _statsd = statsd;
         _delayInSeconds = ((int)delay.TotalSeconds).ToString();
-
         EventSourceCreated += (_, e) => EnableEventSource(e.EventSource);
     }
 
@@ -45,7 +38,6 @@ class RuntimeEventListener : EventListener
         // It means that the aggregations in the UI would be wrong
         _statsd.Gauge(MetricsNames.ContentionTime, _contentionTime.Clear());
         _statsd.Counter(MetricsNames.ContentionCount, Interlocked.Exchange(ref _contentionCount, 0));
-
         _statsd.Gauge(MetricsNames.ThreadPoolWorkersCount, ThreadPool.ThreadCount);
     }
 
@@ -104,11 +96,21 @@ class RuntimeEventListener : EventListener
                         _statsd.Gauge(MetricsNames.GcMemoryLoad, memoryLoad);
                     }
 
-                    _statsd.Increment(GcCountMetricNames[heapHistory.Generation], 1);
-
-                    if (heapHistory.Compacting && heapHistory.Generation == 2)
+                    if (heapHistory.Generation == 0)
                     {
-                        _statsd.Increment(MetricsNames.Gen2CompactingCollectionsCount, 1);
+                        _statsd.Increment(MetricsNames.Gen0CollectionsCount, 1);
+                    }
+                    else if (heapHistory.Generation == 1)
+                    {
+                        _statsd.Increment(MetricsNames.Gen1CollectionsCount, 1);
+                    }
+                    else if (heapHistory.Generation == 2)
+                    {
+                        _statsd.Increment(MetricsNames.Gen2CollectionsCount, 1);
+                        if (heapHistory.Compacting)
+                        {
+                            _statsd.Increment(MetricsNames.Gen2CompactingCollectionsCount, 1);
+                        }
                     }
                 }
             }
@@ -130,12 +132,10 @@ class RuntimeEventListener : EventListener
         }
         else if (eventSource.Name is AspNetCoreHostingEventSourceName or AspNetCoreKestrelEventSourceName)
         {
-            var settings = new Dictionary<string, string>
+            EnableEvents(eventSource, EventLevel.Critical, EventKeywords.All, new Dictionary<string, string>
             {
                 ["EventCounterIntervalSec"] = _delayInSeconds
-            };
-
-            EnableEvents(eventSource, EventLevel.Critical, EventKeywords.All, settings);
+            });
         }
     }
 

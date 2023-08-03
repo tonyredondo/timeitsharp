@@ -7,8 +7,6 @@ namespace TimeIt.RuntimeMetrics;
 
 internal class RuntimeMetricsWriter : IDisposable
 {
-    private static readonly Func<FileStatsd, TimeSpan, RuntimeEventListener> InitializeListenerFunc = InitializeListener;
-
     private readonly TimeSpan _delay;
     private readonly FileStatsd _statsd;
     private readonly Timer _timer;
@@ -20,12 +18,7 @@ internal class RuntimeMetricsWriter : IDisposable
     private TimeSpan _previousTotalCpu;
     private int _exceptionCounts;
 
-    public RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay)
-        : this(statsd, delay, InitializeListenerFunc)
-    {
-    }
-
-    internal RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay, Func<FileStatsd, TimeSpan, RuntimeEventListener> initializeListener)
+    internal RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay)
     {
         _delay = delay;
         _statsd = statsd;
@@ -43,7 +36,6 @@ internal class RuntimeMetricsWriter : IDisposable
         try
         {
             ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var totalCpu, out var userCpu, out var systemCpu, out _, out _);
-
             _previousUserCpu = userCpu;
             _previousSystemCpu = systemCpu;
             _previousTotalCpu = totalCpu;
@@ -57,7 +49,7 @@ internal class RuntimeMetricsWriter : IDisposable
 
         try
         {
-            _listener = initializeListener(statsd, delay);
+            _listener = new RuntimeEventListener(statsd, delay);
         }
         catch
         {
@@ -119,11 +111,6 @@ internal class RuntimeMetricsWriter : IDisposable
         {
             // .
         }
-    }
-
-    private static RuntimeEventListener InitializeListener(FileStatsd statsd, TimeSpan delay)
-    {
-        return new RuntimeEventListener(statsd, delay);
     }
 
     private void FirstChanceException(object sender, FirstChanceExceptionEventArgs e)
