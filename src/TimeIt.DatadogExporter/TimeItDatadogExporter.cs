@@ -85,7 +85,16 @@ public class TimeItDatadogExporter : IExporter
 
                 foreach (var metric in scenarioResult.Metrics)
                 {
-                    test.SetTag($"metrics.{metric.Key}", metric.Value);
+                    // Due to a backend limitation on big objects we only store metrics ending in
+                    // .n, .mean, .max, .min and .std_dev
+                    if (metric.Key.EndsWith(".n") ||
+                        metric.Key.EndsWith(".mean") ||
+                        metric.Key.EndsWith(".max") ||
+                        metric.Key.EndsWith(".min") ||
+                        metric.Key.EndsWith(".std_dev"))
+                    {
+                        test.SetTag($"metrics.{metric.Key}", metric.Value);
+                    }
                 }
 
                 // Set Error
