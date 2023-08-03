@@ -1,10 +1,33 @@
+using TimeIt;
+using TimeIt.RuntimeMetrics;
+
 public class StartupHook
 {
-    private static object? _runtimeMetrics;
+    private static RuntimeMetricsWriter? _metricsWriter;
+    private static FileStatsd? _fileStatsd;
 
     public static void Initialize()
     {
         var startDate = Clock.UtcNow;
-        _runtimeMetrics = new RuntimeMetricsInitializer(startDate);
+        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is
+            { Length: > 0 } metricsPath)
+        {
+            _fileStatsd = new FileStatsd(metricsPath);
+            _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
+            _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(50));
+            _metricsWriter.PushEvents();
+            AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
+            _fileStatsd.Gauge(Constants.MainMethodStartTimeUtcMetricName, Clock.UtcNow.ToBinary());
+        }
+    }
+
+    private static void CurrentDomainOnProcessExit(object? sender, EventArgs e)
+    {
+        if (_fileStatsd is { } fileStatsd)
+        {
+            fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            _metricsWriter?.PushEvents();
+            fileStatsd.Dispose();
+        }
     }
 }
