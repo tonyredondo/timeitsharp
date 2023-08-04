@@ -90,7 +90,8 @@ public class ConsoleExporter : IExporter
         // Summary table
         AnsiConsole.MarkupLine("[aqua bold underline]### Summary:[/]");
         var summaryTable = new Table()
-            .MarkdownBorder();
+            .MarkdownBorder()
+            .Width(170);
         
         // Add columns
         summaryTable.AddColumns(
