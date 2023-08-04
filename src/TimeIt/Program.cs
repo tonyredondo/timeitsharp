@@ -135,7 +135,9 @@ root.SetHandler(async (configFile, templateVariables) =>
 
 await root.InvokeAsync(args);
 
-string GetVersion()
+return;
+
+static string GetVersion()
 {
     var version = typeof(Utils).Assembly.GetName().Version;
     if (version is null)
