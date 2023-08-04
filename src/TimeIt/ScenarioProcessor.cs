@@ -8,7 +8,6 @@ using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Results;
-using TimeIt.RuntimeMetrics;
 
 namespace TimeIt;
 
@@ -419,6 +418,7 @@ public class ScenarioProcessor
             {
                 DateTime? inProcStartDate = null;
                 DateTime? inProcMainStartDate = null;
+                DateTime? inProcMainEndDate = null;
                 DateTime? inProcEndDate = null;
                 var metrics = new Dictionary<string, double>();
                 var metricsCount = new Dictionary<string, int>();
@@ -428,12 +428,43 @@ public class ScenarioProcessor
                     {
                         if (metricItem.Name is not null)
                         {
+                            static void EnsureMainDuration(Dictionary<string, double> values, DateTime? mainStartDate, DateTime? mainEndDate)
+                            {
+                                if (mainStartDate is not null && mainEndDate is not null)
+                                {
+                                    values[Constants.ProcessInternalDurationMetricName] =
+                                        (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
+                                }
+                            }
+
+                            static void EnsureStartupHookOverhead(
+                                DataPoint point,
+                                Dictionary<string, double> values,
+                                DateTime? startDate,
+                                DateTime? mainStartDate,
+                                DateTime? mainEndDate,
+                                DateTime? endDate)
+                            {
+                                if (startDate is not null &&
+                                    mainStartDate is not null &&
+                                    mainEndDate is not null &&
+                                    endDate is not null)
+                                {
+                                    var mainDuration = (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
+                                    var internalDuration = (endDate.Value - startDate.Value).TotalMilliseconds;
+                                    var overheadDuration = internalDuration - mainDuration;
+                                    var globalDuration = (point.End - point.Start).TotalMilliseconds; 
+                                    values[Constants.ProcessStartupHookOverheadMetricName] = overheadDuration;
+                                    values[Constants.ProcessCorrectedDurationMetricName] = globalDuration - overheadDuration;
+                                }
+                            }
+                            
                             if (metricItem.Name == Constants.ProcessStartTimeUtcMetricName)
                             {
                                 inProcStartDate = DateTime.FromBinary((long)metricItem.Value);
                                 metrics[Constants.ProcessTimeToStartMetricName] = (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
-
-
+                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                    inProcMainEndDate, inProcEndDate);
                                 continue;
                             }
 
@@ -441,23 +472,28 @@ public class ScenarioProcessor
                             {
                                 inProcMainStartDate = DateTime.FromBinary((long)metricItem.Value);
                                 metrics[Constants.ProcessTimeToMainMetricName] = (inProcMainStartDate.Value - dataPoint.Start).TotalMilliseconds;
-                                if (inProcEndDate != null)
-                                {
-                                    metrics[Constants.ProcessInternalDurationMetricName] = (inProcEndDate.Value - inProcMainStartDate.Value).TotalMilliseconds;
-                                }
-
+                                EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
+                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                    inProcMainEndDate, inProcEndDate);
                                 continue;
                             }
 
+                            if (metricItem.Name == Constants.MainMethodEndTimeUtcMetricName)
+                            {
+                                inProcMainEndDate = DateTime.FromBinary((long)metricItem.Value);
+                                metrics[Constants.ProcessTimeToMainEndMetricName] = (dataPoint.End - inProcMainEndDate.Value).TotalMilliseconds;
+                                EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
+                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                    inProcMainEndDate, inProcEndDate);
+                                continue;
+                            }
+                            
                             if (metricItem.Name == Constants.ProcessEndTimeUtcMetricName)
                             {
                                 inProcEndDate = DateTime.FromBinary((long)metricItem.Value);
                                 metrics[Constants.ProcessTimeToEndMetricName] = (dataPoint.End - inProcEndDate.Value).TotalMilliseconds;
-                                if (inProcMainStartDate != null)
-                                {
-                                    metrics[Constants.ProcessInternalDurationMetricName] = (inProcEndDate.Value - inProcMainStartDate.Value).TotalMilliseconds;
-                                }
-
+                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                    inProcMainEndDate, inProcEndDate);
                                 continue;
                             }
 

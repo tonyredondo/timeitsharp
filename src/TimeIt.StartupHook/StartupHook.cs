@@ -4,7 +4,7 @@ using TimeIt.RuntimeMetrics;
 public class StartupHook
 {
     private static RuntimeMetricsWriter? _metricsWriter;
-    private static FileStatsd? _fileStatsd;
+    private static FileStorage? _fileStatsd;
 
     public static void Initialize()
     {
@@ -12,7 +12,7 @@ public class StartupHook
         if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is
             { Length: > 0 } metricsPath)
         {
-            _fileStatsd = new FileStatsd(metricsPath);
+            _fileStatsd = new FileStorage(metricsPath);
             _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
             _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(50));
             _metricsWriter.PushEvents();
@@ -25,8 +25,9 @@ public class StartupHook
     {
         if (_fileStatsd is { } fileStatsd)
         {
-            fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            fileStatsd.Gauge(Constants.MainMethodEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
             _metricsWriter?.PushEvents();
+            fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
             fileStatsd.Dispose();
         }
     }
