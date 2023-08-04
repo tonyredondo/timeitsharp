@@ -37,3 +37,7 @@ jobs:
     - name: Build
       run: dotnet build --no-restore
       working-directory: src/TimeIt
+
+    - name: Run timeit sample
+      run: ./TimeIt config-example.json
+      working-directory: src/TimeIt/bin/Debug/net7.0
