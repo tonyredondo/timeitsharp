@@ -7,6 +7,8 @@ namespace TimeIt.RuntimeMetrics;
 
 public static class ProcessHelpers
 {
+    private static readonly Process CurrentProcess = Process.GetCurrentProcess();
+
     /// <summary>
     /// Wrapper around <see cref="Process.GetCurrentProcess"/> and its property accesses
     ///
@@ -29,11 +31,11 @@ public static class ProcessHelpers
         out int threadCount,
         out long privateMemorySize)
     {
-        using var process = Process.GetCurrentProcess();
+        var process = CurrentProcess;
         userProcessorTime = process.UserProcessorTime;
         systemCpuTime = process.PrivilegedProcessorTime;
-        totalProcessorTime = systemCpuTime + userProcessorTime;
         threadCount = process.Threads.Count;
         privateMemorySize = process.PrivateMemorySize64;
+        totalProcessorTime = systemCpuTime + userProcessorTime;
     }
 }

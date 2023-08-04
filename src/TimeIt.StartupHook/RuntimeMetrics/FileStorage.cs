@@ -3,35 +3,35 @@ using System.Runtime.CompilerServices;
 
 namespace TimeIt.RuntimeMetrics;
 
-public class FileStatsd
+public class FileStorage
 {
     private readonly StreamWriter _streamWriter;
 
-    public FileStatsd(string filePath)
+    public FileStorage(string filePath)
     {
         _streamWriter = new StreamWriter(filePath, true);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Counter(string statName, double value, double sampleRate = 1, string[]? tags = null)
+    public void Counter(string statName, double value)
     {
         WritePayload("counter", statName, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Gauge(string statName, double value, double sampleRate = 1, string[]? tags = null)
+    public void Gauge(string statName, double value)
     {
         WritePayload("gauge", statName, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Increment(string statName, int value = 1, double sampleRate = 1, string[]? tags = null)
+    public void Increment(string statName, int value = 1)
     {
         WritePayload("increment", statName, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Timer(string statName, double value, double sampleRate = 1, string[]? tags = null)
+    public void Timer(string statName, double value)
     {
         WritePayload("timer", statName, value);
     }
@@ -49,17 +49,9 @@ public class FileStatsd
     {
         lock (_streamWriter)
         {
-            _streamWriter.Write("{ \"type\": ");
-            if (type is null)
-            {
-                _streamWriter.Write("null, ");
-            }
-            else
-            {
-                _streamWriter.Write("\"");
-                _streamWriter.Write(type);
-                _streamWriter.Write("\", ");
-            }
+            _streamWriter.Write("{ \"type\": \"");
+            _streamWriter.Write(type);
+            _streamWriter.Write("\", ");
 
             _streamWriter.Write("\"name\": ");
             if (name is null)

@@ -105,14 +105,16 @@ public class ConsoleExporter : IExporter
             "[dodgerblue1 bold]Outliers[/]");
 
         // Add rows
-        foreach (var result in results)
+        var resultsList = results.ToList();
+        for (var idx = 0; idx < resultsList.Count; idx++)
         {
+            var result = resultsList[idx];
             var totalNum = result.MetricsData.Count;
 
             if (totalNum > 0)
             {
                 summaryTable.AddRow(
-                    $"[aqua]{result.Name}[/]",
+                    $"[aqua underline]{result.Name}[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms[/]",
@@ -145,11 +147,11 @@ public class ConsoleExporter : IExporter
                     string name;
                     if (i < totalNum - 1)
                     {
-                        name = "├>" + item.Key;
+                        name = "  ├>" + item.Key;
                     }
                     else
                     {
-                        name = "└>" + item.Key;
+                        name = "  └>" + item.Key;
                     }
                     
                     summaryTable.AddRow(
@@ -163,16 +165,6 @@ public class ConsoleExporter : IExporter
                         Math.Round(mP90, 6).ToString(),
                         outliersCount?.ToString() ?? "N/A");
                 }
-
-                summaryTable.AddRow(
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty,
-                    string.Empty);
             }
             else
             {

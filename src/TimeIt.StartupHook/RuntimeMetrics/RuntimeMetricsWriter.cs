@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Runtime.ExceptionServices;
+﻿using System.Runtime.ExceptionServices;
 
 #nullable disable
 
@@ -7,10 +6,8 @@ namespace TimeIt.RuntimeMetrics;
 
 internal class RuntimeMetricsWriter : IDisposable
 {
-    private static readonly Func<FileStatsd, TimeSpan, RuntimeEventListener> InitializeListenerFunc = InitializeListener;
-
     private readonly TimeSpan _delay;
-    private readonly FileStatsd _statsd;
+    private readonly FileStorage _storage;
     private readonly Timer _timer;
     private readonly RuntimeEventListener _listener;
     private readonly bool _enableProcessMetrics;
@@ -20,15 +17,10 @@ internal class RuntimeMetricsWriter : IDisposable
     private TimeSpan _previousTotalCpu;
     private int _exceptionCounts;
 
-    public RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay)
-        : this(statsd, delay, InitializeListenerFunc)
-    {
-    }
-
-    internal RuntimeMetricsWriter(FileStatsd statsd, TimeSpan delay, Func<FileStatsd, TimeSpan, RuntimeEventListener> initializeListener)
+    internal RuntimeMetricsWriter(FileStorage storage, TimeSpan delay)
     {
         _delay = delay;
-        _statsd = statsd;
+        _storage = storage;
         _timer = new Timer(_ => PushEvents(), null, delay, delay);
 
         try
@@ -43,7 +35,6 @@ internal class RuntimeMetricsWriter : IDisposable
         try
         {
             ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var totalCpu, out var userCpu, out var systemCpu, out _, out _);
-
             _previousUserCpu = userCpu;
             _previousSystemCpu = systemCpu;
             _previousTotalCpu = totalCpu;
@@ -57,7 +48,7 @@ internal class RuntimeMetricsWriter : IDisposable
 
         try
         {
-            _listener = initializeListener(statsd, delay);
+            _listener = new RuntimeEventListener(storage, delay);
         }
         catch
         {
@@ -95,35 +86,31 @@ internal class RuntimeMetricsWriter : IDisposable
                 // What we want is the number of cores attributed to the container, which is the behavior in 3.1.2+ (and, I believe, in 2.x)
                 var maximumCpu = Environment.ProcessorCount * _delay.TotalMilliseconds;
 
-                _statsd.Gauge(MetricsNames.ThreadsCount, threadCount);
+                _storage.Gauge(MetricsNames.ThreadsCount, threadCount);
 
-                _statsd.Gauge(MetricsNames.CommittedMemory, memoryUsage);
-                _statsd.Gauge(MetricsNames.PrivateBytes, memoryUsage);
+                _storage.Gauge(MetricsNames.CommittedMemory, memoryUsage);
+                _storage.Gauge(MetricsNames.PrivateBytes, memoryUsage);
 
                 // Get CPU time in milliseconds per second
-                _statsd.Gauge(MetricsNames.CpuUserTime, userCpu.TotalMilliseconds / _delay.TotalSeconds);
-                _statsd.Gauge(MetricsNames.CpuSystemTime, systemCpu.TotalMilliseconds / _delay.TotalSeconds);
-                _statsd.Gauge(MetricsNames.ProcessorTime, totalCpu.TotalMilliseconds / _delay.TotalSeconds);
+                var totalSeconds = _delay.TotalSeconds;
+                _storage.Gauge(MetricsNames.CpuUserTime, userCpu.TotalMilliseconds / totalSeconds);
+                _storage.Gauge(MetricsNames.CpuSystemTime, systemCpu.TotalMilliseconds / totalSeconds);
+                _storage.Gauge(MetricsNames.ProcessorTime, totalCpu.TotalMilliseconds / totalSeconds);
 
-                _statsd.Gauge(MetricsNames.CpuPercentage,
+                _storage.Gauge(MetricsNames.CpuPercentage,
                     Math.Round(totalCpu.TotalMilliseconds * 100 / maximumCpu, 1, MidpointRounding.AwayFromZero));
             }
 
             var exceptionCounts = Interlocked.Exchange(ref _exceptionCounts, 0);
             if (exceptionCounts > 0)
             {
-                _statsd.Increment(MetricsNames.ExceptionsCount, exceptionCounts);
+                _storage.Increment(MetricsNames.ExceptionsCount, exceptionCounts);
             }
         }
         catch
         {
             // .
         }
-    }
-
-    private static RuntimeEventListener InitializeListener(FileStatsd statsd, TimeSpan delay)
-    {
-        return new RuntimeEventListener(statsd, delay);
     }
 
     private void FirstChanceException(object sender, FirstChanceExceptionEventArgs e)

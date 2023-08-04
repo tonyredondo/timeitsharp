@@ -1,48 +1,34 @@
-using System.Reflection;
-using System.Runtime.Loader;
+using TimeIt;
+using TimeIt.RuntimeMetrics;
 
 public class StartupHook
 {
-    private static object? _runtimeMetrics;
-    private static Assembly? _runtimeMetricsAssemblyCache;
-    private static string? _hookFolder;
+    private static RuntimeMetricsWriter? _metricsWriter;
+    private static FileStorage? _fileStatsd;
 
     public static void Initialize()
     {
         var startDate = Clock.UtcNow;
-        _hookFolder = Path.GetDirectoryName(typeof(StartupHook).Assembly.Location) ?? string.Empty;
-        AssemblyLoadContext.Default.Resolving += DefaultOnResolving;
-        _runtimeMetrics = new RuntimeMetricsInitializer(startDate);
+        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is
+            { Length: > 0 } metricsPath)
+        {
+            _fileStatsd = new FileStorage(metricsPath);
+            _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
+            _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(50));
+            _metricsWriter.PushEvents();
+            AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
+            _fileStatsd.Gauge(Constants.MainMethodStartTimeUtcMetricName, Clock.UtcNow.ToBinary());
+        }
     }
 
-    private static Assembly? DefaultOnResolving(AssemblyLoadContext ctx, AssemblyName assemblyName)
+    private static void CurrentDomainOnProcessExit(object? sender, EventArgs e)
     {
-        if (_hookFolder is null)
+        if (_fileStatsd is { } fileStatsd)
         {
-            return null;
+            fileStatsd.Gauge(Constants.MainMethodEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            _metricsWriter?.PushEvents();
+            fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            fileStatsd.Dispose();
         }
-
-        const string runtimeMetricsAssemblyName = "TimeIt.RuntimeMetrics";
-        if (assemblyName.Name?.Equals(runtimeMetricsAssemblyName, StringComparison.Ordinal) == true)
-        {
-            if (_runtimeMetricsAssemblyCache is null)
-            {
-                var assemblyRuntimeMetricsPath = Path.Combine(_hookFolder, runtimeMetricsAssemblyName + ".dll");
-                if (File.Exists(assemblyRuntimeMetricsPath))
-                {
-                    _runtimeMetricsAssemblyCache = ctx.LoadFromAssemblyPath(assemblyRuntimeMetricsPath);
-                }
-            }
-
-            return _runtimeMetricsAssemblyCache;
-        }
-        
-        var otherAssemblies = Path.Combine(_hookFolder, assemblyName.Name + ".dll");
-        if (File.Exists(otherAssemblies) && AssemblyName.GetAssemblyName(otherAssemblies).Version == assemblyName.Version)
-        {
-            return ctx.LoadFromAssemblyPath(otherAssemblies);
-        }
-
-        return null;
     }
 }

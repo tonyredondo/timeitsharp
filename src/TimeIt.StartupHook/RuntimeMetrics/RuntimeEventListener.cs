@@ -12,30 +12,23 @@ class RuntimeEventListener : EventListener
     private const string RuntimeEventSourceName = "Microsoft-Windows-DotNETRuntime";
     private const string AspNetCoreHostingEventSourceName = "Microsoft.AspNetCore.Hosting";
     private const string AspNetCoreKestrelEventSourceName = "Microsoft-AspNetCore-Server-Kestrel";
-
     private const int EventGcSuspendBegin = 9;
     private const int EventGcRestartEnd = 3;
     private const int EventGcHeapStats = 4;
     private const int EventContentionStop = 91;
     private const int EventGcGlobalHeapHistory = 205;
 
-    private static readonly string[] GcCountMetricNames = { MetricsNames.Gen0CollectionsCount, MetricsNames.Gen1CollectionsCount, MetricsNames.Gen2CollectionsCount };
-
-    private readonly FileStatsd _statsd;
-
+    private readonly FileStorage _storage;
     private readonly Timing _contentionTime = new();
-
     private readonly string _delayInSeconds;
 
     private long _contentionCount;
-
     private DateTime? _gcStart;
 
-    public RuntimeEventListener(FileStatsd statsd, TimeSpan delay)
+    public RuntimeEventListener(FileStorage storage, TimeSpan delay)
     {
-        _statsd = statsd;
+        _storage = storage;
         _delayInSeconds = ((int)delay.TotalSeconds).ToString();
-
         EventSourceCreated += (_, e) => EnableEventSource(e.EventSource);
     }
 
@@ -43,15 +36,14 @@ class RuntimeEventListener : EventListener
     {
         // Can't use a Timing because Dogstatsd doesn't support local aggregation
         // It means that the aggregations in the UI would be wrong
-        _statsd.Gauge(MetricsNames.ContentionTime, _contentionTime.Clear());
-        _statsd.Counter(MetricsNames.ContentionCount, Interlocked.Exchange(ref _contentionCount, 0));
-
-        _statsd.Gauge(MetricsNames.ThreadPoolWorkersCount, ThreadPool.ThreadCount);
+        _storage.Gauge(MetricsNames.ContentionTime, _contentionTime.Clear());
+        _storage.Counter(MetricsNames.ContentionCount, Interlocked.Exchange(ref _contentionCount, 0));
+        _storage.Gauge(MetricsNames.ThreadPoolWorkersCount, ThreadPool.ThreadCount);
     }
 
     protected override void OnEventWritten(EventWrittenEventArgs eventData)
     {
-        if (_statsd == null)
+        if (_storage == null)
         {
             // I know it sounds crazy at first, but because OnEventSourceCreated is called from the base constructor,
             // and EnableEvents is called from OnEventSourceCreated, it's entirely possible that OnEventWritten
@@ -74,7 +66,7 @@ class RuntimeEventListener : EventListener
             {
                 if (_gcStart is { } start)
                 {
-                    _statsd.Timer(MetricsNames.GcPauseTime, (eventData.TimeStamp - start).TotalMilliseconds);
+                    _storage.Timer(MetricsNames.GcPauseTime, (eventData.TimeStamp - start).TotalMilliseconds);
                 }
             }
             else
@@ -83,10 +75,10 @@ class RuntimeEventListener : EventListener
                 {
                     var stats = HeapStats.FromPayload(eventData.Payload);
 
-                    _statsd.Gauge(MetricsNames.Gen0HeapSize, stats.Gen0Size);
-                    _statsd.Gauge(MetricsNames.Gen1HeapSize, stats.Gen1Size);
-                    _statsd.Gauge(MetricsNames.Gen2HeapSize, stats.Gen2Size);
-                    _statsd.Gauge(MetricsNames.LohSize, stats.LohSize);
+                    _storage.Gauge(MetricsNames.Gen0HeapSize, stats.Gen0Size);
+                    _storage.Gauge(MetricsNames.Gen1HeapSize, stats.Gen1Size);
+                    _storage.Gauge(MetricsNames.Gen2HeapSize, stats.Gen2Size);
+                    _storage.Gauge(MetricsNames.LohSize, stats.LohSize);
                 }
                 else if (eventData.EventId == EventContentionStop)
                 {
@@ -101,14 +93,24 @@ class RuntimeEventListener : EventListener
 
                     if (heapHistory.MemoryLoad is { } memoryLoad)
                     {
-                        _statsd.Gauge(MetricsNames.GcMemoryLoad, memoryLoad);
+                        _storage.Gauge(MetricsNames.GcMemoryLoad, memoryLoad);
                     }
 
-                    _statsd.Increment(GcCountMetricNames[heapHistory.Generation], 1);
-
-                    if (heapHistory.Compacting && heapHistory.Generation == 2)
+                    if (heapHistory.Generation == 0)
                     {
-                        _statsd.Increment(MetricsNames.Gen2CompactingCollectionsCount, 1);
+                        _storage.Increment(MetricsNames.Gen0CollectionsCount, 1);
+                    }
+                    else if (heapHistory.Generation == 1)
+                    {
+                        _storage.Increment(MetricsNames.Gen1CollectionsCount, 1);
+                    }
+                    else if (heapHistory.Generation == 2)
+                    {
+                        _storage.Increment(MetricsNames.Gen2CollectionsCount, 1);
+                        if (heapHistory.Compacting)
+                        {
+                            _storage.Increment(MetricsNames.Gen2CompactingCollectionsCount, 1);
+                        }
                     }
                 }
             }
@@ -130,12 +132,10 @@ class RuntimeEventListener : EventListener
         }
         else if (eventSource.Name is AspNetCoreHostingEventSourceName or AspNetCoreKestrelEventSourceName)
         {
-            var settings = new Dictionary<string, string>
+            EnableEvents(eventSource, EventLevel.Critical, EventKeywords.All, new Dictionary<string, string>
             {
                 ["EventCounterIntervalSec"] = _delayInSeconds
-            };
-
-            EnableEvents(eventSource, EventLevel.Critical, EventKeywords.All, settings);
+            });
         }
     }
 
@@ -162,7 +162,7 @@ class RuntimeEventListener : EventListener
             if (eventPayload.TryGetValue("Mean", out var rawValue) ||
                 eventPayload.TryGetValue("Increment", out rawValue))
             {
-                _statsd.Gauge(statName, (double)rawValue);
+                _storage.Gauge(statName, (double)rawValue);
             }
         }
     }
