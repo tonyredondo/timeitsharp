@@ -6,7 +6,7 @@ using TimeIt.Common.Results;
 using TimeIt.DatadogExporter;
 using System.CommandLine;
 
-AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt (v. {0}) by Tony Redondo[/]\n", typeof(Utils).Assembly.GetName().Version?.ToString() ?? "unknown");
+AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt v{0}[/]", GetVersion());
 
 var argument = new Argument<string>("configuration file", "The JSON configuration file");
 var templateVariables = new Option<TemplateVariables>("--variable", isDefault: true, description: "Variables used to instantiate the configuration file",
@@ -134,3 +134,14 @@ root.SetHandler(async (configFile, templateVariables) =>
 
 
 await root.InvokeAsync(args);
+
+string GetVersion()
+{
+    var version = typeof(Utils).Assembly.GetName().Version;
+    if (version is null)
+    {
+        return "unknown";
+    }
+
+    return $"{version.Major}.{version.Minor}.{version.Build}";
+}
