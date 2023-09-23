@@ -11,8 +11,14 @@ static class Utils
             data = data.ToList();
         }
 
-        var mean = data.Average();
         var stdDev = data.StandardDeviation();
+
+        if (stdDev == 0.0)
+        {
+            return data;
+        }
+
+        var mean = data.Average();
         return data.Where(x => Math.Abs(x - mean) <= threshold * stdDev).ToList();
     }
 
