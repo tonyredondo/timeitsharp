@@ -13,7 +13,7 @@ static class Utils
 
         var stdDev = data.StandardDeviation();
 
-        if (stdDev == 0.0)
+        if (stdDev == 0.0 || double.IsNaN(stdDev))
         {
             return data;
         }
