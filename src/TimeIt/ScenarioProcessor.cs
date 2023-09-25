@@ -6,8 +6,10 @@ using CliWrap;
 using CliWrap.Buffered;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
+using TimeIt.Common.Assertors;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Results;
+using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt;
 
@@ -15,11 +17,13 @@ public class ScenarioProcessor
 {
     private readonly Config _configuration;
     private readonly TemplateVariables _templateVariables;
+    private readonly IReadOnlyList<IAssertor> _assertors;
 
-    public ScenarioProcessor(Config configuration, TemplateVariables templateVariables)
+    public ScenarioProcessor(Config configuration, TemplateVariables templateVariables, IReadOnlyList<IAssertor> assertors)
     {
         _configuration = configuration;
         _templateVariables = templateVariables;
+        _assertors = assertors;
     }
 
     public void PrepareScenario(Scenario scenario)
@@ -131,7 +135,7 @@ public class ScenarioProcessor
     {
     }
 
-    public async Task<ScenarioResult> ProcessScenarioAsync(Scenario scenario)
+    public async Task<ScenarioResult> ProcessScenarioAsync(int index, Scenario scenario)
     {
         Stopwatch? watch = null;
         AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
@@ -168,37 +172,37 @@ public class ScenarioProcessor
                     WorkingDirectory = scenario.WorkingDirectory,
                     Timeout = scenario.Timeout,
                     Tags = scenario.Tags,
+                    Status = Status.Failed,
                 };
             }
         }
 
         AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
-        await RunScenarioAsync(_configuration.WarmUpCount, scenario).ConfigureAwait(false);
+        await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false).ConfigureAwait(false);
         AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
         watch = Stopwatch.StartNew();
-        var dataPoints = await RunScenarioAsync(_configuration.Count, scenario).ConfigureAwait(false);
+        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, true).ConfigureAwait(false);
         watch.Stop();
         AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.WriteLine();
 
         var durations = new List<double>();
         var metricsData = new Dictionary<string, List<double>>();
-        var mapErrors = new HashSet<string>();
         foreach (var item in dataPoints)
         {
+            if (item.Status != Status.Passed)
+            {
+                continue;
+            }
+
 #if NET7_0_OR_GREATER
             durations.Add(item.Duration.TotalNanoseconds);
 #else
             durations.Add(Utils.FromTimeSpanToNanoseconds(item.Duration));
 #endif
-            if (!string.IsNullOrEmpty(item.Error))
-            {
-                mapErrors.Add(item.Error);
-            }
-
             foreach (var kv in item.Metrics)
             {
                 if (!metricsData.TryGetValue(kv.Key, out var metricsItem))
@@ -210,8 +214,6 @@ public class ScenarioProcessor
                 metricsItem.Add(kv.Value);
             }
         }
-
-        var errorString = string.Join(Environment.NewLine, mapErrors);
 
         // Get outliers
         var newDurations = Utils.RemoveOutliers(durations, 2.0).ToList();
@@ -253,6 +255,7 @@ public class ScenarioProcessor
             metricsStats[key + ".outliers"] = originalMetricsValue.Count - metricsValue.Count;
         }
 
+        var assertResponse = ScenarioAssertion(dataPoints);
         return new ScenarioResult
         {
             Count = _configuration.Count,
@@ -273,7 +276,7 @@ public class ScenarioProcessor
             Start = start,
             End = start + watch.Elapsed,
             Duration = watch.Elapsed,
-            Error = errorString,
+            Error = assertResponse.Message,
             Name = scenario.Name,
             ProcessName = scenario.ProcessName,
             ProcessArguments = scenario.ProcessArguments,
@@ -282,23 +285,24 @@ public class ScenarioProcessor
             WorkingDirectory = scenario.WorkingDirectory,
             Timeout = scenario.Timeout,
             Tags = scenario.Tags,
+            Status = assertResponse.Status,
         };
     }
 
-    private async Task<List<DataPoint>> RunScenarioAsync(int count, Scenario scenario)
+    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, bool checkShouldContinue)
     {
         var dataPoints = new List<DataPoint>();
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
         {
-            var currentRun = await RunCommandAsync(scenario).ConfigureAwait(false);
+            var currentRun = await RunCommandAsync(index, scenario).ConfigureAwait(false);
             dataPoints.Add(currentRun);
-            if (!currentRun.ShouldContinue)
+            AnsiConsole.Markup(currentRun.Status == Status.Failed ? "[red]x[/]" : "[green].[/]");
+
+            if (checkShouldContinue && !currentRun.ShouldContinue)
             {
                 break;
             }
-
-            AnsiConsole.Markup(!string.IsNullOrEmpty(currentRun.Error) ? "[red]x[/]" : "[green].[/]");
         }
 
         AnsiConsole.WriteLine();
@@ -306,7 +310,7 @@ public class ScenarioProcessor
         return dataPoints;
     }
 
-    private static async Task<DataPoint> RunCommandAsync(Scenario scenario)
+    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario)
     {
         // Prepare variables
         var cmdString = scenario.ProcessName ?? string.Empty;
@@ -360,10 +364,7 @@ public class ScenarioProcessor
             dataPoint.End = DateTime.UtcNow;
             dataPoint.Duration = cmdResult.RunTime;
             dataPoint.Start = dataPoint.End - dataPoint.Duration;
-            if (cmdResult.ExitCode != 0)
-            {
-                dataPoint.Error = cmdResult.StandardError + Environment.NewLine + cmdResult.StandardOutput;
-            }
+            ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
         }
         else
         {
@@ -390,10 +391,7 @@ public class ScenarioProcessor
                 timeoutCts?.Cancel();
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
-                if (cmdResult.ExitCode != 0)
-                {
-                    dataPoint.Error = cmdResult.StandardError + Environment.NewLine + cmdResult.StandardOutput;
-                }
+                ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)
             {
@@ -550,7 +548,19 @@ public class ScenarioProcessor
         return dataPoint;
     }
 
-    private static async Task RunCommandTimeoutAsync(TimeSpan timeout, string timeoutCmd, string timeoutArgument,
+    private void ExecuteAssertions(int scenarioId, string scenarioName, DataPoint dataPoint, BufferedCommandResult cmdResult)
+    {
+        var assertionData = new AssertionData(scenarioId, scenarioName, dataPoint.Start, dataPoint.End,
+            dataPoint.Duration, cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError);
+        var assertionResult = ExecutionAssertion(in assertionData);
+        dataPoint.AssertResults = assertionResult;
+        if (assertionResult.Status == Status.Failed && string.IsNullOrEmpty(dataPoint.Error))
+        {
+            dataPoint.Error = "Execution has failed by the status value = Failed.";
+        }
+    }
+
+    private async Task RunCommandTimeoutAsync(TimeSpan timeout, string timeoutCmd, string timeoutArgument,
         string workingDirectory, int targetPid, Action? targetCancellation, CancellationToken cancellationToken)
     {
         try
@@ -588,5 +598,85 @@ public class ScenarioProcessor
         {
             targetCancellation?.Invoke();
         }
+    }
+
+    private AssertResponse ScenarioAssertion(IReadOnlyList<DataPoint> dataPoints)
+    {
+        if (_assertors is null || _assertors.Count == 0)
+        {
+            return new AssertResponse(Status.Passed);
+        }
+
+        Status status = Status.Passed;
+        bool shouldContinue = true;
+        HashSet<string>? messagesHashSet = null;
+        foreach (var assertor in _assertors)
+        {
+            if (assertor is null)
+            {
+                continue;
+            }
+
+            var result = assertor.ScenarioAssertion(dataPoints);
+            shouldContinue = shouldContinue && result.ShouldContinue;
+            if (result.Status == Status.Failed)
+            {
+                status = Status.Failed;
+            }
+
+            if (!string.IsNullOrEmpty(result.Message))
+            {
+                messagesHashSet ??= new HashSet<string>();
+                messagesHashSet.Add(result.Message);
+            }
+        }
+
+        string message = string.Empty;
+        if (messagesHashSet?.Count > 0)
+        {
+            message = string.Join(Environment.NewLine, messagesHashSet);
+        }
+
+        return new AssertResponse(status, shouldContinue, message);
+    }
+
+    private AssertResponse ExecutionAssertion(in AssertionData data)
+    {
+        if (_assertors is null || _assertors.Count == 0)
+        {
+            return new AssertResponse(Status.Passed);
+        }
+
+        Status status = Status.Passed;
+        bool shouldContinue = true;
+        HashSet<string>? messagesHashSet = null;
+        foreach (var assertor in _assertors)
+        {
+            if (assertor is null)
+            {
+                continue;
+            }
+
+            var result = assertor.ExecutionAssertion(in data);
+            shouldContinue = shouldContinue && result.ShouldContinue;
+            if (result.Status == Status.Failed)
+            {
+                status = Status.Failed;
+            }
+
+            if (!string.IsNullOrEmpty(result.Message))
+            {
+                messagesHashSet ??= new HashSet<string>();
+                messagesHashSet.Add(result.Message);
+            }
+        }
+
+        string message = string.Empty;
+        if (messagesHashSet?.Count > 0)
+        {
+            message = string.Join(Environment.NewLine, messagesHashSet);
+        }
+
+        return new AssertResponse(status, shouldContinue, message);
     }
 }

@@ -3,6 +3,11 @@
   "enableMetrics": true,
   "warmUpCount": 10,
   "count": 100,
+  "assertors" : [
+    {
+      "name": "DefaultAssertor"
+    }
+  ],
   "scenarios": [
     {
       "name": "Callsite",

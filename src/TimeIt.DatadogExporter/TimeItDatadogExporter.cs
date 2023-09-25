@@ -2,8 +2,9 @@
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
-using TimeIt.Common.Exporter;
+using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
+using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt.DatadogExporter;
 
@@ -119,7 +120,7 @@ public class TimeItDatadogExporter : IExporter
                 }
 
                 // Close test
-                test.Close(string.IsNullOrEmpty(scenarioResult.Error) ? TestStatus.Pass : TestStatus.Fail,
+                test.Close(scenarioResult.Status == Status.Passed ? TestStatus.Pass : TestStatus.Fail,
                     scenarioResult.Duration);
             }
         }

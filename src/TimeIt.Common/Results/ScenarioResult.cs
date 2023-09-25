@@ -62,6 +62,10 @@ public class ScenarioResult : Scenario
     [JsonPropertyName("metricsData")]
     public Dictionary<string, List<double>> MetricsData { get; set; }
 
+    [JsonPropertyName("status")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public Status Status { get; set; }
+
     public ScenarioResult()
     {
         Error = string.Empty;
@@ -70,5 +74,6 @@ public class ScenarioResult : Scenario
         Outliers = new List<double>();
         Metrics = new Dictionary<string, double>();
         MetricsData = new Dictionary<string, List<double>>();
+        Status = Status.Passed;
     }
 }
