@@ -177,7 +177,6 @@ public class ScenarioProcessor
             }
         }
 
-        var status = Status.Passed;
         AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
         await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false).ConfigureAwait(false);
@@ -192,12 +191,11 @@ public class ScenarioProcessor
 
         var durations = new List<double>();
         var metricsData = new Dictionary<string, List<double>>();
-        var mapErrors = new HashSet<string>();
         foreach (var item in dataPoints)
         {
-            if (item.Status == Status.Failed)
+            if (item.Status != Status.Passed)
             {
-                status = Status.Failed;
+                continue;
             }
 
 #if NET7_0_OR_GREATER
@@ -205,11 +203,6 @@ public class ScenarioProcessor
 #else
             durations.Add(Utils.FromTimeSpanToNanoseconds(item.Duration));
 #endif
-            if (!string.IsNullOrEmpty(item.Error))
-            {
-                mapErrors.Add(item.Error);
-            }
-
             foreach (var kv in item.Metrics)
             {
                 if (!metricsData.TryGetValue(kv.Key, out var metricsItem))
@@ -221,8 +214,6 @@ public class ScenarioProcessor
                 metricsItem.Add(kv.Value);
             }
         }
-
-        var errorString = string.Join(Environment.NewLine, mapErrors);
 
         // Get outliers
         var newDurations = Utils.RemoveOutliers(durations, 2.0).ToList();
@@ -264,6 +255,7 @@ public class ScenarioProcessor
             metricsStats[key + ".outliers"] = originalMetricsValue.Count - metricsValue.Count;
         }
 
+        var assertResponse = ScenarioAssertion(dataPoints);
         return new ScenarioResult
         {
             Count = _configuration.Count,
@@ -284,7 +276,7 @@ public class ScenarioProcessor
             Start = start,
             End = start + watch.Elapsed,
             Duration = watch.Elapsed,
-            Error = errorString,
+            Error = assertResponse.Message,
             Name = scenario.Name,
             ProcessName = scenario.ProcessName,
             ProcessArguments = scenario.ProcessArguments,
@@ -293,7 +285,7 @@ public class ScenarioProcessor
             WorkingDirectory = scenario.WorkingDirectory,
             Timeout = scenario.Timeout,
             Tags = scenario.Tags,
-            Status = status,
+            Status = assertResponse.Status,
         };
     }
 
@@ -561,15 +553,10 @@ public class ScenarioProcessor
         var assertionData = new AssertionData(scenarioId, scenarioName, dataPoint.Start, dataPoint.End,
             dataPoint.Duration, cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError);
         var assertionResult = ExecutionAssertion(in assertionData);
-        dataPoint.Status = assertionResult.Status;
-        dataPoint.ShouldContinue = assertionResult.ShouldContinue;
-        if (assertionResult.Status == Status.Failed)
+        dataPoint.AssertResults = assertionResult;
+        if (assertionResult.Status == Status.Failed && string.IsNullOrEmpty(dataPoint.Error))
         {
-            dataPoint.Error = assertionResult.Message;
-            if (string.IsNullOrEmpty(dataPoint.Error))
-            {
-                dataPoint.Error = "Execution has failed by the status value = Failed.";
-            }
+            dataPoint.Error = "Execution has failed by the status value = Failed.";
         }
     }
 
@@ -613,6 +600,46 @@ public class ScenarioProcessor
         }
     }
 
+    private AssertResponse ScenarioAssertion(IReadOnlyList<DataPoint> dataPoints)
+    {
+        if (_assertors is null || _assertors.Count == 0)
+        {
+            return new AssertResponse(Status.Passed);
+        }
+
+        Status status = Status.Passed;
+        bool shouldContinue = true;
+        HashSet<string>? messagesHashSet = null;
+        foreach (var assertor in _assertors)
+        {
+            if (assertor is null)
+            {
+                continue;
+            }
+
+            var result = assertor.ScenarioAssertion(dataPoints);
+            shouldContinue = shouldContinue && result.ShouldContinue;
+            if (result.Status == Status.Failed)
+            {
+                status = Status.Failed;
+            }
+
+            if (!string.IsNullOrEmpty(result.Message))
+            {
+                messagesHashSet ??= new HashSet<string>();
+                messagesHashSet.Add(result.Message);
+            }
+        }
+
+        string message = string.Empty;
+        if (messagesHashSet?.Count > 0)
+        {
+            message = string.Join(Environment.NewLine, messagesHashSet);
+        }
+
+        return new AssertResponse(status, shouldContinue, message);
+    }
+
     private AssertResponse ExecutionAssertion(in AssertionData data)
     {
         if (_assertors is null || _assertors.Count == 0)
@@ -620,7 +647,9 @@ public class ScenarioProcessor
             return new AssertResponse(Status.Passed);
         }
 
+        Status status = Status.Passed;
         bool shouldContinue = true;
+        HashSet<string>? messagesHashSet = null;
         foreach (var assertor in _assertors)
         {
             if (assertor is null)
@@ -632,10 +661,22 @@ public class ScenarioProcessor
             shouldContinue = shouldContinue && result.ShouldContinue;
             if (result.Status == Status.Failed)
             {
-                return result;
+                status = Status.Failed;
+            }
+
+            if (!string.IsNullOrEmpty(result.Message))
+            {
+                messagesHashSet ??= new HashSet<string>();
+                messagesHashSet.Add(result.Message);
             }
         }
 
-        return new AssertResponse(Status.Passed, shouldContinue);
+        string message = string.Empty;
+        if (messagesHashSet?.Count > 0)
+        {
+            message = string.Join(Environment.NewLine, messagesHashSet);
+        }
+
+        return new AssertResponse(status, shouldContinue, message);
     }
 }

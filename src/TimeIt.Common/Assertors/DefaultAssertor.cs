@@ -9,6 +9,37 @@ public class DefaultAssertor : Assertor
     private int _currentScenario = -1;
     private int _consecutiveErrorCount = 0;
 
+    public override AssertResponse ScenarioAssertion(IReadOnlyList<DataPoint> dataPoints)
+    {
+        // if 10% of the datapoints failed then we set the scenario as a failure.
+        var maxErrorsUntilFailure = dataPoints.Count / 10; 
+        var errorsHashSet = new HashSet<string>();
+        var status = Status.Passed;
+        var numOfErrors = 0;
+        foreach (var dataPoint in dataPoints)
+        {
+            if (!string.IsNullOrEmpty(dataPoint.AssertResults.Message))
+            {
+                errorsHashSet.Add(dataPoint.AssertResults.Message);
+                if (dataPoint.Status == Status.Failed)
+                {
+                    if (++numOfErrors >= maxErrorsUntilFailure)
+                    {
+                        status = Status.Failed;
+                    }
+                }
+            }
+        }
+
+        var message = string.Empty;
+        if (errorsHashSet.Count > 0)
+        {
+            message = string.Join(Environment.NewLine, errorsHashSet);
+        }
+
+        return new AssertResponse(status, message);
+    }
+
     public override AssertResponse ExecutionAssertion(in AssertionData data)
     {
         if (_currentScenario != data.ScenarioId)

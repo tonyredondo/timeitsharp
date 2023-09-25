@@ -28,4 +28,11 @@ public readonly struct AssertResponse
         ShouldContinue = true;
         Message = string.Empty;
     }
+
+    public AssertResponse(Status status, string message)
+    {
+        Status = status;
+        ShouldContinue = true;
+        Message = message;
+    }
 }
