@@ -8,6 +8,7 @@ using System.CommandLine;
 using System.Reflection;
 using System.Runtime.Loader;
 using TimeIt.Common.Assertors;
+using Status = TimeIt.Common.Results.Status;
 
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt v{0}[/]", GetVersion());
 
@@ -163,7 +164,7 @@ root.SetHandler(async (configFile, templateVariables) =>
 
             // Process scenario
             var result = await processor.ProcessScenarioAsync(i, scenario).ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(result.Error))
+            if (result.Status != Status.Passed)
             {
                 scenarioWithErrors++;
             }
@@ -171,43 +172,24 @@ root.SetHandler(async (configFile, templateVariables) =>
             scenariosResults.Add(result);
         }
 
-        if (scenarioWithErrors < config.Scenarios.Count)
+        // Export data
+        foreach (var exporter in exporters)
         {
-            // Export data
-            foreach (var exporter in exporters)
+            exporter.SetConfiguration(config);
+            if (exporter.Enabled)
             {
-                exporter.SetConfiguration(config);
-                if (exporter.Enabled)
-                {
-                    exporter.Export(scenariosResults);
-                }
-            }
-
-            // Clean scenarios
-            foreach (var scenario in config.Scenarios)
-            {
-                processor.CleanScenario(scenario);
+                exporter.Export(scenariosResults);
             }
         }
-        else
+
+        // Clean scenarios
+        foreach (var scenario in config.Scenarios)
         {
-            AnsiConsole.WriteLine();
+            processor.CleanScenario(scenario);
+        }
 
-            for (var i = 0; i < scenariosResults.Count; i++)
-            {
-                if (!string.IsNullOrEmpty(scenariosResults[i].Error))
-                {
-                    AnsiConsole.MarkupLine("[red]Error in Scenario[/]: {0}", scenariosResults[i].Name);
-                    AnsiConsole.WriteLine(scenariosResults[i].Error);
-                }
-            }
-
-            // Clean scenarios
-            foreach (var scenario in config.Scenarios)
-            {
-                processor.CleanScenario(scenario);
-            }
-
+        if (scenarioWithErrors > 0)
+        {
             Environment.Exit(1);
         }
     }
