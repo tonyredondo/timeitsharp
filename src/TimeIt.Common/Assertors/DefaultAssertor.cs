@@ -28,7 +28,10 @@ public class DefaultAssertor : Assertor
             var message = _sbuilder.ToString();
             _sbuilder.Clear();
             _consecutiveErrorCount++;
-            return new AssertResponse(Status.Failed, _consecutiveErrorCount < 5, message);
+            return new AssertResponse(
+                status: Status.Failed,
+                shouldContinue: _consecutiveErrorCount < 5,
+                message: message);
         }
 
         _consecutiveErrorCount = 0;
