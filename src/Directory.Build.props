@@ -2,7 +2,7 @@
     <PropertyGroup>
         <Version>0.0.17</Version>
         <Authors>Tony Redondo, Grégory Léocadie</Authors>
-        <TargetFrameworks>net5.0;net6.0;net7.0</TargetFrameworks>
+        <TargetFrameworks>net5.0;net6.0;net7.0;net8.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>11</LangVersion>
