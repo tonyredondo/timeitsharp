@@ -3,6 +3,7 @@ using Spectre.Console;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
+using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt;
 
@@ -95,6 +96,7 @@ public class ConsoleExporter : IExporter
         // Add columns
         summaryTable.AddColumns(
             "[dodgerblue1 bold]Name[/]",
+            "[dodgerblue1 bold]Status[/]",
             "[dodgerblue1 bold]Mean[/]",
             "[dodgerblue1 bold]StdDev[/]",
             "[dodgerblue1 bold]StdErr[/]",
@@ -115,6 +117,7 @@ public class ConsoleExporter : IExporter
             {
                 summaryTable.AddRow(
                     $"[aqua underline]{result.Name}[/]",
+                    $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms[/]",
                     $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms[/]",
@@ -156,6 +159,7 @@ public class ConsoleExporter : IExporter
                     
                     summaryTable.AddRow(
                         name,
+                        string.Empty,
                         Math.Round(mMean, 6).ToString(),
                         Math.Round(mStdDev, 6).ToString(),
                         Math.Round(mStdErr, 6).ToString(),
@@ -183,5 +187,15 @@ public class ConsoleExporter : IExporter
         // Write table
         AnsiConsole.Write(summaryTable);
         AnsiConsole.WriteLine();
+
+        // Write Errors
+        for (var idx = 0; idx < resultsList.Count; idx++)
+        {
+            var result = resultsList[idx];
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                AnsiConsole.MarkupLine("[red bold]Scenario '{0}':[/]{1}", result.Name, result.Error);
+            }
+        }
     }
 }

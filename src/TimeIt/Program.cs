@@ -153,13 +153,15 @@ root.SetHandler(async (configFile, templateVariables) =>
     var scenarioWithErrors = 0;
     if (config is { Count: > 0, Scenarios.Count: > 0 })
     {
-        foreach (var scenario in config.Scenarios)
+        for(var i = 0; i < config.Scenarios.Count; i++)
         {
+            var scenario = config.Scenarios[i];
+
             // Prepare scenario
             processor.PrepareScenario(scenario);
 
             // Process scenario
-            var result = await processor.ProcessScenarioAsync(scenario).ConfigureAwait(false);
+            var result = await processor.ProcessScenarioAsync(i, scenario).ConfigureAwait(false);
             if (!string.IsNullOrEmpty(result.Error))
             {
                 scenarioWithErrors++;
