@@ -1,9 +1,17 @@
-﻿using MathNet.Numerics.Statistics;
-
-namespace TimeIt;
+﻿namespace TimeIt;
 
 static class Utils
 {
+    public static double StandardDeviation(this IEnumerable<double> data)
+    {
+        var stdDev = MathNet.Numerics.Statistics.Statistics.StandardDeviation(data);
+        if (double.IsNaN(stdDev))
+        {
+            return 0.0;
+        }
+        return stdDev;
+    }
+
     public static IEnumerable<double> RemoveOutliers(IEnumerable<double> data, double threshold)
     {
         if (data is not List<double>)
