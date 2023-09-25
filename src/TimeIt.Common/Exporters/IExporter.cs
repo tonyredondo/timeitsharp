@@ -1,7 +1,7 @@
 ﻿using TimeIt.Common.Configuration;
 using TimeIt.Common.Results;
 
-namespace TimeIt.Common.Exporter;
+namespace TimeIt.Common.Exporters;
 
 public interface IExporter
 {

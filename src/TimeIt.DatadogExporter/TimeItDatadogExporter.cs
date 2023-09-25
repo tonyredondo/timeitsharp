@@ -2,7 +2,7 @@
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
-using TimeIt.Common.Exporter;
+using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 
 namespace TimeIt.DatadogExporter;

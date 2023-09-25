@@ -19,6 +19,9 @@ public class DataPoint
     [JsonPropertyName("metrics")]
     public Dictionary<string, double> Metrics { get; set; }
     
+    [JsonPropertyName("status")]
+    public Status Status { get; set; }
+    
     [JsonIgnore]
     public bool ShouldContinue { get; set; }
 

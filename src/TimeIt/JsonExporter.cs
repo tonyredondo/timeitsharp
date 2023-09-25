@@ -1,7 +1,7 @@
 ﻿using System.Text.Json;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
-using TimeIt.Common.Exporter;
+using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 
 namespace TimeIt;

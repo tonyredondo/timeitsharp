@@ -1,10 +1,13 @@
 ﻿using Spectre.Console;
 using TimeIt;
 using TimeIt.Common.Configuration;
-using TimeIt.Common.Exporter;
+using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 using TimeIt.DatadogExporter;
 using System.CommandLine;
+using System.Reflection;
+using System.Runtime.Loader;
+using TimeIt.Common.Assertors;
 
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt v{0}[/]", GetVersion());
 
@@ -55,14 +58,89 @@ root.SetHandler(async (configFile, templateVariables) =>
     var config = Config.LoadConfiguration(configFile);
     config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
 
-    // Create scenario processor
-    var processor = new ScenarioProcessor(config, templateVariables);
-
     // Enable exporters
     var exporters = new List<IExporter>();
     exporters.Add(new ConsoleExporter());
     exporters.Add(new JsonExporter());
     exporters.Add(new TimeItDatadogExporter());
+    
+    // Assertors
+    var assertors = new List<IAssertor>();
+    if (config.Assertors is null || config.Assertors.Count == 0)
+    {
+        assertors.Add(new DefaultAssertor());
+    }
+    else
+    {
+        foreach (var assertor in config.Assertors)
+        {
+            if (assertor is null)
+            {
+                continue;
+            }
+
+            var asmLoadContext = AssemblyLoadContext.Default;
+            if (!string.IsNullOrEmpty(assertor.FilePath))
+            {
+                var assembly = asmLoadContext.LoadFromAssemblyPath(assertor.FilePath);
+                if (!string.IsNullOrEmpty(assertor.Type))
+                {
+                    if (assembly.GetType(assertor.Type, throwOnError: true) is { } type)
+                    {
+                        if (Activator.CreateInstance(type) is IAssertor instance)
+                        {
+                            assertors.Add(instance);
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0}", type.FullName ?? string.Empty);
+                        }
+                    }
+                }
+            }
+            else if (!string.IsNullOrEmpty(assertor.Name))
+            {
+                foreach (var assembly in asmLoadContext.Assemblies)
+                {
+                    foreach (var typeInfo in assembly.DefinedTypes)
+                    {
+                        if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum)
+                        {
+                            continue;
+                        }
+
+                        foreach (var iface in typeInfo.ImplementedInterfaces)
+                        {
+                            if (iface is null)
+                            {
+                                continue;
+                            }
+
+                            if (iface.FullName == typeof(IAssertor).FullName)
+                            {
+                                if (Activator.CreateInstance(typeInfo) is IAssertor instance && instance.Name == assertor.Name)
+                                {
+                                    assertors.Add(instance);
+                                }
+                                else
+                                {
+                                    AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0} | {1}", assertor.Name, typeInfo.FullName ?? string.Empty);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    foreach (var assertor in assertors)
+    {
+        assertor.SetConfiguration(config);
+    }
+    
+    // Create scenario processor
+    var processor = new ScenarioProcessor(config, templateVariables, assertors);
 
     AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
     AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.Count);

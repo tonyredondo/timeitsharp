@@ -6,8 +6,10 @@ using CliWrap;
 using CliWrap.Buffered;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
+using TimeIt.Common.Assertors;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Results;
+using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt;
 
@@ -15,11 +17,13 @@ public class ScenarioProcessor
 {
     private readonly Config _configuration;
     private readonly TemplateVariables _templateVariables;
+    private readonly IReadOnlyList<IAssertor> _assertors;
 
-    public ScenarioProcessor(Config configuration, TemplateVariables templateVariables)
+    public ScenarioProcessor(Config configuration, TemplateVariables templateVariables, IReadOnlyList<IAssertor> assertors)
     {
         _configuration = configuration;
         _templateVariables = templateVariables;
+        _assertors = assertors;
     }
 
     public void PrepareScenario(Scenario scenario)
@@ -174,12 +178,12 @@ public class ScenarioProcessor
 
         AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
-        await RunScenarioAsync(_configuration.WarmUpCount, scenario).ConfigureAwait(false);
+        await RunScenarioAsync(_configuration.WarmUpCount, scenario, false).ConfigureAwait(false);
         AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
         watch = Stopwatch.StartNew();
-        var dataPoints = await RunScenarioAsync(_configuration.Count, scenario).ConfigureAwait(false);
+        var dataPoints = await RunScenarioAsync(_configuration.Count, scenario, true).ConfigureAwait(false);
         watch.Stop();
         AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.WriteLine();
@@ -285,7 +289,7 @@ public class ScenarioProcessor
         };
     }
 
-    private async Task<List<DataPoint>> RunScenarioAsync(int count, Scenario scenario)
+    private async Task<List<DataPoint>> RunScenarioAsync(int count, Scenario scenario, bool checkShouldContinue)
     {
         var dataPoints = new List<DataPoint>();
         AnsiConsole.Markup(" ");
@@ -293,12 +297,12 @@ public class ScenarioProcessor
         {
             var currentRun = await RunCommandAsync(scenario).ConfigureAwait(false);
             dataPoints.Add(currentRun);
-            if (!currentRun.ShouldContinue)
+            AnsiConsole.Markup(currentRun.Status == Status.Failed ? "[red]x[/]" : "[green].[/]");
+
+            if (checkShouldContinue && !currentRun.ShouldContinue)
             {
                 break;
             }
-
-            AnsiConsole.Markup(!string.IsNullOrEmpty(currentRun.Error) ? "[red]x[/]" : "[green].[/]");
         }
 
         AnsiConsole.WriteLine();
@@ -306,7 +310,7 @@ public class ScenarioProcessor
         return dataPoints;
     }
 
-    private static async Task<DataPoint> RunCommandAsync(Scenario scenario)
+    private async Task<DataPoint> RunCommandAsync(Scenario scenario)
     {
         // Prepare variables
         var cmdString = scenario.ProcessName ?? string.Empty;
@@ -360,10 +364,7 @@ public class ScenarioProcessor
             dataPoint.End = DateTime.UtcNow;
             dataPoint.Duration = cmdResult.RunTime;
             dataPoint.Start = dataPoint.End - dataPoint.Duration;
-            if (cmdResult.ExitCode != 0)
-            {
-                dataPoint.Error = cmdResult.StandardError + Environment.NewLine + cmdResult.StandardOutput;
-            }
+            ExecuteAssertions(dataPoint, cmdResult);
         }
         else
         {
@@ -390,10 +391,7 @@ public class ScenarioProcessor
                 timeoutCts?.Cancel();
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
-                if (cmdResult.ExitCode != 0)
-                {
-                    dataPoint.Error = cmdResult.StandardError + Environment.NewLine + cmdResult.StandardOutput;
-                }
+                ExecuteAssertions(dataPoint, cmdResult);
             }
             catch (TaskCanceledException)
             {
@@ -550,7 +548,24 @@ public class ScenarioProcessor
         return dataPoint;
     }
 
-    private static async Task RunCommandTimeoutAsync(TimeSpan timeout, string timeoutCmd, string timeoutArgument,
+    private void ExecuteAssertions(DataPoint dataPoint, BufferedCommandResult cmdResult)
+    {
+        var assertionData = new AssertionData(dataPoint.Start, dataPoint.End, dataPoint.Duration,
+            cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError);
+        var assertionResult = ExecutionAssertion(in assertionData);
+        dataPoint.Status = assertionResult.Status;
+        dataPoint.ShouldContinue = assertionResult.ShouldContinue;
+        if (assertionResult.Status == Status.Failed)
+        {
+            dataPoint.Error = assertionResult.Message;
+            if (string.IsNullOrEmpty(dataPoint.Error))
+            {
+                dataPoint.Error = "Execution has failed by the status value = Failed.";
+            }
+        }
+    }
+
+    private async Task RunCommandTimeoutAsync(TimeSpan timeout, string timeoutCmd, string timeoutArgument,
         string workingDirectory, int targetPid, Action? targetCancellation, CancellationToken cancellationToken)
     {
         try
@@ -588,5 +603,31 @@ public class ScenarioProcessor
         {
             targetCancellation?.Invoke();
         }
+    }
+
+    private AssertResponse ExecutionAssertion(in AssertionData data)
+    {
+        if (_assertors is null || _assertors.Count == 0)
+        {
+            return new AssertResponse(Status.Passed);
+        }
+
+        bool shouldContinue = true;
+        foreach (var assertor in _assertors)
+        {
+            if (assertor is null)
+            {
+                continue;
+            }
+
+            var result = assertor.ExecutionAssertion(in data);
+            shouldContinue = shouldContinue && result.ShouldContinue;
+            if (result.Status == Status.Failed)
+            {
+                return result;
+            }
+        }
+
+        return new AssertResponse(Status.Passed, shouldContinue);
     }
 }
