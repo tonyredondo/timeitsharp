@@ -20,6 +20,7 @@ public class DataPoint
     public Dictionary<string, double> Metrics { get; set; }
     
     [JsonPropertyName("status")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public Status Status { get; set; }
     
     [JsonIgnore]

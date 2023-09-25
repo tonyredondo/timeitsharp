@@ -63,6 +63,7 @@ public class ScenarioResult : Scenario
     public Dictionary<string, List<double>> MetricsData { get; set; }
 
     [JsonPropertyName("status")]
+    [JsonConverter(typeof(JsonStringEnumConverter))]
     public Status Status { get; set; }
 
     public ScenarioResult()
