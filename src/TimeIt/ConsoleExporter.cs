@@ -194,7 +194,7 @@ public class ConsoleExporter : IExporter
             var result = resultsList[idx];
             if (!string.IsNullOrEmpty(result.Error))
             {
-                AnsiConsole.MarkupLine("[red bold]Scenario '{0}':[/]{1}", result.Name, result.Error);
+                AnsiConsole.MarkupLine("[red bold]Scenario '{0}':[/]{1}{2}", result.Name, Environment.NewLine, result.Error);
             }
         }
     }

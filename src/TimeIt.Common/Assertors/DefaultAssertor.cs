@@ -22,7 +22,6 @@ public class DefaultAssertor : Assertor
             _sbuilder.AppendLine($"ExitCode: {data.ExitCode}");
             _sbuilder.AppendLine("Standard Error: ");
             _sbuilder.AppendLine(data.StandardError);
-            _sbuilder.AppendLine();
             _sbuilder.AppendLine("Standard Output: ");
             _sbuilder.AppendLine(data.StandardOutput);
             var message = _sbuilder.ToString();
