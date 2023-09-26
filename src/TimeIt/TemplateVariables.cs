@@ -3,7 +3,7 @@ using System.Text;
 
 namespace TimeIt;
 
-public class TemplateVariables
+public sealed class TemplateVariables
 {
     private static readonly string VariableOpen = "$(";
     private static readonly string VariableClose = ")";

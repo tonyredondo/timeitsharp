@@ -8,7 +8,7 @@ using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt.DatadogExporter;
 
-public class TimeItDatadogExporter : IExporter
+public sealed class TimeItDatadogExporter : IExporter
 {
     private Config? _configuration;
     private readonly TestSession _testSession;

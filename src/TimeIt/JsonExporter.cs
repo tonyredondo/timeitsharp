@@ -6,7 +6,7 @@ using TimeIt.Common.Results;
 
 namespace TimeIt;
 
-public class JsonExporter : IExporter
+public sealed class JsonExporter : IExporter
 {
     private Config? _configuration;
 

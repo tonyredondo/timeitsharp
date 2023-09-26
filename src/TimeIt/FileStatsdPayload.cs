@@ -2,7 +2,7 @@
 
 namespace TimeIt;
 
-public class FileStatsdPayload
+public sealed class FileStatsdPayload
 {
     public FileStatsdPayload(string type, string name, double value)
     {

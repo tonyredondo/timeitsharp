@@ -1,7 +1,7 @@
 using TimeIt;
 using TimeIt.RuntimeMetrics;
 
-public class StartupHook
+public sealed class StartupHook
 {
     private static RuntimeMetricsWriter? _metricsWriter;
     private static FileStorage? _fileStatsd;

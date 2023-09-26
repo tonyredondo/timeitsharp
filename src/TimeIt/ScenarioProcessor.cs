@@ -14,7 +14,7 @@ using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt;
 
-public class ScenarioProcessor
+public sealed class ScenarioProcessor
 {
     private readonly Config _configuration;
     private readonly TemplateVariables _templateVariables;
