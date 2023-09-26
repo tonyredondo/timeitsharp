@@ -9,21 +9,31 @@ using Spectre.Console;
 using TimeIt.Common.Assertors;
 using TimeIt.Common.Configuration;
 using TimeIt.Common.Results;
+using TimeIt.Common.Services;
 using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt;
 
-public class ScenarioProcessor
+public sealed class ScenarioProcessor
 {
     private readonly Config _configuration;
     private readonly TemplateVariables _templateVariables;
     private readonly IReadOnlyList<IAssertor> _assertors;
+    private readonly IReadOnlyList<IService> _services;
+    private readonly TimeItCallbacks.CallbacksTriggers _callbacksTriggers;
 
-    public ScenarioProcessor(Config configuration, TemplateVariables templateVariables, IReadOnlyList<IAssertor> assertors)
+    public ScenarioProcessor(
+        Config configuration,
+        TemplateVariables templateVariables,
+        IReadOnlyList<IAssertor> assertors,
+        IReadOnlyList<IService> services,
+        TimeItCallbacks.CallbacksTriggers callbacksTriggers)
     {
         _configuration = configuration;
         _templateVariables = templateVariables;
         _assertors = assertors;
+        _services = services;
+        _callbacksTriggers = callbacksTriggers;
     }
 
     public void PrepareScenario(Scenario scenario)
@@ -137,6 +147,7 @@ public class ScenarioProcessor
 
     public async Task<ScenarioResult> ProcessScenarioAsync(int index, Scenario scenario)
     {
+        _callbacksTriggers.ScenarioStart(scenario);
         Stopwatch? watch = null;
         AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
 
@@ -256,6 +267,7 @@ public class ScenarioProcessor
         }
 
         var assertResponse = ScenarioAssertion(dataPoints);
+        _callbacksTriggers.ScenarioFinish(scenario, dataPoints);
         return new ScenarioResult
         {
             Count = _configuration.Count,
@@ -358,6 +370,8 @@ public class ScenarioProcessor
         {
             ShouldContinue = true
         };
+        
+        _callbacksTriggers.ExecutionStart(dataPoint, ref cmd);
         if (cmdTimeout <= 0)
         {
             var cmdResult = await cmd.ExecuteBufferedAsync().ConfigureAwait(false);
@@ -545,13 +559,14 @@ public class ScenarioProcessor
             }
         }
 
+        _callbacksTriggers.ExecutionEnd(dataPoint);
         return dataPoint;
     }
 
     private void ExecuteAssertions(int scenarioId, string scenarioName, DataPoint dataPoint, BufferedCommandResult cmdResult)
     {
         var assertionData = new AssertionData(scenarioId, scenarioName, dataPoint.Start, dataPoint.End,
-            dataPoint.Duration, cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError);
+            dataPoint.Duration, cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError, _services);
         var assertionResult = ExecutionAssertion(in assertionData);
         dataPoint.AssertResults = assertionResult;
         if (assertionResult.Status == Status.Failed && string.IsNullOrEmpty(dataPoint.Error))

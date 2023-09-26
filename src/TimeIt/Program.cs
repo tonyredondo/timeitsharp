@@ -8,6 +8,7 @@ using System.CommandLine;
 using System.Reflection;
 using System.Runtime.Loader;
 using TimeIt.Common.Assertors;
+using TimeIt.Common.Services;
 using Status = TimeIt.Common.Results.Status;
 
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeIt v{0}[/]", GetVersion());
@@ -59,95 +60,37 @@ root.SetHandler(async (configFile, templateVariables) =>
     var config = Config.LoadConfiguration(configFile);
     config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
 
-    // Enable exporters
+    // Exporters
     var exporters = new List<IExporter>();
     exporters.Add(new ConsoleExporter());
     exporters.Add(new JsonExporter());
     exporters.Add(new TimeItDatadogExporter());
     
     // Assertors
-    var assertors = new List<IAssertor>();
-    if (config.Assertors is null || config.Assertors.Count == 0)
-    {
-        assertors.Add(new DefaultAssertor());
-    }
-    else
-    {
-        foreach (var assertor in config.Assertors)
-        {
-            if (assertor is null)
-            {
-                continue;
-            }
-
-            var asmLoadContext = AssemblyLoadContext.Default;
-            if (!string.IsNullOrEmpty(assertor.FilePath))
-            {
-                var assembly = asmLoadContext.LoadFromAssemblyPath(assertor.FilePath);
-                if (!string.IsNullOrEmpty(assertor.Type))
-                {
-                    if (assembly.GetType(assertor.Type, throwOnError: true) is { } type)
-                    {
-                        if (Activator.CreateInstance(type) is IAssertor instance)
-                        {
-                            assertors.Add(instance);
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0}", type.FullName ?? string.Empty);
-                        }
-                    }
-                }
-            }
-            else if (!string.IsNullOrEmpty(assertor.Name))
-            {
-                foreach (var assembly in asmLoadContext.Assemblies)
-                {
-                    foreach (var typeInfo in assembly.DefinedTypes)
-                    {
-                        if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum)
-                        {
-                            continue;
-                        }
-
-                        foreach (var iface in typeInfo.ImplementedInterfaces)
-                        {
-                            if (iface is null)
-                            {
-                                continue;
-                            }
-
-                            if (iface.FullName == typeof(IAssertor).FullName)
-                            {
-                                if (Activator.CreateInstance(typeInfo) is IAssertor instance && instance.Name == assertor.Name)
-                                {
-                                    assertors.Add(instance);
-                                }
-                                else
-                                {
-                                    AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0} | {1}", assertor.Name, typeInfo.FullName ?? string.Empty);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    var assertors = GetAssertors(config);
     foreach (var assertor in assertors)
     {
         assertor.SetConfiguration(config);
     }
-    
+
+    // Services
+    var timeitCallbacks = new TimeItCallbacks();
+    var callbacksTriggers = timeitCallbacks.GetTriggers();
+    var services = GetServices(config);
+    foreach (var service in services)
+    {
+        service.Initialize(config, timeitCallbacks);
+    }
+
     // Create scenario processor
-    var processor = new ScenarioProcessor(config, templateVariables, assertors);
+    var processor = new ScenarioProcessor(config, templateVariables, assertors, services, callbacksTriggers);
 
     AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
     AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.Count);
     AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
     AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
     AnsiConsole.MarkupLine("[bold aqua]Assertors:[/] {0}", string.Join(", ", assertors.Select(e => e.Name)));
+    AnsiConsole.MarkupLine("[bold aqua]Services:[/] {0}", string.Join(", ", services.Select(e => e.Name)));
     AnsiConsole.WriteLine();
 
     // Process scenarios
@@ -188,6 +131,8 @@ root.SetHandler(async (configFile, templateVariables) =>
             processor.CleanScenario(scenario);
         }
 
+        callbacksTriggers.Finish();
+
         if (scenarioWithErrors > 0)
         {
             Environment.Exit(1);
@@ -209,4 +154,156 @@ static string GetVersion()
     }
 
     return $"{version.Major}.{version.Minor}.{version.Build}";
+}
+
+static List<IAssertor> GetAssertors(Config configuration)
+{
+    var assertorsList = new List<IAssertor>();
+    if (configuration.Assertors is null || configuration.Assertors.Count == 0)
+    {
+        assertorsList.Add(new DefaultAssertor());
+    }
+    else
+    {
+        foreach (var assertor in configuration.Assertors)
+        {
+            if (assertor is null)
+            {
+                continue;
+            }
+
+            var asmLoadContext = AssemblyLoadContext.Default;
+            if (!string.IsNullOrEmpty(assertor.FilePath))
+            {
+                var assembly = asmLoadContext.LoadFromAssemblyPath(assertor.FilePath);
+                if (!string.IsNullOrEmpty(assertor.Type))
+                {
+                    if (assembly.GetType(assertor.Type, throwOnError: true) is { } type)
+                    {
+                        if (Activator.CreateInstance(type) is IAssertor instance)
+                        {
+                            assertorsList.Add(instance);
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0}",
+                                type.FullName ?? string.Empty);
+                        }
+                    }
+                }
+            }
+            else if (!string.IsNullOrEmpty(assertor.Name))
+            {
+                foreach (var assembly in asmLoadContext.Assemblies)
+                {
+                    foreach (var typeInfo in assembly.DefinedTypes)
+                    {
+                        if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum)
+                        {
+                            continue;
+                        }
+
+                        foreach (var iface in typeInfo.ImplementedInterfaces)
+                        {
+                            if (iface is null)
+                            {
+                                continue;
+                            }
+
+                            if (iface.FullName == typeof(IAssertor).FullName)
+                            {
+                                if (Activator.CreateInstance(typeInfo) is IAssertor instance &&
+                                    instance.Name == assertor.Name)
+                                {
+                                    assertorsList.Add(instance);
+                                }
+                                else
+                                {
+                                    AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0} | {1}", assertor.Name,
+                                        typeInfo.FullName ?? string.Empty);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return assertorsList;
+}
+
+static List<IService> GetServices(Config configuration)
+{
+    var servicesList = new List<IService>();
+    if (configuration.Services is null || configuration.Services.Count == 0)
+    {
+        return servicesList;
+    }
+
+    foreach (var service in configuration.Services)
+    {
+        if (service is null)
+        {
+            continue;
+        }
+
+        var asmLoadContext = AssemblyLoadContext.Default;
+        if (!string.IsNullOrEmpty(service.FilePath))
+        {
+            var assembly = asmLoadContext.LoadFromAssemblyPath(service.FilePath);
+            if (!string.IsNullOrEmpty(service.Type))
+            {
+                if (assembly.GetType(service.Type, throwOnError: true) is { } type)
+                {
+                    if (Activator.CreateInstance(type) is IService instance)
+                    {
+                        servicesList.Add(instance);
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[red]Error creating service[/]: {0}",
+                            type.FullName ?? string.Empty);
+                    }
+                }
+            }
+        }
+        else if (!string.IsNullOrEmpty(service.Name))
+        {
+            foreach (var assembly in asmLoadContext.Assemblies)
+            {
+                foreach (var typeInfo in assembly.DefinedTypes)
+                {
+                    if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum)
+                    {
+                        continue;
+                    }
+
+                    foreach (var iface in typeInfo.ImplementedInterfaces)
+                    {
+                        if (iface is null)
+                        {
+                            continue;
+                        }
+
+                        if (iface.FullName == typeof(IService).FullName)
+                        {
+                            if (Activator.CreateInstance(typeInfo) is IService instance &&
+                                instance.Name == service.Name)
+                            {
+                                servicesList.Add(instance);
+                            }
+                            else
+                            {
+                                AnsiConsole.MarkupLine("[red]Error creating service[/]: {0} | {1}", service.Name,
+                                    typeInfo.FullName ?? string.Empty);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return servicesList;
 }

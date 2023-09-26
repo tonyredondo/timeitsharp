@@ -37,6 +37,9 @@ public class Config : ProcessData
     [JsonPropertyName("assertors")]
     public List<AssemblyLoadInfo> Assertors { get; set; }
     
+    [JsonPropertyName("services")]
+    public List<AssemblyLoadInfo> Services { get; set; }
+    
     public Config()
     {
         FilePath = string.Empty;
@@ -46,9 +49,10 @@ public class Config : ProcessData
         Count = 0;
         EnableDatadog = false;
         EnableMetrics = true;
-        Scenarios = new List<Scenario>();
+        Scenarios = new();
         JsonExporterFilePath = string.Empty;
-        Assertors = new List<AssemblyLoadInfo>();
+        Assertors = new();
+        Services = new();
     }
 
     public static Config LoadConfiguration(string filePath)

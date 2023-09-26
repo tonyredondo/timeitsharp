@@ -3,7 +3,7 @@ using TimeIt.Common.Configuration;
 
 namespace TimeIt.Common.Results;
 
-public class ScenarioResult : Scenario
+public sealed class ScenarioResult : Scenario
 {
     [JsonPropertyName("start")]
     public DateTime Start { get; set; }

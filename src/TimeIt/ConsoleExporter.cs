@@ -7,7 +7,7 @@ using Status = TimeIt.Common.Results.Status;
 
 namespace TimeIt;
 
-public class ConsoleExporter : IExporter
+public sealed class ConsoleExporter : IExporter
 {
     private Config? _configuration;
 

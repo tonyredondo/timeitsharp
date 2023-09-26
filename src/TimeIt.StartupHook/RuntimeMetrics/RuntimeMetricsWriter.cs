@@ -4,7 +4,7 @@
 
 namespace TimeIt.RuntimeMetrics;
 
-internal class RuntimeMetricsWriter : IDisposable
+internal sealed class RuntimeMetricsWriter : IDisposable
 {
     private readonly TimeSpan _delay;
     private readonly FileStorage _storage;
