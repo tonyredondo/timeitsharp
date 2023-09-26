@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json.Serialization;
 
 namespace TimeIt;
 
@@ -11,10 +11,12 @@ public sealed class FileStatsdPayload
         Value = value;
     }
 
-    [JsonProperty("type")]
+    [JsonPropertyName("type")]
     public string? Type { get; set; }
-    [JsonProperty("name")]
+
+    [JsonPropertyName("name")]
     public string? Name { get; set; }
-    [JsonProperty("value")]
+
+    [JsonPropertyName("value")]
     public double Value { get; set; }
 }
