@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.StartupHook", "..\Ti
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.DatadogExporter", "..\TimeIt.DatadogExporter\TimeIt.DatadogExporter.csproj", "{5484AC8D-8054-4795-8781-1DA623057A46}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.WebApiService", "..\TimeIt.WebApiService\TimeIt.WebApiService.csproj", "{925A003E-6C93-410D-B6C2-A77469EA62A3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -37,5 +39,9 @@ Global
 		{5484AC8D-8054-4795-8781-1DA623057A46}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5484AC8D-8054-4795-8781-1DA623057A46}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5484AC8D-8054-4795-8781-1DA623057A46}.Release|Any CPU.Build.0 = Release|Any CPU
+		{925A003E-6C93-410D-B6C2-A77469EA62A3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{925A003E-6C93-410D-B6C2-A77469EA62A3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{925A003E-6C93-410D-B6C2-A77469EA62A3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{925A003E-6C93-410D-B6C2-A77469EA62A3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
