@@ -8,6 +8,11 @@
       "name": "DefaultAssertor"
     }
   ],
+  "services" : [
+    {
+      "name": "NoopService"
+    }
+  ],
   "scenarios": [
     {
       "name": "Callsite",

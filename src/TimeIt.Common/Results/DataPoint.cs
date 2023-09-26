@@ -3,7 +3,7 @@ using TimeIt.Common.Assertors;
 
 namespace TimeIt.Common.Results;
 
-public class DataPoint
+public sealed class DataPoint
 {
     [JsonPropertyName("start")]
     public DateTime Start { get; set; }

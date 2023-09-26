@@ -1,9 +1,10 @@
 using System.Text;
 using TimeIt.Common.Results;
+using TimeIt.Common.Services;
 
 namespace TimeIt.Common.Assertors;
 
-public class DefaultAssertor : Assertor
+public sealed class DefaultAssertor : Assertor
 {
     private readonly StringBuilder _sbuilder = new(2500);
     private int _currentScenario = -1;
