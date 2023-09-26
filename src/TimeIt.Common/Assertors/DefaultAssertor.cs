@@ -1,6 +1,5 @@
 using System.Text;
 using TimeIt.Common.Results;
-using TimeIt.Common.Services;
 
 namespace TimeIt.Common.Assertors;
 
@@ -53,9 +52,9 @@ public sealed class DefaultAssertor : Assertor
         {
             _sbuilder.AppendLine($"ExitCode: {data.ExitCode}");
             _sbuilder.AppendLine("Standard Error: ");
-            _sbuilder.AppendLine(data.StandardError);
+            _sbuilder.AppendLine(string.IsNullOrEmpty(data.StandardError) ? "<null>" : data.StandardError);
             _sbuilder.AppendLine("Standard Output: ");
-            _sbuilder.AppendLine(data.StandardOutput);
+            _sbuilder.AppendLine(string.IsNullOrEmpty(data.StandardOutput) ? "<null>" : data.StandardOutput);
             var message = _sbuilder.ToString();
             _sbuilder.Clear();
             _consecutiveErrorCount++;

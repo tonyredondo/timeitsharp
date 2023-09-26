@@ -1,4 +1,4 @@
-using TimeIt;
+using TimeIt.Core;
 using TimeIt.RuntimeMetrics;
 
 public sealed class StartupHook

@@ -4,7 +4,7 @@ using TimeIt.Common.Configuration;
 using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 
-namespace TimeIt;
+namespace TimeIt.Core;
 
 public sealed class JsonExporter : IExporter
 {
@@ -26,30 +26,14 @@ public sealed class JsonExporter : IExporter
             var outputFile = _configuration?.JsonExporterFilePath ?? string.Empty;
             if (string.IsNullOrEmpty(outputFile))
             {
-#if NET5_0
-                outputFile = Path.Combine(Environment.CurrentDirectory, $"jsonexporter_{new Random().Next()}.json");
-#else
                 outputFile = Path.Combine(Environment.CurrentDirectory, $"jsonexporter_{Random.Shared.Next()}.json");
-#endif
             }
 
             using var fStream = File.OpenWrite(outputFile);
-#if NET5_0
-            var utf8writer = new Utf8JsonWriter(fStream, new JsonWriterOptions
-            {
-                Indented = true
-            });
-            JsonSerializer.Serialize(utf8writer, results, new JsonSerializerOptions(JsonSerializerDefaults.General)
-            {
-                WriteIndented = true
-            });
-#else
             JsonSerializer.Serialize(fStream, results, new JsonSerializerOptions(JsonSerializerDefaults.General)
             {
                 WriteIndented = true
             });
-#endif
-
             
             AnsiConsole.MarkupLine($"[lime]The json file '{outputFile}' was exported.[/]");
         }

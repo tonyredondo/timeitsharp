@@ -1,7 +1,7 @@
 ﻿using Spectre.Console;
 using System.Text;
 
-namespace TimeIt;
+namespace TimeIt.Core;
 
 public sealed class TemplateVariables
 {
