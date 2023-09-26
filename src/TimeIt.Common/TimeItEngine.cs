@@ -5,10 +5,9 @@ using TimeIt.Common.Configuration;
 using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 using TimeIt.Common.Services;
-using TimeIt.DatadogExporter;
 using Status = TimeIt.Common.Results.Status;
 
-namespace TimeIt.Core;
+namespace TimeIt.Common;
 
 public static class TimeItEngine
 {
@@ -30,7 +29,7 @@ public static class TimeItEngine
         var exporters = new List<IExporter>();
         exporters.Add(new ConsoleExporter());
         exporters.Add(new JsonExporter());
-        exporters.Add(new TimeItDatadogExporter());
+        exporters.Add(new DatadogExporter());
     
         // Assertors
         var assertors = GetAssertors(config);

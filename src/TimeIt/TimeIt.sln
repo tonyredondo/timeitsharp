@@ -13,10 +13,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{023A1498-D
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.StartupHook", "..\TimeIt.StartupHook\TimeIt.StartupHook.csproj", "{5B08763D-5ECF-4300-81F5-73B68E23B6BB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.DatadogExporter", "..\TimeIt.DatadogExporter\TimeIt.DatadogExporter.csproj", "{5484AC8D-8054-4795-8781-1DA623057A46}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeIt.Core", "..\TimeIt.Core\TimeIt.Core.csproj", "{694E0D46-BBDF-4BE2-B533-F52439B7B7D1}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -35,13 +31,5 @@ Global
 		{5B08763D-5ECF-4300-81F5-73B68E23B6BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5B08763D-5ECF-4300-81F5-73B68E23B6BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5B08763D-5ECF-4300-81F5-73B68E23B6BB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{5484AC8D-8054-4795-8781-1DA623057A46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{5484AC8D-8054-4795-8781-1DA623057A46}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{5484AC8D-8054-4795-8781-1DA623057A46}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{5484AC8D-8054-4795-8781-1DA623057A46}.Release|Any CPU.Build.0 = Release|Any CPU
-		{694E0D46-BBDF-4BE2-B533-F52439B7B7D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{694E0D46-BBDF-4BE2-B533-F52439B7B7D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{694E0D46-BBDF-4BE2-B533-F52439B7B7D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{694E0D46-BBDF-4BE2-B533-F52439B7B7D1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

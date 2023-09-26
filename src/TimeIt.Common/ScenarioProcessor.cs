@@ -12,7 +12,7 @@ using TimeIt.Common.Results;
 using TimeIt.Common.Services;
 using Status = TimeIt.Common.Results.Status;
 
-namespace TimeIt.Core;
+namespace TimeIt.Common;
 
 public sealed class ScenarioProcessor
 {

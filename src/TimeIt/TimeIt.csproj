@@ -24,7 +24,11 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\TimeIt.Core\TimeIt.Core.csproj" />
+        <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\TimeIt.Common\TimeIt.Common.csproj" />
     </ItemGroup>
 
 </Project>

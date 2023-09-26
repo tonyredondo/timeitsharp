@@ -2,10 +2,17 @@
 
     <PropertyGroup>
         <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <Description>Command execution time meter library</Description>
+        <Copyright>Tony Redondo @ 2023</Copyright>
+        <PackageTags>timeit, benchmark, performance</PackageTags>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <NoWarn>NETSDK1138</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="..\TimeIt.Core\Constants.cs">
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+        <Compile Include="..\TimeIt.Common\Constants.cs">
             <Link>Constants.cs</Link>
         </Compile>
     </ItemGroup>

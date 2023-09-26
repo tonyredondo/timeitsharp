@@ -1,10 +1,9 @@
 ﻿using System.Text.Json;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
-using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 
-namespace TimeIt.Core;
+namespace TimeIt.Common.Exporters;
 
 public sealed class JsonExporter : IExporter
 {

@@ -1,5 +1,5 @@
 ﻿using Spectre.Console;
-using TimeIt.Core;
+using TimeIt.Common;
 using System.CommandLine;
 
 var version = typeof(Program).Assembly.GetName().Version!;

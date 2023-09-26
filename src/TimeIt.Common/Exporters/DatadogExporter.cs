@@ -6,16 +6,16 @@ using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 using Status = TimeIt.Common.Results.Status;
 
-namespace TimeIt.DatadogExporter;
+namespace TimeIt.Common.Exporters;
 
-public sealed class TimeItDatadogExporter : IExporter
+public sealed class DatadogExporter : IExporter
 {
     private Config? _configuration;
     private readonly TestSession _testSession;
     private readonly DateTime _startDate;
     private TestModule? _testModule;
 
-    public TimeItDatadogExporter()
+    public DatadogExporter()
     {
         _testSession = TestSession.GetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
         _startDate = DateTime.UtcNow;
@@ -31,7 +31,7 @@ public sealed class TimeItDatadogExporter : IExporter
     public void SetConfiguration(Config configuration)
     {
         _configuration = configuration;
-        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(TimeItDatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
+        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
     }
 
     /// <inheritdoc />
@@ -39,7 +39,7 @@ public sealed class TimeItDatadogExporter : IExporter
     {
         var errors = false;
         var minStartDate = results.Select(r => r.Start).Min();
-        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(TimeItDatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
+        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
         var testSuite = _testModule.GetOrCreateSuite("scenarios", minStartDate);
         try
         {
