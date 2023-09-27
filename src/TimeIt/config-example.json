@@ -3,12 +3,12 @@
   "enableMetrics": true,
   "warmUpCount": 10,
   "count": 100,
-  "assertors" : [
+  "assertors": [
     {
       "name": "DefaultAssertor"
     }
   ],
-  "services" : [
+  "services": [
     {
       "name": "NoopService"
     }

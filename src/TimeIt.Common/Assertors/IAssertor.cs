@@ -3,10 +3,8 @@ using TimeIt.Common.Results;
 
 namespace TimeIt.Common.Assertors;
 
-public interface IAssertor
+public interface IAssertor : INamedExtension
 {
-    string Name { get; }
-
     bool Enabled { get; }
 
     void SetConfiguration(Config configuration);

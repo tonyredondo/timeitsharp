@@ -34,6 +34,9 @@ public class Config : ProcessData
     [JsonPropertyName("jsonExporterFilePath")]
     public string JsonExporterFilePath { get; set; }
     
+    [JsonPropertyName("exporters")]
+    public List<AssemblyLoadInfo> Exporters { get; set; }
+
     [JsonPropertyName("assertors")]
     public List<AssemblyLoadInfo> Assertors { get; set; }
     
@@ -51,6 +54,7 @@ public class Config : ProcessData
         EnableMetrics = true;
         Scenarios = new();
         JsonExporterFilePath = string.Empty;
+        Exporters = new();
         Assertors = new();
         Services = new();
     }

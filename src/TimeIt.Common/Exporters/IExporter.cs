@@ -3,10 +3,8 @@ using TimeIt.Common.Results;
 
 namespace TimeIt.Common.Exporters;
 
-public interface IExporter
+public interface IExporter : INamedExtension
 {
-    string Name { get; }
-
     bool Enabled { get; }
 
     void SetConfiguration(Config configuration);

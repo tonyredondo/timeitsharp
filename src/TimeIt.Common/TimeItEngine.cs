@@ -26,13 +26,14 @@ public static class TimeItEngine
         config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
 
         // Exporters
-        var exporters = new List<IExporter>();
-        exporters.Add(new ConsoleExporter());
-        exporters.Add(new JsonExporter());
-        exporters.Add(new DatadogExporter());
+        var exporters = GetFromAssemblyLoadInfoList(
+            config.Exporters,
+            () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() });
     
         // Assertors
-        var assertors = GetAssertors(config);
+        var assertors = GetFromAssemblyLoadInfoList(
+            config.Assertors,
+            () => new List<IAssertor> { new DefaultAssertor() });
         foreach (var assertor in assertors)
         {
             assertor.SetConfiguration(config);
@@ -41,7 +42,7 @@ public static class TimeItEngine
         // Services
         var timeitCallbacks = new TimeItCallbacks();
         var callbacksTriggers = timeitCallbacks.GetTriggers();
-        var services = GetServices(config);
+        var services = GetFromAssemblyLoadInfoList<IService>(config.Services);
         foreach (var service in services)
         {
             service.Initialize(config, timeitCallbacks);
@@ -106,122 +107,48 @@ public static class TimeItEngine
 
         return 0;
     }
-    
-    private static List<IAssertor> GetAssertors(Config configuration)
+
+    private static List<T> GetFromAssemblyLoadInfoList<T>(
+        IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
+        Func<List<T>>? defaultListFunc = null)
+        where T : INamedExtension
     {
-        var assertorsList = new List<IAssertor>();
-        if (configuration.Assertors is null || configuration.Assertors.Count == 0)
+        if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
         {
-            assertorsList.Add(new DefaultAssertor());
+            return defaultListFunc?.Invoke() ?? new List<T>();
         }
-        else
+        
+        var resultList = new List<T>();
+        var loadContext = AssemblyLoadContext.Default;
+        foreach (var assemblyLoadInfo in assemblyLoadInfos)
         {
-            foreach (var assertor in configuration.Assertors)
-            {
-                if (assertor is null)
-                {
-                    continue;
-                }
-
-                var asmLoadContext = AssemblyLoadContext.Default;
-                if (!string.IsNullOrEmpty(assertor.FilePath))
-                {
-                    var assembly = asmLoadContext.LoadFromAssemblyPath(assertor.FilePath);
-                    if (!string.IsNullOrEmpty(assertor.Type))
-                    {
-                        if (assembly.GetType(assertor.Type, throwOnError: true) is { } type)
-                        {
-                            if (Activator.CreateInstance(type) is IAssertor instance)
-                            {
-                                assertorsList.Add(instance);
-                            }
-                            else
-                            {
-                                AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0}",
-                                    type.FullName ?? string.Empty);
-                            }
-                        }
-                    }
-                }
-                else if (!string.IsNullOrEmpty(assertor.Name))
-                {
-                    foreach (var assembly in asmLoadContext.Assemblies)
-                    {
-                        foreach (var typeInfo in assembly.DefinedTypes)
-                        {
-                            if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum)
-                            {
-                                continue;
-                            }
-
-                            foreach (var iface in typeInfo.ImplementedInterfaces)
-                            {
-                                if (iface is null)
-                                {
-                                    continue;
-                                }
-
-                                if (iface.FullName == typeof(IAssertor).FullName)
-                                {
-                                    if (Activator.CreateInstance(typeInfo) is IAssertor instance &&
-                                        instance.Name == assertor.Name)
-                                    {
-                                        assertorsList.Add(instance);
-                                    }
-                                    else
-                                    {
-                                        AnsiConsole.MarkupLine("[red]Error creating assertor[/]: {0} | {1}", assertor.Name,
-                                            typeInfo.FullName ?? string.Empty);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return assertorsList;
-    }
-
-    private static List<IService> GetServices(Config configuration)
-    {
-        var servicesList = new List<IService>();
-        if (configuration.Services is null || configuration.Services.Count == 0)
-        {
-            return servicesList;
-        }
-
-        foreach (var service in configuration.Services)
-        {
-            if (service is null)
+            if (assemblyLoadInfo is null)
             {
                 continue;
             }
 
-            var asmLoadContext = AssemblyLoadContext.Default;
-            if (!string.IsNullOrEmpty(service.FilePath))
+            if (!string.IsNullOrEmpty(assemblyLoadInfo.FilePath))
             {
-                var assembly = asmLoadContext.LoadFromAssemblyPath(service.FilePath);
-                if (!string.IsNullOrEmpty(service.Type))
+                var assembly = loadContext.LoadFromAssemblyPath(assemblyLoadInfo.FilePath);
+                if (!string.IsNullOrEmpty(assemblyLoadInfo.Type))
                 {
-                    if (assembly.GetType(service.Type, throwOnError: true) is { } type)
+                    if (assembly.GetType(assemblyLoadInfo.Type, throwOnError: true) is { } type)
                     {
-                        if (Activator.CreateInstance(type) is IService instance)
+                        if (Activator.CreateInstance(type) is T instance)
                         {
-                            servicesList.Add(instance);
+                            resultList.Add(instance);
                         }
                         else
                         {
-                            AnsiConsole.MarkupLine("[red]Error creating service[/]: {0}",
+                            AnsiConsole.MarkupLine("[red]Error creating {0}[/]: {1}", typeof(T).Name,
                                 type.FullName ?? string.Empty);
                         }
                     }
                 }
             }
-            else if (!string.IsNullOrEmpty(service.Name))
+            else if (!string.IsNullOrEmpty(assemblyLoadInfo.Name))
             {
-                foreach (var assembly in asmLoadContext.Assemblies)
+                foreach (var assembly in loadContext.Assemblies)
                 {
                     foreach (var typeInfo in assembly.DefinedTypes)
                     {
@@ -237,25 +164,28 @@ public static class TimeItEngine
                                 continue;
                             }
 
-                            if (iface.FullName == typeof(IService).FullName)
+                            if (iface.FullName == typeof(T).FullName)
                             {
-                                if (Activator.CreateInstance(typeInfo) is IService instance &&
-                                    instance.Name == service.Name)
+                                if (Activator.CreateInstance(typeInfo) is T instance &&
+                                    instance.Name == assemblyLoadInfo.Name)
                                 {
-                                    servicesList.Add(instance);
-                                }
-                                else
-                                {
-                                    AnsiConsole.MarkupLine("[red]Error creating service[/]: {0} | {1}", service.Name,
-                                        typeInfo.FullName ?? string.Empty);
+                                    resultList.Add(instance);
+                                    // Let's exit the 3 nested foreach loops
+                                    goto found_and_added;
                                 }
                             }
                         }
                     }
                 }
+
+                AnsiConsole.MarkupLine("[red]Error creating {0}[/]: {1} - Not found", typeof(T).Name, assemblyLoadInfo.Name);
+                
+                found_and_added:
+                {
+                }
             }
         }
 
-        return servicesList;
+        return resultList;
     }
 }

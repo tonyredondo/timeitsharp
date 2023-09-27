@@ -2,10 +2,8 @@ using TimeIt.Common.Configuration;
 
 namespace TimeIt.Common.Services;
 
-public interface IService
+public interface IService : INamedExtension
 {
-    string Name { get; }
-
     void Initialize(Config configuration, TimeItCallbacks callbacks);
 
     object? GetExecutionServiceData();
