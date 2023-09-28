@@ -2,6 +2,7 @@ using System.Runtime.Loader;
 using Spectre.Console;
 using TimeIt.Common.Assertors;
 using TimeIt.Common.Configuration;
+using TimeIt.Common.Configuration.Builder;
 using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 using TimeIt.Common.Services;
@@ -16,6 +17,11 @@ public static class TimeItEngine
         // Load configuration
         var config = Config.LoadConfiguration(configurationFile);
         return RunAsync(config, templateVariables);
+    }
+    
+    public static Task<int> RunAsync(ConfigBuilder configBuilder, TemplateVariables? templateVariables = null)
+    {
+        return RunAsync(configBuilder.Build(), templateVariables);
     }
 
     public static async Task<int> RunAsync(Config config, TemplateVariables? templateVariables = null)
