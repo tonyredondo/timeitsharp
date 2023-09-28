@@ -1,4 +1,4 @@
-﻿namespace TimeIt;
+﻿namespace TimeIt.Common;
 
 static class Utils
 {

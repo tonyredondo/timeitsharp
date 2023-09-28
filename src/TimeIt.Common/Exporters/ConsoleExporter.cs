@@ -1,11 +1,10 @@
 ﻿using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeIt.Common.Configuration;
-using TimeIt.Common.Exporters;
 using TimeIt.Common.Results;
 using Status = TimeIt.Common.Results.Status;
 
-namespace TimeIt;
+namespace TimeIt.Common.Exporters;
 
 public sealed class ConsoleExporter : IExporter
 {

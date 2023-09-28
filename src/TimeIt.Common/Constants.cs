@@ -1,4 +1,4 @@
-﻿namespace TimeIt;
+﻿namespace TimeIt.Common;
 
 #if !NOCONSTANTS
 public static class Constants

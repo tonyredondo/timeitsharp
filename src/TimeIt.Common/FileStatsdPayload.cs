@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace TimeIt;
+namespace TimeIt.Common;
 
 public sealed class FileStatsdPayload
 {
