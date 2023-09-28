@@ -14,6 +14,8 @@ public sealed class TimeoutBuilder
         _timeout = timeout;
     }
     
+    public static TimeoutBuilder Create() => new();
+
     public Timeout Build() => _timeout;
 
     public TimeoutBuilder WithMaxDuration(int maxDuration)

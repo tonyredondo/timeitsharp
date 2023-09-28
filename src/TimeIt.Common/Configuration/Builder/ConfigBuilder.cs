@@ -17,6 +17,8 @@ public sealed class ConfigBuilder
     {
         _configuration = configuration;
     }
+
+    public static ConfigBuilder Create() => new();
     
     public Config Build() => _configuration;
 

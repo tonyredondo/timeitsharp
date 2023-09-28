@@ -13,7 +13,9 @@ public sealed class ScenarioBuilder
     {
         _scenario = scenario;
     }
-    
+
+    public static ScenarioBuilder Create() => new();
+
     public Scenario Build() => _scenario;
 
     public ScenarioBuilder WithName(string name)
