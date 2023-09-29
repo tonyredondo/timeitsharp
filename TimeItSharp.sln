@@ -10,6 +10,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "root", "root", "{023A1498-D
 		LICENSE = LICENSE
 		src\Directory.Build.props = src\Directory.Build.props
 		.github\workflows\ci.yml = .github\workflows\ci.yml
+		icon.png = icon.png
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeItSharp.StartupHook", "src\TimeItSharp.StartupHook\TimeItSharp.StartupHook.csproj", "{5B08763D-5ECF-4300-81F5-73B68E23B6BB}"
