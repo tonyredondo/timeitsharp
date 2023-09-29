@@ -12,6 +12,12 @@ namespace TimeItSharp.Common;
 
 public static class TimeItEngine
 {
+    /// <summary>
+    /// Runs TimeIt
+    /// </summary>
+    /// <param name="configurationFile">Configuration file to be executed</param>
+    /// <param name="templateVariables">Template variables instance</param>
+    /// <returns>Exit code of the TimeIt engine</returns>
     public static Task<int> RunAsync(string configurationFile, TemplateVariables? templateVariables = null)
     {
         // Load configuration
@@ -19,11 +25,23 @@ public static class TimeItEngine
         return RunAsync(config, templateVariables);
     }
     
+    /// <summary>
+    /// Runs TimeIt
+    /// </summary>
+    /// <param name="configBuilder">Configuration builder instance to be executed</param>
+    /// <param name="templateVariables">Template variables instance</param>
+    /// <returns>Exit code of the TimeIt engine</returns>
     public static Task<int> RunAsync(ConfigBuilder configBuilder, TemplateVariables? templateVariables = null)
     {
         return RunAsync(configBuilder.Build(), templateVariables);
     }
 
+    /// <summary>
+    /// Runs TimeIt
+    /// </summary>
+    /// <param name="config">Configuration instance to be executed</param>
+    /// <param name="templateVariables">Template variables instance</param>
+    /// <returns>Exit code of the TimeIt engine</returns>
     public static async Task<int> RunAsync(Config config, TemplateVariables? templateVariables = null)
     {
         templateVariables ??= new TemplateVariables();
