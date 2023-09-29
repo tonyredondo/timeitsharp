@@ -1,4 +1,7 @@
 # TimeItSharp
+[![NuGet](https://img.shields.io/nuget/v/TimeItSharp.svg)](https://www.nuget.org/packages/TimeItSharp)
+[![.NET](https://github.com/tonyredondo/timeitsharp/actions/workflows/ci.yml/badge.svg)](https://github.com/tonyredondo/timeitsharp/actions/workflows/ci.yml)
+
 Command execution time meter allows to configure multiple scenarios to run benchmarks over CLI apps, output are available in markdown and json.
 
 ### Install
