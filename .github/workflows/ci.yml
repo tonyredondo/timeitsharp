@@ -36,3 +36,8 @@ jobs:
     - name: Run timeitsharp engine sample
       run: ./TimeItSharp.FluentConfiguration.Sample
       working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Debug/net7.0
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: Nugets
+        path: **/*.nupkg
