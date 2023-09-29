@@ -7,7 +7,7 @@ namespace TimeItSharp.RuntimeMetrics;
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-sealed class RuntimeEventListener : EventListener
+internal sealed class RuntimeEventListener : EventListener
 {
     private const string RuntimeEventSourceName = "Microsoft-Windows-DotNETRuntime";
     private const string AspNetCoreHostingEventSourceName = "Microsoft.AspNetCore.Hosting";

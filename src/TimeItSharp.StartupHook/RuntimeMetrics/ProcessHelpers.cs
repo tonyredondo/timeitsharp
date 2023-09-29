@@ -5,7 +5,7 @@ namespace TimeItSharp.RuntimeMetrics;
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-public static class ProcessHelpers
+internal static class ProcessHelpers
 {
     private static readonly Process CurrentProcess = Process.GetCurrentProcess();
 

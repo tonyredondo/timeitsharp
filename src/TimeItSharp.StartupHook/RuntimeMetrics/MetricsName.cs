@@ -2,7 +2,7 @@
 
 // The following code is based on: https://github.com/DataDog/dd-trace-dotnet/blob/master/tracer/src/Datadog.Trace/RuntimeMetrics
 
-public static class MetricsNames
+internal static class MetricsNames
 {
     public const string ExceptionsCount = "runtime.dotnet.exceptions.count";
 

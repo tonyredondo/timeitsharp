@@ -2,7 +2,7 @@
 
 namespace TimeItSharp.Common;
 
-public sealed class FileStatsdPayload
+internal sealed class FileStatsdPayload
 {
     public FileStatsdPayload(string type, string name, double value)
     {

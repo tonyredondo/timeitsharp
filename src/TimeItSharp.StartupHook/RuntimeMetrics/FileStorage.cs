@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace TimeItSharp.RuntimeMetrics;
 
-public sealed class FileStorage
+internal sealed class FileStorage
 {
     private readonly StreamWriter _streamWriter;
 

@@ -7,7 +7,7 @@
 /// Enum and comments taken from Perfview source code: https://github.com/microsoft/perfview/blob/master/src/TraceEvent/Parsers/ClrTraceEventParser.cs
 /// </summary>
 [Flags]
-public enum Keywords : long
+internal enum Keywords : long
 {
     None = 0,
     All = ~StartEnumeration, // All does not include start-enumeration.  It just is not that useful.

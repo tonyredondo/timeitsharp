@@ -2,7 +2,6 @@
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using Spectre.Console;
 using TimeItSharp.Common.Configuration;
-using TimeItSharp.Common.Exporters;
 using TimeItSharp.Common.Results;
 using Status = TimeItSharp.Common.Results.Status;
 

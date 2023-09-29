@@ -1,5 +1,4 @@
 using TimeItSharp;
-using TimeItSharp.Common;
 using TimeItSharp.RuntimeMetrics;
 
 public sealed class StartupHook

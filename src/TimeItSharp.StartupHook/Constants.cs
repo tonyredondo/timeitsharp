@@ -1,7 +1,6 @@
-﻿namespace TimeItSharp.Common;
+﻿namespace TimeItSharp;
 
-#if !NOCONSTANTS
-public static class Constants
+internal static class Constants
 {
     public const string StartupHookEnvironmentVariable = "DOTNET_STARTUP_HOOKS";
     public const string TimeItMetricsTemporalPathEnvironmentVariable = "TIMEIT_METRICS_TEMPORAL_PATH";
@@ -17,4 +16,3 @@ public static class Constants
     public const string MainMethodEndTimeUtcMetricName = "main.end";
     public const string ProcessEndTimeUtcMetricName = "process.end";
 }
-#endif

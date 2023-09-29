@@ -1,6 +1,6 @@
 ﻿namespace TimeItSharp.Common;
 
-static class Utils
+internal static class Utils
 {
     public static double StandardDeviation(this IEnumerable<double> data)
     {

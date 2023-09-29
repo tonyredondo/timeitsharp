@@ -14,7 +14,7 @@ using Status = TimeItSharp.Common.Results.Status;
 
 namespace TimeItSharp.Common;
 
-public sealed class ScenarioProcessor
+internal sealed class ScenarioProcessor
 {
     private readonly Config _configuration;
     private readonly TemplateVariables _templateVariables;

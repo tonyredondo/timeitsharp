@@ -14,11 +14,4 @@
         <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     </ItemGroup>
 
-
-    <ItemGroup>
-      <Compile Include="..\TimeItSharp.Common\Constants.cs">
-        <Link>Constants.cs</Link>
-      </Compile>
-    </ItemGroup>
-
 </Project>
