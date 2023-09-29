@@ -50,4 +50,15 @@ public sealed class TemplateVariables
     {
         return $"{VariableOpen}{name}{VariableClose}";
     }
+
+    public TemplateVariables Clone()
+    {
+        var tempVars = new TemplateVariables();
+        foreach (var variable in _variables)
+        {
+            tempVars._variables[variable.Key] = variable.Value;
+        }
+
+        return tempVars;
+    }
 }

@@ -583,8 +583,16 @@ public sealed class ScenarioProcessor
             await Task.Delay(timeout, cancellationToken).ConfigureAwait(false);
             if (!cancellationToken.IsCancellationRequested)
             {
-                timeoutCmd = timeoutCmd.Replace("%pid%", targetPid.ToString());
-                timeoutArgument = timeoutArgument.Replace("%pid%", targetPid.ToString());
+                var targetPidString = targetPid.ToString();
+                var templateVariables = _templateVariables.Clone();
+                templateVariables.Add("PID", targetPidString);
+
+                timeoutCmd = templateVariables.Expand(timeoutCmd);
+                timeoutCmd = timeoutCmd.Replace("%pid%", targetPidString);
+
+                timeoutArgument = templateVariables.Expand(timeoutArgument);
+                timeoutArgument = timeoutArgument.Replace("%pid%", targetPidString);
+
                 var cmd = Cli.Wrap(timeoutCmd)
                     .WithWorkingDirectory(workingDirectory)
                     .WithValidation(CommandResultValidation.None);
