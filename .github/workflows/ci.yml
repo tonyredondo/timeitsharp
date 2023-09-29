@@ -25,11 +25,9 @@ jobs:
 
     - name: Restore dependencies
       run: dotnet restore
-      working-directory: src/TimeItSharp
 
     - name: Build
       run: dotnet build --no-restore
-      working-directory: src/TimeItSharp
 
     - name: Run timeitsharp dotnet tool sample
       run: ./TimeItSharp config-example.json
