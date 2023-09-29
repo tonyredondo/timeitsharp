@@ -25,12 +25,16 @@ jobs:
 
     - name: Restore dependencies
       run: dotnet restore
-      working-directory: src/TimeIt
+      working-directory: src/TimeItSharp
 
     - name: Build
       run: dotnet build --no-restore
-      working-directory: src/TimeIt
+      working-directory: src/TimeItSharp
 
-    - name: Run timeit sample
-      run: ./TimeIt config-example.json
-      working-directory: src/TimeIt/bin/Debug/net7.0
+    - name: Run timeitsharp dotnet tool sample
+      run: ./TimeItSharp config-example.json
+      working-directory: src/TimeItSharp/bin/Debug/net7.0
+
+    - name: Run timeitsharp engine sample
+      run: ./TimeItSharp.FluentConfiguration.Sample
+      working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Debug/net7.0
