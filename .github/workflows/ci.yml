@@ -25,12 +25,19 @@ jobs:
 
     - name: Restore dependencies
       run: dotnet restore
-      working-directory: src/TimeIt
 
     - name: Build
-      run: dotnet build --no-restore
-      working-directory: src/TimeIt
+      run: dotnet build --no-restore -c Release
 
-    - name: Run timeit sample
-      run: ./TimeIt config-example.json
-      working-directory: src/TimeIt/bin/Debug/net7.0
+    - name: Run timeitsharp dotnet tool sample
+      run: ./TimeItSharp config-example.json
+      working-directory: src/TimeItSharp/bin/Release/net7.0
+
+    - name: Run timeitsharp engine sample
+      run: ./TimeItSharp.FluentConfiguration.Sample
+      working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Release/net7.0
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: Nugets
+        path: ./**/*.nupkg
