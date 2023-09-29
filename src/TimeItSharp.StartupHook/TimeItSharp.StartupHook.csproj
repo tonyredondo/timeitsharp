@@ -7,11 +7,13 @@
         <Copyright>Tony Redondo @ 2023</Copyright>
         <PackageTags>timeit, timeitsharp, benchmark, performance</PackageTags>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageIcon>icon.png</PackageIcon>
         <NoWarn>NETSDK1138</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
         <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+        <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
     </ItemGroup>
 
 </Project>
