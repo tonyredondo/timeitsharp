@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <Description>Command execution time meter library</Description>
+        <Copyright>Tony Redondo @ 2023</Copyright>
+        <PackageTags>timeit, timeitsharp, benchmark, performance</PackageTags>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <NoWarn>NETSDK1138</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+
+    <ItemGroup>
+      <Compile Include="..\TimeItSharp.Common\Constants.cs">
+        <Link>Constants.cs</Link>
+      </Compile>
+    </ItemGroup>
+
+</Project>
