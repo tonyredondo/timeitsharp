@@ -39,7 +39,6 @@
   "processName": "dotnet",
   "processArguments": "--version",
   "workingDirectory": "$(CWD)/",
-  "processTimeout": 15,
   "environmentVariables": {
     "CORECLR_ENABLE_PROFILING": "1",
     "CORECLR_PROFILER": "{846F5F1C-F9AE-4B07-969E-05C26BC060D8}",
@@ -54,7 +53,6 @@
     "benchmark.job.runtime.name" : ".NET Framework 4.6.1",
     "benchmark.job.runtime.moniker" : "net461"
   },
-  "metricsFilePath": "metrics*.json",
   "timeout" : {
     "maxDuration": 15,
     "processName": "dotnet-dump",
