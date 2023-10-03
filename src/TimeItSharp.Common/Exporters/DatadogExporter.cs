@@ -96,6 +96,12 @@ public sealed class DatadogExporter : IExporter
                     }
                 }
 
+                // Add custom metrics
+                foreach (var metric in scenarioResult.AdditionalMetrics)
+                {
+                    test.SetTag($"metrics.{metric.Key}", metric.Value);
+                }
+
                 // Set Error
                 if (!string.IsNullOrEmpty(scenarioResult.Error))
                 {

@@ -14,9 +14,9 @@ public sealed class TimeItCallbacks
 
     public delegate void OnExecutionEndDelegate(DataPoint dataPoint);
     
-    public delegate void OnScenarioFinishDelegate(Scenario scenario, IReadOnlyList<DataPoint> dataPoints);
+    public delegate void OnScenarioFinishDelegate(ScenarioResult scenarioResults);
 
-    public delegate void AfterAllScenariosFinishesDelegate(IReadOnlyList<Scenario> scenarios);
+    public delegate void AfterAllScenariosFinishesDelegate(IReadOnlyList<ScenarioResult> scenariosResults);
 
     public delegate void OnFinishDelegate();
 
@@ -51,11 +51,11 @@ public sealed class TimeItCallbacks
         public void ExecutionEnd(DataPoint dataPoint)
             => _callbacks.OnExecutionEnd?.Invoke(dataPoint);
 
-        public void ScenarioFinish(Scenario scenario, IReadOnlyList<DataPoint> dataPoints)
-            => _callbacks.OnScenarioFinish?.Invoke(scenario, dataPoints);
+        public void ScenarioFinish(ScenarioResult scenarioResults)
+            => _callbacks.OnScenarioFinish?.Invoke(scenarioResults);
 
-        public void AfterAllScenariosFinishes(IReadOnlyList<Scenario> scenarios)
-            => _callbacks.AfterAllScenariosFinishes?.Invoke(scenarios);
+        public void AfterAllScenariosFinishes(IReadOnlyList<ScenarioResult> scenariosResults)
+            => _callbacks.AfterAllScenariosFinishes?.Invoke(scenariosResults);
 
         public void Finish()
             => _callbacks.OnFinish?.Invoke();

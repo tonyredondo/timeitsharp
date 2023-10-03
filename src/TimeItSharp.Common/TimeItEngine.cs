@@ -129,7 +129,8 @@ public static class TimeItEngine
                     scenariosResults.Add(result);
                 }
             }
-            callbacksTriggers.AfterAllScenariosFinishes(config.Scenarios);
+
+            callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
 
             // Export data
             foreach (var exporter in exporters)
