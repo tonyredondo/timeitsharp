@@ -44,5 +44,5 @@ var config = ConfigBuilder.Create()
         .WithName("CallTarget & Inlining")
         .WithEnvironmentVariable("DD_TRACE_CALLTARGET_ENABLED", "true")
         .WithEnvironmentVariable("DD_CLR_ENABLE_INLINING", "true"));
-        
-await TimeItEngine.RunAsync(config);
+
+Environment.ExitCode = await TimeItEngine.RunAsync(config);
