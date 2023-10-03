@@ -92,7 +92,7 @@ public sealed class ConsoleExporter : IExporter
             .MarkdownBorder();
 
         var additionalMetrics = results
-            .SelectMany(s => s.AdditionalMetrics.Select(item => new { item.Key, item.Value, s }))
+            .SelectMany(s => s.AdditionalMetrics.Select(item => new { item.Key, item.Value, ScenarioResult = s }))
             .GroupBy(item => item.Key)
             .ToList();
 
@@ -145,7 +145,7 @@ public sealed class ConsoleExporter : IExporter
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
-                    var metricValue = additionalMetric.FirstOrDefault(item => item.s == result);
+                    var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
                     rowList.Add(metricValue is null ? $"[aqua]-[/]" : $"[aqua]{Math.Round(metricValue.Value, 6)}[/]");
                 }
 
@@ -212,7 +212,7 @@ public sealed class ConsoleExporter : IExporter
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
-                    var metricValue = additionalMetric.FirstOrDefault(item => item.s == result);
+                    var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
                     rowList.Add(metricValue is null ? "-" : Math.Round(metricValue.Value, 6).ToString());
                 }
 
