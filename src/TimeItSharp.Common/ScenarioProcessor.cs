@@ -145,7 +145,7 @@ internal sealed class ScenarioProcessor
     {
     }
 
-    public async Task<ScenarioResult> ProcessScenarioAsync(int index, Scenario scenario)
+    public async Task<ScenarioResult?> ProcessScenarioAsync(int index, Scenario scenario, CancellationToken cancellationToken)
     {
         _callbacksTriggers.ScenarioStart(scenario);
         Stopwatch? watch = null;
@@ -190,12 +190,22 @@ internal sealed class ScenarioProcessor
 
         AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
-        await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false).ConfigureAwait(false);
+        await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
         AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
-        watch = Stopwatch.StartNew();
-        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, true).ConfigureAwait(false);
+        watch.Restart();
+        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, true, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
         watch.Stop();
         AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.WriteLine();
@@ -301,13 +311,19 @@ internal sealed class ScenarioProcessor
         };
     }
 
-    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, bool checkShouldContinue)
+    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, bool checkShouldContinue, CancellationToken cancellationToken)
     {
         var dataPoints = new List<DataPoint>();
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
         {
-            var currentRun = await RunCommandAsync(index, scenario).ConfigureAwait(false);
+            var currentRun = await RunCommandAsync(index, scenario, cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                AnsiConsole.Markup("[red]cancelled[/]");
+                break;
+            }
+
             dataPoints.Add(currentRun);
             AnsiConsole.Markup(currentRun.Status == Status.Failed ? "[red]x[/]" : "[green].[/]");
 
@@ -322,7 +338,7 @@ internal sealed class ScenarioProcessor
         return dataPoints;
     }
 
-    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario)
+    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario, CancellationToken cancellationToken)
     {
         // Prepare variables
         var cmdString = scenario.ProcessName ?? string.Empty;
@@ -374,24 +390,43 @@ internal sealed class ScenarioProcessor
         _callbacksTriggers.ExecutionStart(dataPoint, ref cmd);
         if (cmdTimeout <= 0)
         {
-            var cmdResult = await cmd.ExecuteBufferedAsync().ConfigureAwait(false);
-            dataPoint.End = DateTime.UtcNow;
-            dataPoint.Duration = cmdResult.RunTime;
-            dataPoint.Start = dataPoint.End - dataPoint.Duration;
-            ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
+            try
+            {
+                var cmdResult = await cmd.ExecuteBufferedAsync(cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = cmdResult.RunTime;
+                dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
+            }
+            catch (TaskCanceledException)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = "Execution cancelled.";
+                return dataPoint;
+            }
+            catch (OperationCanceledException)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = "Execution cancelled.";
+                return dataPoint;
+            }
         }
         else
         {
             CancellationTokenSource? timeoutCts = null;
             var cmdCts = new CancellationTokenSource();
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmdCts.Token);
             dataPoint.Start = DateTime.UtcNow;
-            var cmdTask = cmd.ExecuteBufferedAsync(cmdCts.Token);
+            var cmdTask = cmd.ExecuteBufferedAsync(linkedCts.Token);
 
             if (!string.IsNullOrEmpty(timeoutCmdString))
             {
                 timeoutCts = new CancellationTokenSource();
                 _ = RunCommandTimeoutAsync(TimeSpan.FromSeconds(cmdTimeout), timeoutCmdString, timeoutCmdArguments,
-                    workingDirectory, cmdTask.ProcessId, () => cmdCts.Cancel(), timeoutCts.Token);
+                    workingDirectory, cmdTask.ProcessId, () => cmdCts.Cancel(), timeoutCts.Token, cancellationToken);
             }
             else
             {
@@ -411,12 +446,24 @@ internal sealed class ScenarioProcessor
             {
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    dataPoint.Error = "Execution cancelled.";
+                    return dataPoint;
+                }
+
                 dataPoint.Error = "Process timeout.";
             }
             catch (OperationCanceledException)
             {
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    dataPoint.Error = "Execution cancelled.";
+                    return dataPoint;
+                }
+
                 dataPoint.Error = "Process timeout.";
             }
         }
@@ -576,37 +623,41 @@ internal sealed class ScenarioProcessor
     }
 
     private async Task RunCommandTimeoutAsync(TimeSpan timeout, string timeoutCmd, string timeoutArgument,
-        string workingDirectory, int targetPid, Action? targetCancellation, CancellationToken cancellationToken)
+        string workingDirectory, int targetPid, Action? targetCancellation, CancellationToken timeoutCancellationToken, CancellationToken applicationCancellationToken)
     {
         try
         {
-            await Task.Delay(timeout, cancellationToken).ConfigureAwait(false);
-            if (!cancellationToken.IsCancellationRequested)
+            using var linkedCts =
+                CancellationTokenSource.CreateLinkedTokenSource(timeoutCancellationToken, applicationCancellationToken);
+            await Task.Delay(timeout, linkedCts.Token).ConfigureAwait(false);
+            if (linkedCts.Token.IsCancellationRequested)
             {
-                var targetPidString = targetPid.ToString();
-                var templateVariables = _templateVariables.Clone();
-                templateVariables.Add("PID", targetPidString);
+                return;
+            }
 
-                timeoutCmd = templateVariables.Expand(timeoutCmd);
-                timeoutCmd = timeoutCmd.Replace("%pid%", targetPidString);
+            var targetPidString = targetPid.ToString();
+            var templateVariables = _templateVariables.Clone();
+            templateVariables.Add("PID", targetPidString);
 
-                timeoutArgument = templateVariables.Expand(timeoutArgument);
-                timeoutArgument = timeoutArgument.Replace("%pid%", targetPidString);
+            timeoutCmd = templateVariables.Expand(timeoutCmd);
+            timeoutCmd = timeoutCmd.Replace("%pid%", targetPidString);
 
-                var cmd = Cli.Wrap(timeoutCmd)
-                    .WithWorkingDirectory(workingDirectory)
-                    .WithValidation(CommandResultValidation.None);
-                if (!string.IsNullOrEmpty(timeoutArgument))
-                {
-                    cmd = cmd.WithArguments(timeoutArgument);
-                }
+            timeoutArgument = templateVariables.Expand(timeoutArgument);
+            timeoutArgument = timeoutArgument.Replace("%pid%", targetPidString);
 
-                var cmdResult = await cmd.ExecuteBufferedAsync().ConfigureAwait(false);
-                if (cmdResult.ExitCode != 0)
-                {
-                    AnsiConsole.MarkupLine($"[red]{cmdResult.StandardError}[/]");
-                    AnsiConsole.MarkupLine(cmdResult.StandardOutput);
-                }
+            var cmd = Cli.Wrap(timeoutCmd)
+                .WithWorkingDirectory(workingDirectory)
+                .WithValidation(CommandResultValidation.None);
+            if (!string.IsNullOrEmpty(timeoutArgument))
+            {
+                cmd = cmd.WithArguments(timeoutArgument);
+            }
+
+            var cmdResult = await cmd.ExecuteBufferedAsync(applicationCancellationToken).ConfigureAwait(false);
+            if (cmdResult.ExitCode != 0)
+            {
+                AnsiConsole.MarkupLine($"[red]{cmdResult.StandardError}[/]");
+                AnsiConsole.MarkupLine(cmdResult.StandardOutput);
             }
         }
         catch (TaskCanceledException)

@@ -17,12 +17,13 @@ public static class TimeItEngine
     /// </summary>
     /// <param name="configurationFile">Configuration file to be executed</param>
     /// <param name="templateVariables">Template variables instance</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
-    public static Task<int> RunAsync(string configurationFile, TemplateVariables? templateVariables = null)
+    public static Task<int> RunAsync(string configurationFile, TemplateVariables? templateVariables = null, CancellationToken? cancellationToken = null)
     {
         // Load configuration
         var config = Config.LoadConfiguration(configurationFile);
-        return RunAsync(config, templateVariables);
+        return RunAsync(config, templateVariables, cancellationToken);
     }
     
     /// <summary>
@@ -30,10 +31,11 @@ public static class TimeItEngine
     /// </summary>
     /// <param name="configBuilder">Configuration builder instance to be executed</param>
     /// <param name="templateVariables">Template variables instance</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
-    public static Task<int> RunAsync(ConfigBuilder configBuilder, TemplateVariables? templateVariables = null)
+    public static Task<int> RunAsync(ConfigBuilder configBuilder, TemplateVariables? templateVariables = null, CancellationToken? cancellationToken = null)
     {
-        return RunAsync(configBuilder.Build(), templateVariables);
+        return RunAsync(configBuilder.Build(), templateVariables, cancellationToken);
     }
 
     /// <summary>
@@ -41,9 +43,11 @@ public static class TimeItEngine
     /// </summary>
     /// <param name="config">Configuration instance to be executed</param>
     /// <param name="templateVariables">Template variables instance</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
-    public static async Task<int> RunAsync(Config config, TemplateVariables? templateVariables = null)
+    public static async Task<int> RunAsync(Config config, TemplateVariables? templateVariables = null, CancellationToken? cancellationToken = null)
     {
+        cancellationToken ??= CancellationToken.None;
         templateVariables ??= new TemplateVariables();
 
         // Prepare configuration
@@ -96,13 +100,21 @@ public static class TimeItEngine
                 processor.PrepareScenario(scenario);
 
                 // Process scenario
-                var result = await processor.ProcessScenarioAsync(i, scenario).ConfigureAwait(false);
-                if (result.Status != Status.Passed)
+                var result = await processor.ProcessScenarioAsync(i, scenario, cancellationToken: cancellationToken.Value).ConfigureAwait(false);
+                if (cancellationToken.Value.IsCancellationRequested)
+                {
+                    return 1;
+                }
+
+                if (result is null || result.Status != Status.Passed)
                 {
                     scenarioWithErrors++;
                 }
 
-                scenariosResults.Add(result);
+                if (result is not null)
+                {
+                    scenariosResults.Add(result);
+                }
             }
 
             // Export data
