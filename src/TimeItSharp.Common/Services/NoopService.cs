@@ -1,12 +1,10 @@
-﻿using TimeItSharp.Common.Configuration;
-
-namespace TimeItSharp.Common.Services;
+﻿namespace TimeItSharp.Common.Services;
 
 public sealed class NoopService : IService
 {
     public string Name => nameof(NoopService);
 
-    public void Initialize(Config configuration, TimeItCallbacks callbacks)
+    public void Initialize(InitOptions options, TimeItCallbacks callbacks)
     {
     }
 

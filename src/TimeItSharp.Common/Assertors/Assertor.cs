@@ -1,4 +1,3 @@
-using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common.Assertors;
@@ -7,6 +6,8 @@ public abstract class Assertor : IAssertor
 {
     public virtual string Name { get; }
     public virtual bool Enabled { get; }
+    
+    protected InitOptions Options { get; private set; }
 
     public Assertor()
     {
@@ -14,7 +15,13 @@ public abstract class Assertor : IAssertor
         Enabled = true;
     }
 
-    public virtual void SetConfiguration(Config configuration)
+    public void Initialize(InitOptions options)
+    {
+        Options = options;
+        OnInitialize(options);
+    }
+
+    protected virtual void OnInitialize(InitOptions options)
     {
     }
 

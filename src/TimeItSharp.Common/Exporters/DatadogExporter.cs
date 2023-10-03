@@ -1,7 +1,6 @@
 ﻿using DatadogTestLogger.Vendors.Datadog.Trace;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using Spectre.Console;
-using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 using Status = TimeItSharp.Common.Results.Status;
 
@@ -9,7 +8,7 @@ namespace TimeItSharp.Common.Exporters;
 
 public sealed class DatadogExporter : IExporter
 {
-    private Config? _configuration;
+    private InitOptions _options;
     private readonly TestSession _testSession;
     private readonly DateTime _startDate;
     private TestModule? _testModule;
@@ -24,13 +23,13 @@ public sealed class DatadogExporter : IExporter
     public string Name => "Datadog";
 
     /// <inheritdoc />
-    public bool Enabled => _configuration?.EnableDatadog ?? true;
+    public bool Enabled => _options.Configuration?.EnableDatadog ?? true;
 
     /// <inheritdoc />
-    public void SetConfiguration(Config configuration)
+    public void Initialize(InitOptions options)
     {
-        _configuration = configuration;
-        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
+        _options = options;
+        _testModule ??= _testSession.CreateModule(options.Configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
     }
 
     /// <inheritdoc />
@@ -38,7 +37,7 @@ public sealed class DatadogExporter : IExporter
     {
         var errors = false;
         var minStartDate = results.Select(r => r.Start).Min();
-        _testModule ??= _testSession.CreateModule(_configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
+        _testModule ??= _testSession.CreateModule(_options.Configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
         var testSuite = _testModule.GetOrCreateSuite("scenarios", minStartDate);
         try
         {
@@ -115,7 +114,9 @@ public sealed class DatadogExporter : IExporter
                 // Setting custom tags
                 foreach (var tag in scenarioResult.Tags)
                 {
-                    test.SetTag(tag.Key, tag.Value);
+                    var key = _options.TemplateVariables.Expand(tag.Key);
+                    var value = _options.TemplateVariables.Expand(tag.Value);
+                    test.SetTag(key, value);
                 }
 
                 // Close test
