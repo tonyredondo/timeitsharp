@@ -27,6 +27,20 @@ public sealed class JsonExporter : IExporter
                 outputFile = Path.Combine(Environment.CurrentDirectory, $"jsonexporter_{Random.Shared.Next()}.json");
             }
 
+            foreach (var scenarioResult in results)
+            {
+                var tags = new Dictionary<string, string>(scenarioResult.Tags.Count);
+                // Expanding custom tags
+                foreach (var tag in scenarioResult.Tags)
+                {
+                    var key = _options.TemplateVariables.Expand(tag.Key);
+                    var value = _options.TemplateVariables.Expand(tag.Value);
+                    tags[key] = value;
+                }
+
+                scenarioResult.Tags = tags;
+            }
+
             using var fStream = File.OpenWrite(outputFile);
             JsonSerializer.Serialize(fStream, results, new JsonSerializerOptions(JsonSerializerDefaults.General)
             {

@@ -114,7 +114,9 @@ public sealed class DatadogExporter : IExporter
                 // Setting custom tags
                 foreach (var tag in scenarioResult.Tags)
                 {
-                    test.SetTag(tag.Key, tag.Value);
+                    var key = _options.TemplateVariables.Expand(tag.Key);
+                    var value = _options.TemplateVariables.Expand(tag.Value);
+                    test.SetTag(key, value);
                 }
 
                 // Close test
