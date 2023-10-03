@@ -104,6 +104,7 @@ public static class TimeItEngine
         var scenarioWithErrors = 0;
         if (config is { Count: > 0, Scenarios.Count: > 0 })
         {
+            callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
             for(var i = 0; i < config.Scenarios.Count; i++)
             {
                 var scenario = config.Scenarios[i];
@@ -128,6 +129,7 @@ public static class TimeItEngine
                     scenariosResults.Add(result);
                 }
             }
+            callbacksTriggers.AfterAllScenariosFinishes(config.Scenarios);
 
             // Export data
             foreach (var exporter in exporters)
