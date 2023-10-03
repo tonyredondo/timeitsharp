@@ -277,9 +277,9 @@ internal sealed class ScenarioProcessor
         }
 
         var assertResponse = ScenarioAssertion(dataPoints);
-        _callbacksTriggers.ScenarioFinish(scenario, dataPoints);
-        return new ScenarioResult
+        var scenarioResult = new ScenarioResult
         {
+            Scenario = scenario,
             Count = _configuration.Count,
             WarmUpCount = _configuration.WarmUpCount,
             Data = dataPoints,
@@ -309,6 +309,9 @@ internal sealed class ScenarioProcessor
             Tags = scenario.Tags,
             Status = assertResponse.Status,
         };
+
+        _callbacksTriggers.ScenarioFinish(scenarioResult);
+        return scenarioResult;
     }
 
     private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, bool checkShouldContinue, CancellationToken cancellationToken)

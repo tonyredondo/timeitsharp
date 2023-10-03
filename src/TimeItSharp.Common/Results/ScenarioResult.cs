@@ -5,6 +5,9 @@ namespace TimeItSharp.Common.Results;
 
 public sealed class ScenarioResult : Scenario
 {
+    [JsonIgnore]
+    public Scenario? Scenario { get; set; }
+
     [JsonPropertyName("start")]
     public DateTime Start { get; set; }
 
@@ -61,6 +64,9 @@ public sealed class ScenarioResult : Scenario
     
     [JsonPropertyName("metricsData")]
     public Dictionary<string, List<double>> MetricsData { get; set; }
+    
+    [JsonPropertyName("additionalMetrics")]
+    public Dictionary<string, double> AdditionalMetrics { get; set; }
 
     [JsonPropertyName("status")]
     [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -68,12 +74,14 @@ public sealed class ScenarioResult : Scenario
 
     public ScenarioResult()
     {
+        Scenario = null;
         Error = string.Empty;
         Data = new List<DataPoint>();
         Durations = new List<double>();
         Outliers = new List<double>();
         Metrics = new Dictionary<string, double>();
         MetricsData = new Dictionary<string, List<double>>();
+        AdditionalMetrics = new Dictionary<string, double>();
         Status = Status.Passed;
     }
 }
