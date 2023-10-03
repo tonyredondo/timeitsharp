@@ -1,6 +1,5 @@
 ﻿using MathNet.Numerics.Statistics;
 using Spectre.Console;
-using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 using Status = TimeItSharp.Common.Results.Status;
 
@@ -8,20 +7,20 @@ namespace TimeItSharp.Common.Exporters;
 
 public sealed class ConsoleExporter : IExporter
 {
-    private Config? _configuration;
+    private InitOptions _options;
 
     public string Name => nameof(ConsoleExporter);
 
     public bool Enabled => true;
 
-    public void SetConfiguration(Config configuration)
+    public void Initialize(InitOptions options)
     {
-        _configuration = configuration;
+        _options = options;
     }
 
     public void Export(IEnumerable<ScenarioResult> results)
     {
-        if (_configuration is null)
+        if (_options.Configuration is null)
         {
             AnsiConsole.MarkupLine("[red bold]Configuration is missing.[/]");
             return;
@@ -43,7 +42,7 @@ public sealed class ConsoleExporter : IExporter
         resultsTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
         
         // Add rows
-        for (var i = 0; i < _configuration.Count; i++)
+        for (var i = 0; i < _options.Configuration.Count; i++)
         {
             resultsTable.AddRow(results.Select(r =>
             {
@@ -132,7 +131,7 @@ public sealed class ConsoleExporter : IExporter
                     var item = orderedMetricsData[i];
                     var itemResult = Utils.RemoveOutliers(item.Value, 3).ToList();
                     int? outliersCount = item.Value.Count - itemResult.Count;
-                    if (outliersCount > (_configuration.Count * 5) / 100)
+                    if (outliersCount > (_options.Configuration.Count * 5) / 100)
                     {
                         itemResult = item.Value;
                         outliersCount = null;

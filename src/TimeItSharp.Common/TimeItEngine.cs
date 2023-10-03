@@ -16,39 +16,41 @@ public static class TimeItEngine
     /// Runs TimeIt
     /// </summary>
     /// <param name="configurationFile">Configuration file to be executed</param>
-    /// <param name="templateVariables">Template variables instance</param>
+    /// <param name="options">TimeIt options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
-    public static Task<int> RunAsync(string configurationFile, TemplateVariables? templateVariables = null, CancellationToken? cancellationToken = null)
+    public static Task<int> RunAsync(string configurationFile, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
         // Load configuration
         var config = Config.LoadConfiguration(configurationFile);
-        return RunAsync(config, templateVariables, cancellationToken);
+        return RunAsync(config, options, cancellationToken);
     }
     
     /// <summary>
     /// Runs TimeIt
     /// </summary>
     /// <param name="configBuilder">Configuration builder instance to be executed</param>
-    /// <param name="templateVariables">Template variables instance</param>
+    /// <param name="options">TimeIt options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
-    public static Task<int> RunAsync(ConfigBuilder configBuilder, TemplateVariables? templateVariables = null, CancellationToken? cancellationToken = null)
+    public static Task<int> RunAsync(ConfigBuilder configBuilder, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
-        return RunAsync(configBuilder.Build(), templateVariables, cancellationToken);
+        return RunAsync(configBuilder.Build(), options, cancellationToken);
     }
 
     /// <summary>
     /// Runs TimeIt
     /// </summary>
     /// <param name="config">Configuration instance to be executed</param>
-    /// <param name="templateVariables">Template variables instance</param>
+    /// <param name="options">TimeIt options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
-    public static async Task<int> RunAsync(Config config, TemplateVariables? templateVariables = null, CancellationToken? cancellationToken = null)
+    public static async Task<int> RunAsync(Config config, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
+        options ??= new TimeItOptions(new TemplateVariables());
         cancellationToken ??= CancellationToken.None;
-        templateVariables ??= new TemplateVariables();
+        var templateVariables = options.TemplateVariables ?? new TemplateVariables();
+        var statesByType = options.StatesByType;
 
         // Prepare configuration
         config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
@@ -64,7 +66,12 @@ public static class TimeItEngine
             () => new List<IAssertor> { new DefaultAssertor() });
         foreach (var assertor in assertors)
         {
-            assertor.SetConfiguration(config);
+            if (!statesByType.TryGetValue(assertor.GetType(), out var state))
+            {
+                state = null;
+            }
+
+            assertor.Initialize(new InitOptions(config, templateVariables, state));
         }
 
         // Services
@@ -73,7 +80,12 @@ public static class TimeItEngine
         var services = GetFromAssemblyLoadInfoList<IService>(config.Services);
         foreach (var service in services)
         {
-            service.Initialize(config, timeitCallbacks);
+            if (!statesByType.TryGetValue(service.GetType(), out var state))
+            {
+                state = null;
+            }
+
+            service.Initialize(new InitOptions(config, templateVariables, state), timeitCallbacks);
         }
 
         // Create scenario processor
@@ -120,7 +132,12 @@ public static class TimeItEngine
             // Export data
             foreach (var exporter in exporters)
             {
-                exporter.SetConfiguration(config);
+                if (!statesByType.TryGetValue(exporter.GetType(), out var state))
+                {
+                    state = null;
+                }
+
+                exporter.Initialize(new InitOptions(config, templateVariables, state));
                 if (exporter.Enabled)
                 {
                     exporter.Export(scenariosResults);

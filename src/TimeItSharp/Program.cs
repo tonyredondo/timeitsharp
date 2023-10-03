@@ -51,7 +51,7 @@ var root = new RootCommand
 
 root.SetHandler(async (configFile, templateVariables) =>
 {
-    var exitCode = await TimeItEngine.RunAsync(configFile, templateVariables).ConfigureAwait(false);
+    var exitCode = await TimeItEngine.RunAsync(configFile, new TimeItOptions(templateVariables)).ConfigureAwait(false);
     if (exitCode != 0)
     {
         Environment.Exit(exitCode);

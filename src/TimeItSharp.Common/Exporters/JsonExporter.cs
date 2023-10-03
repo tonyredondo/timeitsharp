@@ -1,28 +1,27 @@
 ﻿using System.Text.Json;
 using Spectre.Console;
-using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common.Exporters;
 
 public sealed class JsonExporter : IExporter
 {
-    private Config? _configuration;
+    private InitOptions _options;
 
     public string Name => nameof(JsonExporter);
     
     public bool Enabled => true;
 
-    public void SetConfiguration(Config configuration)
+    public void Initialize(InitOptions options)
     {
-        _configuration = configuration;
+        _options = options;
     }
 
     public void Export(IEnumerable<ScenarioResult> results)
     {
         try
         {
-            var outputFile = _configuration?.JsonExporterFilePath ?? string.Empty;
+            var outputFile = _options.Configuration?.JsonExporterFilePath ?? string.Empty;
             if (string.IsNullOrEmpty(outputFile))
             {
                 outputFile = Path.Combine(Environment.CurrentDirectory, $"jsonexporter_{Random.Shared.Next()}.json");
