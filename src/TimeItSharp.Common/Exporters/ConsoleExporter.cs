@@ -171,14 +171,16 @@ public sealed class ConsoleExporter : IExporter
             else
             {
                 summaryTable.AddRow(
-                    result.Name,
-                    $"{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms",
-                    $"{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms",
-                    $"{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms",
-                    $"{Utils.FromNanosecondsToMilliseconds(result.P99)}ms",
-                    $"{Utils.FromNanosecondsToMilliseconds(result.P95)}ms",
-                    $"{Utils.FromNanosecondsToMilliseconds(result.P90)}ms",
-                    result.Outliers.Count.ToString());
+                    $"[aqua underline]{result.Name}[/]",
+                    $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Mean)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Stdev)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.StdErr)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Min)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.Max)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P95)}ms[/]",
+                    $"[aqua]{Utils.FromNanosecondsToMilliseconds(result.P90)}ms[/]",
+                    $"[aqua]{result.Outliers.Count}[/]");
             }
         }
 
