@@ -81,14 +81,19 @@ internal static class Utils
     /// Determines if a given dataset is bimodal.
     /// </summary>
     /// <param name="data">The dataset to analyze.</param>
+    /// <param name="peakCount">Number of peaks detected</param>
+    /// <param name="histogram">Histogram data</param>
+    /// <param name="labels">Histogram labels</param>
     /// <param name="binCount">The number of bins to use for the histogram. Default is 10.</param>
     /// <returns>True if the dataset is bimodal, otherwise false.</returns>
-    public static bool IsBimodal(Span<double> data, out int peakCount, int binCount = 10)
+    public static bool IsBimodal(Span<double> data, out int peakCount, out int[] histogram,  out (double Start, double End)[] labels, int binCount = 10)
     {
         // Return false if there are less than 3 data points, as bimodality can't be determined.
         if (data.Length < 3)
         {
             peakCount = 0;
+            histogram = Array.Empty<int>();
+            labels = Array.Empty<(double, double)>();
             return false;
         }
 
@@ -110,7 +115,13 @@ internal static class Utils
         }
 
         // Create and initialize a histogram with 'binCount' bins.
-        Span<int> histogram = stackalloc int[binCount];
+        histogram = new int[binCount];
+        labels = new (double Start, double End)[binCount];
+        for (var i = 0; i < binCount; i++)
+        {
+            labels[i] = (double.MaxValue, double.MinValue);
+        }
+
         var binWidth = (max - min) / binCount;
 
         // Populate the histogram based on where each data point falls.
@@ -124,6 +135,15 @@ internal static class Utils
             }
 
             histogram[binIndex]++;
+            if (labels[binIndex].Start > item)
+            {
+                labels[binIndex] = new(item, labels[binIndex].End);
+            }
+
+            if (labels[binIndex].End < item)
+            {
+                labels[binIndex] = new(labels[binIndex].Start, item);
+            }
         }
 
         // Initialize variable to count the number of peaks in the histogram.
@@ -133,7 +153,7 @@ internal static class Utils
         // A peak is defined as a bin count greater than its neighbors.
         for (var i = 1; i < binCount - 1; i++)
         {
-            if (histogram[i] > histogram[i - 1] && histogram[i] > histogram[i + 1])
+            if (histogram[i] - 1 > histogram[i - 1] && histogram[i] - 1 > histogram[i + 1])
             {
                 peakCount++;
             }
@@ -165,5 +185,33 @@ internal static class Utils
         }
 
         return Q3 - Q1;
+    }
+
+    /// <summary>
+    /// Retrieves the width of the console buffer safely. 
+    /// If unable to determine the width, returns a default value.
+    /// </summary>
+    /// <param name="defaultValue">The default value to return if the width cannot be determined. Default is 180.</param>
+    /// <returns>The width of the console buffer, or the default value if it cannot be determined.</returns>
+    public static int GetSafeWidth(int defaultValue = 180)
+    {
+        try
+        {
+            // Attempt to get the console buffer width.
+            var width = System.Console.BufferWidth;
+
+            // If the buffer width is reported as zero, use the default value.
+            if (width == 0)
+            {
+                width = defaultValue;
+            }
+
+            return width;
+        }
+        catch (IOException)
+        {
+            // If an IOException occurs (e.g., console not available), return the default value.
+            return defaultValue;
+        }
     }
 }
