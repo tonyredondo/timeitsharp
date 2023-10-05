@@ -225,20 +225,15 @@ public sealed class ConsoleExporter : IExporter
         AnsiConsole.WriteLine();
 
         // Check if is bimodal
-        var hasBimodal = false;
         for (var idx = 0; idx < resultsList.Count; idx++)
         {
             var result = resultsList[idx];
             if (result.IsBimodal)
             {
                 AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name, result.PeakCount);
-                hasBimodal = true;
+                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
+                AnsiConsole.WriteLine();
             }
-        }
-
-        if (hasBimodal)
-        {
-            AnsiConsole.WriteLine();
         }
 
         // Write Errors
@@ -256,6 +251,24 @@ public sealed class ConsoleExporter : IExporter
                     AnsiConsole.MarkupLine("[green bold]Scenario '{0}':[/]{1}{2}", result.Name, Environment.NewLine, result.Error);
                 }
             }
+        }
+    }
+
+    private static void WriteHistogramHorizontal(int[] data, (double Start, double End)[] labels)
+    {
+        int maxVal = Int32.MinValue;
+        for (int i = 0; i < data.Length; i++)
+        {
+            if (data[i] > maxVal)
+            {
+                maxVal = data[i];
+            }
+        }
+
+        for (int i = 0; i < data.Length; i++)
+        {
+            string bar = new string('█', data[i] * 10 / maxVal);  // Escalar el valor
+            AnsiConsole.MarkupLine($" [green]{Math.Round(Utils.FromNanosecondsToMilliseconds(labels[i].Start), 4):0.0000}ms - {Math.Round(Utils.FromNanosecondsToMilliseconds(labels[i].End), 4):0.0000}ms[/]: [blue]{bar}[/] ({data[i]})");
         }
     }
 }

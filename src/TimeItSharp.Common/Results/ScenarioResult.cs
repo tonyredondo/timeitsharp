@@ -64,6 +64,12 @@ public sealed class ScenarioResult : Scenario
     
     [JsonPropertyName("peakCount")]
     public int PeakCount { get; set; }
+    
+    [JsonPropertyName("histogram")]
+    public int[] Histogram { get; set; }
+
+    [JsonPropertyName("histogramLabels")]
+    public (double Start, double End)[] HistogramLabels { get; set; }
 
     [JsonPropertyName("metrics")]
     public Dictionary<string, double> Metrics { get; set; }

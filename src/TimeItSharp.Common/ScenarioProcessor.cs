@@ -241,12 +241,14 @@ internal sealed class ScenarioProcessor
         List<double> outliers = new List<double>();
         var threshold = 2.0d;
         var peakCount = 0;
+        int[] histogram = Array.Empty<int>();
+        (double, double)[] labels = Array.Empty<(double, double)>();
         var isBimodal = false;
         while (threshold > 0)
         {
             newDurations = Utils.RemoveOutliers(durations, threshold).ToList();
             outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
-            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount);
+            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, out histogram, out labels, _configuration.Count / 10);
             if (!isBimodal)
             {
                 // if the series is no longer bimodal we don't remove more outliers
@@ -262,7 +264,7 @@ internal sealed class ScenarioProcessor
 
             threshold -= 0.1;
         }
-        
+
         var mean = newDurations.Mean();
         var max = newDurations.Maximum();
         var min = newDurations.Minimum();
@@ -319,6 +321,8 @@ internal sealed class ScenarioProcessor
             P90 = p90,
             IsBimodal = isBimodal,
             PeakCount = peakCount,
+            Histogram = histogram,
+            HistogramLabels = labels,
             Metrics = metricsStats,
             MetricsData = metricsData,
             Start = start,
