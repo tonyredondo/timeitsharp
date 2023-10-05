@@ -224,6 +224,23 @@ public sealed class ConsoleExporter : IExporter
         AnsiConsole.Write(summaryTable);
         AnsiConsole.WriteLine();
 
+        // Check if is bimodal
+        var hasBimodal = false;
+        for (var idx = 0; idx < resultsList.Count; idx++)
+        {
+            var result = resultsList[idx];
+            if (result.IsBimodal)
+            {
+                AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name, result.PeakCount);
+                hasBimodal = true;
+            }
+        }
+
+        if (hasBimodal)
+        {
+            AnsiConsole.WriteLine();
+        }
+
         // Write Errors
         for (var idx = 0; idx < resultsList.Count; idx++)
         {

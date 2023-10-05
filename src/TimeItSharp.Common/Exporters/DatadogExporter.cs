@@ -63,6 +63,10 @@ public sealed class DatadogExporter : IExporter
                     "Duration of a run",
                     BenchmarkDiscreteStats.GetFrom(scenarioResult.Durations.ToArray()));
 
+                // Report if is bimodal
+                test.SetTag("benchmark.duration.bimodal", scenarioResult.IsBimodal ? "true": "false");
+                test.SetTag("benchmark.duration.peakcount", scenarioResult.PeakCount);
+
                 // Add metrics
                 if (scenarioResult.MetricsData.TryGetValue("process.time_to_start_ms", out var timeToStart))
                 {

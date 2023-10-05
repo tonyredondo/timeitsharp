@@ -237,8 +237,32 @@ internal sealed class ScenarioProcessor
         }
 
         // Get outliers
-        var newDurations = Utils.RemoveOutliers(durations, 2.0).ToList();
-        var outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
+        List<double> newDurations = new List<double>();
+        List<double> outliers = new List<double>();
+        var threshold = 2.0d;
+        var peakCount = 0;
+        var isBimodal = false;
+        while (threshold > 0)
+        {
+            newDurations = Utils.RemoveOutliers(durations, threshold).ToList();
+            outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
+            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount);
+            if (!isBimodal)
+            {
+                // if the series is no longer bimodal we don't remove more outliers
+                break;
+            }
+
+            var outliersPercent = ((double)outliers.Count / durations.Count) * 100;
+            if (outliersPercent >= 20)
+            {
+                // outliers must be not more than 20% of the data
+                break;
+            }
+
+            threshold -= 0.1;
+        }
+        
         var mean = newDurations.Mean();
         var max = newDurations.Maximum();
         var min = newDurations.Minimum();
@@ -253,7 +277,7 @@ internal sealed class ScenarioProcessor
         foreach (var key in metricsData.Keys)
         {
             var originalMetricsValue = metricsData[key];
-            var metricsValue = Utils.RemoveOutliers(originalMetricsValue, 3.0).ToList();
+            var metricsValue = Utils.RemoveOutliers(originalMetricsValue, 3).ToList();
             metricsData[key] = metricsValue;
             var mMean = metricsValue.Mean();
             var mMax = metricsValue.Maximum();
@@ -293,6 +317,8 @@ internal sealed class ScenarioProcessor
             P99 = p99,
             P95 = p95,
             P90 = p90,
+            IsBimodal = isBimodal,
+            PeakCount = peakCount,
             Metrics = metricsStats,
             MetricsData = metricsData,
             Start = start,
