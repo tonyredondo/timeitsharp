@@ -247,6 +247,8 @@ internal sealed class ScenarioProcessor
         var p95 = newDurations.Percentile(95);
         var p90 = newDurations.Percentile(90);
         var stderr = stdev / Math.Sqrt(newDurations.Count);
+        int peakCount;
+        var isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount);
 
         // Calculate metrics stats
         var metricsStats = new Dictionary<string, double>();
@@ -293,6 +295,8 @@ internal sealed class ScenarioProcessor
             P99 = p99,
             P95 = p95,
             P90 = p90,
+            IsBimodal = isBimodal,
+            PeakCount = peakCount,
             Metrics = metricsStats,
             MetricsData = metricsData,
             Start = start,

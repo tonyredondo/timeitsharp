@@ -58,6 +58,12 @@ public sealed class ScenarioResult : Scenario
 
     [JsonPropertyName("p90")]
     public double P90 { get; set; }
+    
+    [JsonPropertyName("isBimodal")]
+    public bool IsBimodal { get; set; }
+    
+    [JsonPropertyName("peakCount")]
+    public int PeakCount { get; set; }
 
     [JsonPropertyName("metrics")]
     public Dictionary<string, double> Metrics { get; set; }
