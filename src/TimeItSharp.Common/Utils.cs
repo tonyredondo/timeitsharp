@@ -166,4 +166,32 @@ internal static class Utils
 
         return Q3 - Q1;
     }
+
+    /// <summary>
+    /// Retrieves the width of the console buffer safely. 
+    /// If unable to determine the width, returns a default value.
+    /// </summary>
+    /// <param name="defaultValue">The default value to return if the width cannot be determined. Default is 180.</param>
+    /// <returns>The width of the console buffer, or the default value if it cannot be determined.</returns>
+    public static int GetSafeWidth(int defaultValue = 180)
+    {
+        try
+        {
+            // Attempt to get the console buffer width.
+            var width = System.Console.BufferWidth;
+
+            // If the buffer width is reported as zero, use the default value.
+            if (width == 0)
+            {
+                width = defaultValue;
+            }
+
+            return width;
+        }
+        catch (IOException)
+        {
+            // If an IOException occurs (e.g., console not available), return the default value.
+            return defaultValue;
+        }
+    }
 }

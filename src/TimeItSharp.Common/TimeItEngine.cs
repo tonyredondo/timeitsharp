@@ -91,6 +91,7 @@ public static class TimeItEngine
         // Create scenario processor
         var processor = new ScenarioProcessor(config, templateVariables, assertors, services, callbacksTriggers);
 
+        AnsiConsole.Profile.Width = Utils.GetSafeWidth();
         AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
         AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.Count);
         AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
