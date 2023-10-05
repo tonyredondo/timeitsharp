@@ -81,9 +81,9 @@ internal static class Utils
     /// Determines if a given dataset is bimodal.
     /// </summary>
     /// <param name="data">The dataset to analyze.</param>
-    /// <param name="binCount">The number of bins to use for the histogram. Default is 8.</param>
+    /// <param name="binCount">The number of bins to use for the histogram. Default is 10.</param>
     /// <returns>True if the dataset is bimodal, otherwise false.</returns>
-    public static bool IsBimodal(Span<double> data, out int peakCount, int binCount = 8)
+    public static bool IsBimodal(Span<double> data, out int peakCount, int binCount = 10)
     {
         // Return false if there are less than 3 data points, as bimodality can't be determined.
         if (data.Length < 3)
