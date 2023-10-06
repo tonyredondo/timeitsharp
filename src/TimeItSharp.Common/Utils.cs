@@ -89,7 +89,7 @@ internal static class Utils
     public static bool IsBimodal(Span<double> data, out int peakCount, out int[] histogram,  out (double Start, double End)[] labels, int binCount = 10)
     {
         // Return false if there are less than 3 data points, as bimodality can't be determined.
-        if (data.Length < 3)
+        if (data.Length < 3 || binCount < 3)
         {
             peakCount = 0;
             histogram = Array.Empty<int>();

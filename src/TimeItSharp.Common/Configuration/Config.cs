@@ -86,4 +86,27 @@ public class Config : ProcessData
 
         return new Config();
     }
+
+    internal override Config Clone() => new Config
+    {
+        FilePath = FilePath,
+        Path = Path,
+        FileName = FileName,
+        WarmUpCount = WarmUpCount,
+        Count = Count,
+        EnableDatadog = EnableDatadog,
+        EnableMetrics = EnableMetrics,
+        Scenarios = Scenarios.Select(i => i.Clone()).ToList(),
+        JsonExporterFilePath = JsonExporterFilePath,
+        Exporters = Exporters.Select(i => i.Clone()).ToList(),
+        Assertors = Assertors.Select(i => i.Clone()).ToList(),
+        Services = Services.Select(i => i.Clone()).ToList(),
+        ProcessName = ProcessName,
+        ProcessArguments = ProcessArguments,
+        WorkingDirectory = WorkingDirectory,
+        EnvironmentVariables = new Dictionary<string, string>(EnvironmentVariables),
+        PathValidations = new List<string>(PathValidations),
+        Timeout = Timeout.Clone(),
+        Tags = new Dictionary<string, string>(Tags),
+    };
 }

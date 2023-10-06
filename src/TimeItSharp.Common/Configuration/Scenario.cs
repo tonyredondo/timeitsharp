@@ -26,4 +26,16 @@ public class Scenario : ProcessData
             Tags = processData.Tags;
         }
     }
+
+    internal override Scenario Clone() => new Scenario
+    {
+        Name = Name,
+        ProcessName = ProcessName,
+        ProcessArguments = ProcessArguments,
+        WorkingDirectory = WorkingDirectory,
+        EnvironmentVariables = new Dictionary<string, string>(EnvironmentVariables),
+        PathValidations = new List<string>(PathValidations),
+        Timeout = Timeout.Clone(),
+        Tags = new Dictionary<string, string>(Tags),
+    };
 }
