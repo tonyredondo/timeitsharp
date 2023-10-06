@@ -25,4 +25,6 @@ public class Timeout
         ProcessName = processName;
         ProcessArguments = processArguments;
     }
+
+    internal virtual Timeout Clone() => new(MaxDuration, ProcessName, ProcessArguments);
 }

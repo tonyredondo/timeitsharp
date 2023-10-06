@@ -47,6 +47,7 @@ public static class TimeItEngine
     /// <returns>Exit code of the TimeIt engine</returns>
     public static async Task<int> RunAsync(Config config, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
+        config = config.Clone();
         options ??= new TimeItOptions(new TemplateVariables());
         cancellationToken ??= CancellationToken.None;
         var templateVariables = options.TemplateVariables ?? new TemplateVariables();

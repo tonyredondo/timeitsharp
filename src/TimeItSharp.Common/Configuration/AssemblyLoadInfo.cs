@@ -12,4 +12,11 @@ public class AssemblyLoadInfo
     
     [JsonPropertyName("name")]
     public string? Name { get; set; }
+
+    internal virtual AssemblyLoadInfo Clone() => new AssemblyLoadInfo
+    {
+        FilePath = FilePath,
+        Type = Type,
+        Name = Name,
+    };
 }
