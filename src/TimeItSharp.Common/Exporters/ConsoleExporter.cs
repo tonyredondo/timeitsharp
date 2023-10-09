@@ -1,4 +1,5 @@
-﻿using MathNet.Numerics.Statistics;
+﻿using System.Globalization;
+using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeItSharp.Common.Results;
 using Status = TimeItSharp.Common.Results.Status;
@@ -18,18 +19,12 @@ public sealed class ConsoleExporter : IExporter
         _options = options;
     }
 
-    public void Export(IEnumerable<ScenarioResult> results)
+    public void Export(TimeitResult results)
     {
         if (_options.Configuration is null)
         {
             AnsiConsole.MarkupLine("[red bold]Configuration is missing.[/]");
             return;
-        }
-
-        // We make sure we are enumerating at least 1 time.
-        if (results is not List<ScenarioResult>)
-        {
-            results = results.ToList();
         }
 
         // ****************************************
@@ -39,12 +34,12 @@ public sealed class ConsoleExporter : IExporter
             .MarkdownBorder();
         
         // Add columns
-        resultsTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
+        resultsTable.AddColumns(results.Scenarios.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
         
         // Add rows
         for (var i = 0; i < _options.Configuration.Count; i++)
         {
-            resultsTable.AddRow(results.Select(r =>
+            resultsTable.AddRow(results.Scenarios.Select(r =>
             {
                 if (i < r.Durations.Count)
                 {
@@ -65,13 +60,13 @@ public sealed class ConsoleExporter : IExporter
             .MarkdownBorder();
         
         // Add columns
-        outliersTable.AddColumns(results.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
+        outliersTable.AddColumns(results.Scenarios.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
 
         // Add rows
-        var maxOutliersCount = results.Select(r => r.Outliers.Count).Max();
+        var maxOutliersCount = results.Scenarios.Select(r => r.Outliers.Count).Max();
         for (var i = 0; i < maxOutliersCount; i++)
         {
-            outliersTable.AddRow(results.Select(r =>
+            outliersTable.AddRow(results.Scenarios.Select(r =>
             {
                 if (i < r.Outliers.Count)
                 {
@@ -91,7 +86,7 @@ public sealed class ConsoleExporter : IExporter
         var summaryTable = new Table()
             .MarkdownBorder();
 
-        var additionalMetrics = results
+        var additionalMetrics = results.Scenarios
             .SelectMany(s => s.AdditionalMetrics.Select(item => new { item.Key, item.Value, ScenarioResult = s }))
             .GroupBy(item => item.Key)
             .ToList();
@@ -122,7 +117,7 @@ public sealed class ConsoleExporter : IExporter
         summaryTable.AddColumns(columnList.ToArray());
 
         // Add rows
-        var resultsList = results.ToList();
+        var resultsList = results.Scenarios.ToList();
         for (var idx = 0; idx < resultsList.Count; idx++)
         {
             var result = resultsList[idx];
@@ -222,6 +217,49 @@ public sealed class ConsoleExporter : IExporter
 
         // Write table
         AnsiConsole.Write(summaryTable);
+        AnsiConsole.WriteLine();
+        
+        
+        // ******************************
+        // Write overhead table
+
+        AnsiConsole.MarkupLine("[aqua bold underline]### Overheads:[/]");
+        var overheadTable = new Table()
+            .MarkdownBorder();
+        
+        var lstOverheadColumns = new List<string>();
+        lstOverheadColumns.Add(string.Empty);
+        foreach (var scenario in results.Scenarios)
+        {
+            lstOverheadColumns.Add($"[dodgerblue1 bold]{scenario.Name}[/]");
+        }
+
+        overheadTable.AddColumns(lstOverheadColumns.ToArray());
+        for (var i = 0; i < results.Scenarios.Count; i++)
+        {
+            var row = new List<string>
+            {
+                $"[dodgerblue1 bold]{results.Scenarios[i].Name}[/]"
+            };
+
+            for (var j = 0; j < results.Scenarios.Count; j++)
+            {
+                var value = results.Overheads?[i][j] ?? 0;
+                if (value == 0)
+                {
+                    row.Add("--");
+                }
+                else
+                {
+                    row.Add($"{value.ToString(CultureInfo.InvariantCulture)}%");
+                }
+            }
+
+            overheadTable.AddRow(row.ToArray());
+        }
+        
+        // Write overhead table
+        AnsiConsole.Write(overheadTable);
         AnsiConsole.WriteLine();
 
         // Check if is bimodal

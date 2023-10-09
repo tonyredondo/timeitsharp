@@ -8,5 +8,5 @@ public interface IExporter : INamedExtension
 
     void Initialize(InitOptions options);
 
-    void Export(IEnumerable<ScenarioResult> results);
+    void Export(TimeitResult results);
 }

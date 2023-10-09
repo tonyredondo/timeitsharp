@@ -33,15 +33,15 @@ public sealed class DatadogExporter : IExporter
     }
 
     /// <inheritdoc />
-    public void Export(IEnumerable<ScenarioResult> results)
+    public void Export(TimeitResult results)
     {
         var errors = false;
-        var minStartDate = results.Select(r => r.Start).Min();
+        var minStartDate = results.Scenarios.Select(r => r.Start).Min();
         _testModule ??= _testSession.CreateModule(_options.Configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
         var testSuite = _testModule.GetOrCreateSuite("scenarios", minStartDate);
         try
         {
-            foreach (var scenarioResult in results)
+            foreach (var scenarioResult in results.Scenarios)
             {
                 var test = testSuite.CreateTest(scenarioResult.Name, scenarioResult.Start);
 

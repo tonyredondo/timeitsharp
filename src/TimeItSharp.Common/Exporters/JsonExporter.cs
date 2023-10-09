@@ -17,7 +17,7 @@ public sealed class JsonExporter : IExporter
         _options = options;
     }
 
-    public void Export(IEnumerable<ScenarioResult> results)
+    public void Export(TimeitResult results)
     {
         try
         {
@@ -27,7 +27,7 @@ public sealed class JsonExporter : IExporter
                 outputFile = Path.Combine(Environment.CurrentDirectory, $"jsonexporter_{Random.Shared.Next()}.json");
             }
 
-            foreach (var scenarioResult in results)
+            foreach (var scenarioResult in results.Scenarios)
             {
                 var tags = new Dictionary<string, string>(scenarioResult.Tags.Count);
                 // Expanding custom tags
@@ -42,7 +42,7 @@ public sealed class JsonExporter : IExporter
             }
 
             using var fStream = File.OpenWrite(outputFile);
-            JsonSerializer.Serialize(fStream, results, new JsonSerializerOptions(JsonSerializerDefaults.General)
+            JsonSerializer.Serialize(fStream, results.Scenarios, new JsonSerializerOptions(JsonSerializerDefaults.General)
             {
                 WriteIndented = true
             });
