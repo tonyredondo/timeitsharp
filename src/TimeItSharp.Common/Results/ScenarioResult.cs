@@ -69,7 +69,7 @@ public sealed class ScenarioResult : Scenario
     public int[] Histogram { get; set; }
 
     [JsonPropertyName("histogramLabels")]
-    public (double Start, double End)[] HistogramLabels { get; set; }
+    public Range<double>[] HistogramLabels { get; set; }
 
     [JsonPropertyName("metrics")]
     public Dictionary<string, double> Metrics { get; set; }
@@ -92,7 +92,7 @@ public sealed class ScenarioResult : Scenario
         Durations = new List<double>();
         Outliers = new List<double>();
         Histogram = Array.Empty<int>();
-        HistogramLabels = Array.Empty<(double Start, double End)>();
+        HistogramLabels = Array.Empty<Range<double>>();
         Metrics = new Dictionary<string, double>();
         MetricsData = new Dictionary<string, List<double>>();
         AdditionalMetrics = new Dictionary<string, double>();

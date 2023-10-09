@@ -254,7 +254,7 @@ public sealed class ConsoleExporter : IExporter
         }
     }
 
-    private static void WriteHistogramHorizontal(int[] data, (double Start, double End)[] labels)
+    private static void WriteHistogramHorizontal(int[] data, Range<double>[] labels)
     {
         int maxVal = Int32.MinValue;
         for (int i = 0; i < data.Length; i++)
