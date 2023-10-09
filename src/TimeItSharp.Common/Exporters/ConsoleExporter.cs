@@ -244,11 +244,13 @@ public sealed class ConsoleExporter : IExporter
             {
                 if (result.Status == Status.Failed)
                 {
-                    AnsiConsole.MarkupLine("[red bold]Scenario '{0}':[/]{1}{2}", result.Name, Environment.NewLine, result.Error);
+                    AnsiConsole.MarkupLine("[red bold]Scenario '{0}':[/]{1}", result.Name, Environment.NewLine);
+                    AnsiConsole.WriteLine(result.Error);
                 }
                 else
                 {
-                    AnsiConsole.MarkupLine("[green bold]Scenario '{0}':[/]{1}{2}", result.Name, Environment.NewLine, result.Error);
+                    AnsiConsole.MarkupLine("[green bold]Scenario '{0}':[/]{1}", result.Name, Environment.NewLine);
+                    AnsiConsole.WriteLine(result.Error);
                 }
             }
         }
