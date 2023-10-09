@@ -1,4 +1,6 @@
-﻿namespace TimeItSharp.Common;
+﻿using TimeItSharp.Common.Results;
+
+namespace TimeItSharp.Common;
 
 internal static class Utils
 {
@@ -86,14 +88,14 @@ internal static class Utils
     /// <param name="labels">Histogram labels</param>
     /// <param name="binCount">The number of bins to use for the histogram. Default is 10.</param>
     /// <returns>True if the dataset is bimodal, otherwise false.</returns>
-    public static bool IsBimodal(Span<double> data, out int peakCount, out int[] histogram,  out (double Start, double End)[] labels, int binCount = 10)
+    public static bool IsBimodal(Span<double> data, out int peakCount, out int[] histogram,  out Range<double>[] labels, int binCount = 10)
     {
         // Return false if there are less than 3 data points, as bimodality can't be determined.
         if (data.Length < 3 || binCount < 3)
         {
             peakCount = 0;
             histogram = Array.Empty<int>();
-            labels = Array.Empty<(double, double)>();
+            labels = Array.Empty<Range<double>>();
             return false;
         }
 
@@ -116,10 +118,10 @@ internal static class Utils
 
         // Create and initialize a histogram with 'binCount' bins.
         histogram = new int[binCount];
-        labels = new (double Start, double End)[binCount];
+        labels = new Range<double>[binCount];
         for (var i = 0; i < binCount; i++)
         {
-            labels[i] = (double.MaxValue, double.MinValue);
+            labels[i] = new(double.MaxValue, double.MinValue);
         }
 
         var binWidth = (max - min) / binCount;
@@ -187,6 +189,45 @@ internal static class Utils
         return Q3 - Q1;
     }
 
+    /// <summary>
+    /// Generates a comparison table based on a list of ScenarioResult objects.
+    /// Each cell [i, j] in the table contains the overhead percentage of the mean value of results[j] over results[i].
+    /// </summary>
+    /// <param name="results">A read-only list of ScenarioResult objects.</param>
+    /// <returns>A 2D array containing the comparison data, or an empty array if the input list is null or empty.</returns>
+    public static double[][] GetComparisonTableData(IReadOnlyList<ScenarioResult> results)
+    {
+        // Check if the results list is null or empty
+        if (results is null || results.Count == 0)
+        {
+            return Array.Empty<double[]>();
+        }
+
+        // Initialize a 2D array to hold the comparison table data
+        var tableData = new double[results.Count][];
+
+        // Loop through each pair of results to populate the table
+        for (var i = 0; i < results.Count; i++)
+        {
+            tableData[i] = new double[results.Count];
+            for (var j = 0; j < results.Count; j++)
+            {
+                // Retrieve the mean values for the i-th and j-th results
+                var firstItem = results[i];
+                var firstMean = firstItem.Mean;
+
+                var secondItem = results[j];
+                var secondMean = secondItem.Mean;
+
+                // Calculate the overhead of secondMean over firstMean and store it in the table
+                var overhead = ((secondMean * 100) / firstMean) - 100;
+                tableData[i][j] = Math.Round(overhead, 1);
+            }
+        }
+
+        return tableData;
+    }
+    
     /// <summary>
     /// Retrieves the width of the console buffer safely. 
     /// If unable to determine the width, returns a default value.

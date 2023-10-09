@@ -134,6 +134,12 @@ public static class TimeItEngine
 
             callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
 
+            var results = new TimeitResult
+            {
+                Scenarios = scenariosResults,
+                Overheads = Utils.GetComparisonTableData(scenariosResults),
+            };
+
             // Export data
             foreach (var exporter in exporters)
             {
@@ -145,7 +151,7 @@ public static class TimeItEngine
                 exporter.Initialize(new InitOptions(config, templateVariables, state));
                 if (exporter.Enabled)
                 {
-                    exporter.Export(scenariosResults);
+                    exporter.Export(results);
                 }
             }
 

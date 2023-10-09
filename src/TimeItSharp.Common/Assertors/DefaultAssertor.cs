@@ -52,9 +52,22 @@ public sealed class DefaultAssertor : Assertor
         {
             _sbuilder.AppendLine($"ExitCode: {data.ExitCode}");
             _sbuilder.AppendLine("Standard Error: ");
-            _sbuilder.AppendLine(string.IsNullOrEmpty(data.StandardError) ? "<null>" : data.StandardError);
+            var stdErr = data.StandardError ?? string.Empty;
+            if (stdErr.Length > 1024)
+            {
+                stdErr = "..." + stdErr[^1024..];
+            }
+
+            _sbuilder.AppendLine(string.IsNullOrEmpty(stdErr) ? "<null>" : stdErr);
+
             _sbuilder.AppendLine("Standard Output: ");
-            _sbuilder.AppendLine(string.IsNullOrEmpty(data.StandardOutput) ? "<null>" : data.StandardOutput);
+            var stdOut = data.StandardOutput ?? string.Empty;
+            if (stdOut.Length > 512)
+            {
+                stdOut = "..." + stdOut[^512..];
+            }
+
+            _sbuilder.AppendLine(string.IsNullOrEmpty(stdOut) ? "<null>" : stdOut);
             var message = _sbuilder.ToString();
             _sbuilder.Clear();
             _consecutiveErrorCount++;
