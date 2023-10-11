@@ -41,8 +41,9 @@ public sealed class DatadogExporter : IExporter
         var testSuite = _testModule.GetOrCreateSuite("scenarios", minStartDate);
         try
         {
-            foreach (var scenarioResult in results.Scenarios)
+            for (var i = 0; i < results.Scenarios.Count; i++)
             {
+                var scenarioResult = results.Scenarios[i];
                 var test = testSuite.CreateTest(scenarioResult.Name, scenarioResult.Start);
 
                 // Set benchmark metadata
@@ -127,6 +128,22 @@ public sealed class DatadogExporter : IExporter
                     var key = _options.TemplateVariables.Expand(tag.Key);
                     var value = _options.TemplateVariables.Expand(tag.Value);
                     test.SetTag(key, value);
+                }
+                
+                // Add overheads
+                if (results.Overheads is not null)
+                {
+                    for (var j = 0; j < results.Overheads.Length; j++)
+                    {
+                        if (i == j)
+                        {
+                            continue;
+                        }
+
+                        var overheads = results.Overheads[j];
+                        var name = results.Scenarios[j].Name;
+                        test.SetTag($"test.overhead_over.{name}", Math.Round(overheads[i], 2));
+                    }
                 }
 
                 // Close test
