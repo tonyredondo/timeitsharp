@@ -23,18 +23,19 @@ public class ProcessData
     public Timeout Timeout { get; set; }
 
     [JsonPropertyName("tags")]
-    public Dictionary<string, string> Tags { get; set; }
+    public Dictionary<string, object> Tags { get; set; }
 
     public ProcessData()
     {
         EnvironmentVariables = new Dictionary<string, string>();
         PathValidations = new List<string>();
         Timeout = new Timeout();
-        Tags = new Dictionary<string, string>();
+        Tags = new Dictionary<string, object>();
     }
 
     public ProcessData(string? processName, string? processArguments, string? workingDirectory,
-        Dictionary<string, string> environmentVariables, List<string> pathValidations, Timeout timeout, Dictionary<string, string> tags)
+        Dictionary<string, string> environmentVariables, List<string> pathValidations, Timeout timeout,
+        Dictionary<string, object> tags)
     {
         ProcessName = processName;
         ProcessArguments = processArguments;
@@ -53,6 +54,6 @@ public class ProcessData
         EnvironmentVariables = new Dictionary<string, string>(EnvironmentVariables),
         PathValidations = new List<string>(PathValidations),
         Timeout = Timeout.Clone(),
-        Tags = new Dictionary<string, string>(Tags),
+        Tags = new Dictionary<string, object>(Tags),
     };
 }

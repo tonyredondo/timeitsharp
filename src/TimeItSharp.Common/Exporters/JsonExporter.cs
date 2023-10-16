@@ -29,13 +29,19 @@ public sealed class JsonExporter : IExporter
 
             foreach (var scenarioResult in results.Scenarios)
             {
-                var tags = new Dictionary<string, string>(scenarioResult.Tags.Count);
+                var tags = new Dictionary<string, object>(scenarioResult.Tags.Count);
                 // Expanding custom tags
                 foreach (var tag in scenarioResult.Tags)
                 {
                     var key = _options.TemplateVariables.Expand(tag.Key);
-                    var value = _options.TemplateVariables.Expand(tag.Value);
-                    tags[key] = value;
+                    if (tag.Value is string strValue)
+                    {
+                        tags[key] = _options.TemplateVariables.Expand(strValue);
+                    }
+                    else
+                    {
+                        tags[key] = tag.Value;
+                    }
                 }
 
                 scenarioResult.Tags = tags;
