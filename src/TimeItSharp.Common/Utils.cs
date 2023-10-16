@@ -234,7 +234,7 @@ internal static class Utils
     /// </summary>
     /// <param name="defaultValue">The default value to return if the width cannot be determined. Default is 180.</param>
     /// <returns>The width of the console buffer, or the default value if it cannot be determined.</returns>
-    public static int GetSafeWidth(int defaultValue = 180)
+    public static int GetSafeWidth(int defaultValue = 200)
     {
         try
         {
