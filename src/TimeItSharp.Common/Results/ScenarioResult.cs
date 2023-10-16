@@ -37,6 +37,9 @@ public sealed class ScenarioResult : Scenario
     
     [JsonPropertyName("mean")]
     public double Mean { get; set; }
+
+    [JsonPropertyName("median")]
+    public double Median { get; set; }
     
     [JsonPropertyName("max")]
     public double Max { get; set; }

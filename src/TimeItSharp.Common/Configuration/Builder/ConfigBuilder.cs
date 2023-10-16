@@ -133,6 +133,17 @@ public sealed class ConfigBuilder
     }
 
     #endregion
+ 
+    /// <summary>
+    /// Sets the name of the configuration
+    /// </summary>
+    /// <param name="name">Name of the configuration</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithName(string name)
+    {
+        _configuration.FileName = name;
+        return this;
+    }
     
     /// <summary>
     /// Sets the json exporter path for the JsonExporter
@@ -605,5 +616,31 @@ public sealed class ConfigBuilder
         return this;
     }
 
+    /// <summary>
+    /// Adds tags to each scenario
+    /// </summary>
+    /// <param name="tags">Tags dictionary</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithTags(Dictionary<string, object> tags)
+    {
+        foreach (var kv in tags)
+        {
+            _configuration.Tags[kv.Key] = kv.Value;
+        }
+
+        return this;
+    }
+    
+    /// <summary>
+    /// Adds a tag to each scenario
+    /// </summary>
+    /// <param name="key">Key of the tag</param>
+    /// <param name="value">Value of the tag</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithTags(string key, IConvertible value)
+    {
+        _configuration.Tags[key] = value;
+        return this;
+    }
     #endregion
 }

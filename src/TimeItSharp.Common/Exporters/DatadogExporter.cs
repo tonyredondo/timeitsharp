@@ -1,4 +1,5 @@
-﻿using DatadogTestLogger.Vendors.Datadog.Trace;
+﻿using System.Globalization;
+using DatadogTestLogger.Vendors.Datadog.Trace;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using Spectre.Console;
 using TimeItSharp.Common.Results;
@@ -93,6 +94,7 @@ public sealed class DatadogExporter : IExporter
                     // .n, .mean, .max, .min and .std_dev
                     if (metric.Key.EndsWith(".n") ||
                         metric.Key.EndsWith(".mean") ||
+                        metric.Key.EndsWith(".median") ||
                         metric.Key.EndsWith(".max") ||
                         metric.Key.EndsWith(".min") ||
                         metric.Key.EndsWith(".std_dev"))
@@ -126,8 +128,18 @@ public sealed class DatadogExporter : IExporter
                 foreach (var tag in scenarioResult.Tags)
                 {
                     var key = _options.TemplateVariables.Expand(tag.Key);
-                    var value = _options.TemplateVariables.Expand(tag.Value);
-                    test.SetTag(key, value);
+                    if (tag.Value is string strValue)
+                    {
+                        test.SetTag(key, _options.TemplateVariables.Expand(strValue));
+                    }
+                    else if (tag.Value is IConvertible convertible)
+                    {
+                        test.SetTag(key, convertible.ToDouble(CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        test.SetTag(key, tag.Value?.ToString());
+                    }
                 }
                 
                 // Add overheads

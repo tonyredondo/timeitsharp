@@ -8,6 +8,7 @@ using TimeItSharp.Common.Services;
 var config = ConfigBuilder.Create()
     .WithWarmupCount(10)
     .WithCount(100)
+    .WithName("dd-tracer-dotnet test")
     .WithMetrics(true)
     .WithExporters<ConsoleExporter, JsonExporter, DatadogExporter>()
     .WithAssertor<DefaultAssertor>()
@@ -28,6 +29,7 @@ var config = ConfigBuilder.Create()
         ["benchmark.job.runtime.name"] = ".NET Framework 4.6.1",
         ["benchmark.job.runtime.moniker"] = "net461",
     })
+    .WithTags("MyMetricValue", 25432.43)
     .WithTimeout(timeout => timeout
         .WithMaxDuration(15)
         .WithProcessName("dotnet-dump")

@@ -36,6 +36,6 @@ public class Scenario : ProcessData
         EnvironmentVariables = new Dictionary<string, string>(EnvironmentVariables),
         PathValidations = new List<string>(PathValidations),
         Timeout = Timeout.Clone(),
-        Tags = new Dictionary<string, string>(Tags),
+        Tags = new Dictionary<string, object>(Tags),
     };
 }

@@ -72,8 +72,15 @@ internal sealed class ScenarioProcessor
 
         foreach (var (tagName, tagValue) in _configuration.Tags)
         {
-            var value = _templateVariables.Expand(tagValue);
-            scenario.Tags.TryAdd(tagName, value);
+            var key = _templateVariables.Expand(tagName);
+            if (tagValue is string strTagValue)
+            {
+                scenario.Tags.TryAdd(key, strTagValue);
+            }
+            else
+            {
+                scenario.Tags.TryAdd(key, tagValue);
+            }
         }
 
         for (var i = 0; i < scenario.PathValidations.Count; i++)
@@ -266,6 +273,7 @@ internal sealed class ScenarioProcessor
         }
 
         var mean = newDurations.Mean();
+        var median = newDurations.Median();
         var max = newDurations.Maximum();
         var min = newDurations.Minimum();
         var stdev = newDurations.StandardDeviation();
@@ -282,6 +290,7 @@ internal sealed class ScenarioProcessor
             var metricsValue = Utils.RemoveOutliers(originalMetricsValue, 3).ToList();
             metricsData[key] = metricsValue;
             var mMean = metricsValue.Mean();
+            var mMedian = metricsValue.Median();
             var mMax = metricsValue.Maximum();
             var mMin = metricsValue.Minimum();
             var mStdDev = metricsValue.StandardDeviation();
@@ -292,6 +301,7 @@ internal sealed class ScenarioProcessor
 
             metricsStats[key + ".n"] = metricsValue.Count;
             metricsStats[key + ".mean"] = mMean;
+            metricsStats[key + ".median"] = mMedian;
             metricsStats[key + ".max"] = mMax;
             metricsStats[key + ".min"] = mMin;
             metricsStats[key + ".std_dev"] = mStdDev;
@@ -312,6 +322,7 @@ internal sealed class ScenarioProcessor
             Durations = newDurations,
             Outliers = outliers,
             Mean = mean,
+            Median = median,
             Max = max,
             Min = min,
             Stdev = stdev,

@@ -99,6 +99,7 @@ public sealed class ConsoleExporter : IExporter
             "[dodgerblue1 bold]StdDev[/]",
             "[dodgerblue1 bold]StdErr[/]",
             "[dodgerblue1 bold]Min[/]",
+            "[dodgerblue1 bold]Median[/]",
             "[dodgerblue1 bold]Max[/]",
             "[dodgerblue1 bold]P95[/]",
             "[dodgerblue1 bold]P90[/]",
@@ -132,6 +133,7 @@ public sealed class ConsoleExporter : IExporter
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 6)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms[/]",
@@ -159,6 +161,7 @@ public sealed class ConsoleExporter : IExporter
                     }
 
                     var mMean = itemResult.Mean();
+                    var mMedian = itemResult.Median();
                     var mStdDev = itemResult.StandardDeviation();
                     var mStdErr = mStdDev / Math.Sqrt(itemResult.Count);
                     var mMin = itemResult.Min();
@@ -183,6 +186,7 @@ public sealed class ConsoleExporter : IExporter
                         Math.Round(mStdDev, 6).ToString(),
                         Math.Round(mStdErr, 6).ToString(),
                         Math.Round(mMin, 6).ToString(),
+                        Math.Round(mMedian, 6).ToString(),
                         Math.Round(mMax, 6).ToString(),
                         Math.Round(mP95, 6).ToString(),
                         Math.Round(mP90, 6).ToString(),
@@ -199,6 +203,7 @@ public sealed class ConsoleExporter : IExporter
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 6)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms",
