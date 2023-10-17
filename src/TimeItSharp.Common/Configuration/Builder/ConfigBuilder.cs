@@ -86,17 +86,6 @@ public sealed class ConfigBuilder
         return this;
     }
     
-    /// <summary>
-    /// Sets if the metrics importer should be enabled or not
-    /// </summary>
-    /// <param name="enabled">True if the metrics importer is enabled; false if disabled</param>
-    /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithMetrics(bool enabled)
-    {
-        _configuration.EnableMetrics = enabled;
-        return this;
-    }
-    
     #endregion
 
     #region Scenarios
@@ -135,13 +124,35 @@ public sealed class ConfigBuilder
     #endregion
  
     /// <summary>
+    /// Sets if the runtime metrics importer should be enabled or not
+    /// </summary>
+    /// <param name="enabled">True if the metrics importer is enabled; false if disabled</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMetrics(bool enabled)
+    {
+        _configuration.EnableMetrics = enabled;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets the process name to collect runtime metrics
+    /// </summary>
+    /// <param name="processName">Process name</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMetricsProcessName(string processName)
+    {
+        _configuration.MetricsProcessName = processName;
+        return this;
+    }
+    
+    /// <summary>
     /// Sets the name of the configuration
     /// </summary>
     /// <param name="name">Name of the configuration</param>
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithName(string name)
     {
-        _configuration.FileName = name;
+        _configuration.Name = name;
         return this;
     }
     
@@ -180,6 +191,17 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithExporter(AssemblyLoadInfo exporter)
     {
+        // Check if exporter is already there.
+        foreach (var existingExporter in _configuration.Exporters)
+        {
+            if (existingExporter.Name == exporter.Name &&
+                existingExporter.FilePath == exporter.FilePath &&
+                existingExporter.Type == exporter.Type)
+            {
+                return this;
+            }
+        }
+
         _configuration.Exporters.Add(exporter);
         return this;
     }
@@ -202,6 +224,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithExporter(string exporterName)
     {
+        // Check if exporter is already there.
+        foreach (var exporter in _configuration.Exporters)
+        {
+            if (exporter.Name == exporterName)
+            {
+                return this;
+            }
+        }
+
         _configuration.Exporters.Add(new AssemblyLoadInfo
         {
             Name = exporterName
@@ -228,6 +259,16 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithExporter(Type exporterType)
     {
+        // Check if exporter is already there.
+        foreach (var exporter in _configuration.Exporters)
+        {
+            if (exporter.FilePath == exporterType.Assembly.Location &&
+                exporter.Type == exporterType.FullName)
+            {
+                return this;
+            }
+        }
+        
         _configuration.Exporters.Add(new AssemblyLoadInfo
         {
             FilePath = exporterType.Assembly.Location,
@@ -291,6 +332,17 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithAssertor(AssemblyLoadInfo assertor)
     {
+        // Check if assertor is already there.
+        foreach (var existing in _configuration.Assertors)
+        {
+            if (existing.Name == assertor.Name &&
+                existing.FilePath == assertor.FilePath &&
+                existing.Type == assertor.Type)
+            {
+                return this;
+            }
+        }
+
         _configuration.Assertors.Add(assertor);
         return this;
     }
@@ -313,6 +365,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithAssertor(string assertorName)
     {
+        // Check if assertors is already there.
+        foreach (var exiting in _configuration.Assertors)
+        {
+            if (exiting.Name == assertorName)
+            {
+                return this;
+            }
+        }
+
         _configuration.Assertors.Add(new AssemblyLoadInfo
         {
             Name = assertorName
@@ -339,6 +400,16 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithAssertor(Type assertorType)
     {
+        // Check if assertors is already there.
+        foreach (var existing in _configuration.Assertors)
+        {
+            if (existing.FilePath == assertorType.Assembly.Location &&
+                existing.Type == assertorType.FullName)
+            {
+                return this;
+            }
+        }
+
         _configuration.Assertors.Add(new AssemblyLoadInfo
         {
             FilePath = assertorType.Assembly.Location,
@@ -397,6 +468,17 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithService(AssemblyLoadInfo service)
     {
+        // Check if service is already there.
+        foreach (var existing in _configuration.Services)
+        {
+            if (existing.Name == service.Name &&
+                existing.FilePath == service.FilePath &&
+                existing.Type == service.Type)
+            {
+                return this;
+            }
+        }
+
         _configuration.Services.Add(service);
         return this;
     }
@@ -419,6 +501,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithService(string serviceName)
     {
+        // Check if service is already there.
+        foreach (var exiting in _configuration.Services)
+        {
+            if (exiting.Name == serviceName)
+            {
+                return this;
+            }
+        }
+
         _configuration.Services.Add(new AssemblyLoadInfo
         {
             Name = serviceName
@@ -445,6 +536,16 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithService(Type serviceType)
     {
+        // Check if services is already there.
+        foreach (var existing in _configuration.Services)
+        {
+            if (existing.FilePath == serviceType.Assembly.Location &&
+                existing.Type == serviceType.FullName)
+            {
+                return this;
+            }
+        }
+
         _configuration.Services.Add(new AssemblyLoadInfo
         {
             FilePath = serviceType.Assembly.Location,

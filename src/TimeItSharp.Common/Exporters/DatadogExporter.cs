@@ -9,6 +9,7 @@ namespace TimeItSharp.Common.Exporters;
 
 public sealed class DatadogExporter : IExporter
 {
+    private string? _configName;
     private InitOptions _options;
     private readonly TestSession _testSession;
     private readonly DateTime _startDate;
@@ -30,7 +31,8 @@ public sealed class DatadogExporter : IExporter
     public void Initialize(InitOptions options)
     {
         _options = options;
-        _testModule ??= _testSession.CreateModule(options.Configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
+        _configName = options.Configuration?.Name ?? options.Configuration?.FileName;
+        _testModule ??= _testSession.CreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
     }
 
     /// <inheritdoc />
@@ -38,8 +40,8 @@ public sealed class DatadogExporter : IExporter
     {
         var errors = false;
         var minStartDate = results.Scenarios.Select(r => r.Start).Min();
-        _testModule ??= _testSession.CreateModule(_options.Configuration?.FileName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
-        var testSuite = _testModule.GetOrCreateSuite("scenarios", minStartDate);
+        _testModule ??= _testSession.CreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
+        var testSuite = _testModule.GetOrCreateSuite(_configName is not null ? $"{_configName}.scenarios" : "scenarios", minStartDate);
         try
         {
             for (var i = 0; i < results.Scenarios.Count; i++)
@@ -65,9 +67,11 @@ public sealed class DatadogExporter : IExporter
                     "Duration of a run",
                     BenchmarkDiscreteStats.GetFrom(scenarioResult.Durations.ToArray()));
 
-                // Report if is bimodal
+                // Report benchmark duration data
                 test.SetTag("benchmark.duration.bimodal", scenarioResult.IsBimodal ? "true": "false");
                 test.SetTag("benchmark.duration.peakcount", scenarioResult.PeakCount);
+                test.SetTag("benchmark.duration.outliers_threshold", Math.Round(scenarioResult.OutliersThreshold, 2));
+                test.SetTag("benchmark.duration.outliers_count", scenarioResult.Outliers?.Count ?? 0);
 
                 // Add metrics
                 if (scenarioResult.MetricsData.TryGetValue("process.time_to_start_ms", out var timeToStart))

@@ -80,6 +80,28 @@ public sealed class ConsoleExporter : IExporter
         // Write table
         AnsiConsole.Write(outliersTable);
         
+        var resultsList = results.Scenarios.ToList();
+
+        // Show distribution of results
+        if (_options.Configuration.Count >= 10)
+        {
+            AnsiConsole.MarkupLine("[aqua bold underline]### Distribution:[/]");
+            AnsiConsole.WriteLine();
+            for (var idx = 0; idx < resultsList.Count; idx++)
+            {
+                var result = resultsList[idx];
+                AnsiConsole.MarkupLine($"[dodgerblue1 bold]{result.Scenario?.Name}:[/]");
+                if (result.IsBimodal)
+                {
+                    AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name,
+                        result.PeakCount);
+                }
+
+                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
+                AnsiConsole.WriteLine();
+            }
+        }
+
         // ****************************************
         // Summary table
         AnsiConsole.MarkupLine("[aqua bold underline]### Summary:[/]");
@@ -118,7 +140,6 @@ public sealed class ConsoleExporter : IExporter
         summaryTable.AddColumns(columnList.ToArray());
 
         // Add rows
-        var resultsList = results.Scenarios.ToList();
         for (var idx = 0; idx < resultsList.Count; idx++)
         {
             var result = resultsList[idx];
@@ -137,7 +158,7 @@ public sealed class ConsoleExporter : IExporter
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms[/]",
-                    $"[aqua]{result.Outliers.Count}[/]"
+                    $"[aqua]{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}[/]"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
@@ -207,7 +228,7 @@ public sealed class ConsoleExporter : IExporter
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms",
-                    $"{result.Outliers.Count}"
+                    $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
@@ -228,55 +249,46 @@ public sealed class ConsoleExporter : IExporter
         // ******************************
         // Write overhead table
 
-        AnsiConsole.MarkupLine("[aqua bold underline]### Overheads:[/]");
-        var overheadTable = new Table()
-            .MarkdownBorder();
-        
-        var lstOverheadColumns = new List<string>();
-        lstOverheadColumns.Add(string.Empty);
-        foreach (var scenario in results.Scenarios)
+        if (results.Scenarios.Count > 1)
         {
-            lstOverheadColumns.Add($"[dodgerblue1 bold]{scenario.Name}[/]");
-        }
+            AnsiConsole.MarkupLine("[aqua bold underline]### Overheads:[/]");
+            var overheadTable = new Table()
+                .MarkdownBorder();
 
-        overheadTable.AddColumns(lstOverheadColumns.ToArray());
-        for (var i = 0; i < results.Scenarios.Count; i++)
-        {
-            var row = new List<string>
+            var lstOverheadColumns = new List<string>();
+            lstOverheadColumns.Add(string.Empty);
+            foreach (var scenario in results.Scenarios)
             {
-                $"[dodgerblue1 bold]{results.Scenarios[i].Name}[/]"
-            };
-
-            for (var j = 0; j < results.Scenarios.Count; j++)
-            {
-                var value = results.Overheads?[i][j] ?? 0;
-                if (value == 0)
-                {
-                    row.Add("--");
-                }
-                else
-                {
-                    row.Add($"{value.ToString(CultureInfo.InvariantCulture)}%");
-                }
+                lstOverheadColumns.Add($"[dodgerblue1 bold]{scenario.Name}[/]");
             }
 
-            overheadTable.AddRow(row.ToArray());
-        }
-        
-        // Write overhead table
-        AnsiConsole.Write(overheadTable);
-        AnsiConsole.WriteLine();
-
-        // Check if is bimodal
-        for (var idx = 0; idx < resultsList.Count; idx++)
-        {
-            var result = resultsList[idx];
-            if (result.IsBimodal)
+            overheadTable.AddColumns(lstOverheadColumns.ToArray());
+            for (var i = 0; i < results.Scenarios.Count; i++)
             {
-                AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name, result.PeakCount);
-                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
-                AnsiConsole.WriteLine();
+                var row = new List<string>
+                {
+                    $"[dodgerblue1 bold]{results.Scenarios[i].Name}[/]"
+                };
+
+                for (var j = 0; j < results.Scenarios.Count; j++)
+                {
+                    var value = results.Overheads?[i][j] ?? 0;
+                    if (value == 0)
+                    {
+                        row.Add("--");
+                    }
+                    else
+                    {
+                        row.Add($"{value.ToString(CultureInfo.InvariantCulture)}%");
+                    }
+                }
+
+                overheadTable.AddRow(row.ToArray());
             }
+
+            // Write overhead table
+            AnsiConsole.Write(overheadTable);
+            AnsiConsole.WriteLine();
         }
 
         // Write Errors

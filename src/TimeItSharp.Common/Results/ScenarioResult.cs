@@ -86,6 +86,9 @@ public sealed class ScenarioResult : Scenario
     [JsonPropertyName("status")]
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public Status Status { get; set; }
+    
+    [JsonPropertyName("outliersThreshold")]
+    public double OutliersThreshold { get; set; }
 
     public ScenarioResult()
     {

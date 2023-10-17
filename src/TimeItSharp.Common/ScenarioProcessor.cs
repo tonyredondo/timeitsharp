@@ -121,6 +121,12 @@ internal sealed class ScenarioProcessor
                 {
                     scenario.EnvironmentVariables[Constants.StartupHookEnvironmentVariable] = startupHookLocation;
                 }
+
+                if (!string.IsNullOrEmpty(_configuration.MetricsProcessName))
+                {
+                    scenario.EnvironmentVariables[Constants.TimeItMetricsProcessName] =
+                        _configuration.MetricsProcessName;
+                }
             }
             else
             {
@@ -246,30 +252,24 @@ internal sealed class ScenarioProcessor
         // Get outliers
         List<double> newDurations = new List<double>();
         List<double> outliers = new List<double>();
-        var threshold = 2.0d;
+        var threshold = 0.5d;
         var peakCount = 0;
         int[] histogram = Array.Empty<int>();
         Range<double>[] labels = Array.Empty<Range<double>>();
         var isBimodal = false;
-        while (threshold > 0)
+        while (threshold < 2.0d)
         {
             newDurations = Utils.RemoveOutliers(durations, threshold).ToList();
             outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
-            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, out histogram, out labels, _configuration.Count / 10);
-            if (!isBimodal)
-            {
-                // if the series is no longer bimodal we don't remove more outliers
-                break;
-            }
-
+            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, out histogram, out labels, Math.Min(10, Math.Max(_configuration.Count / 10, 3)));
             var outliersPercent = ((double)outliers.Count / durations.Count) * 100;
-            if (outliersPercent >= 20)
+            if (outliersPercent < 20 && !isBimodal)
             {
                 // outliers must be not more than 20% of the data
                 break;
             }
 
-            threshold -= 0.1;
+            threshold += 0.1;
         }
 
         var mean = newDurations.Mean();
@@ -349,6 +349,7 @@ internal sealed class ScenarioProcessor
             Timeout = scenario.Timeout,
             Tags = scenario.Tags,
             Status = assertResponse.Status,
+            OutliersThreshold = threshold,
         };
 
         _callbacksTriggers.ScenarioFinish(scenarioResult);

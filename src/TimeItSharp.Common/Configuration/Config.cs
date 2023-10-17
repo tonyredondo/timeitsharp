@@ -13,6 +13,9 @@ public class Config : ProcessData
 
     [JsonIgnore]
     public string FileName { get; set; }
+    
+    [JsonIgnore]
+    public string Name { get; set; }
 
     [JsonPropertyName("warmUpCount")]
     public int WarmUpCount { get; set; }
@@ -25,6 +28,9 @@ public class Config : ProcessData
     
     [JsonPropertyName("enableMetrics")]
     public bool EnableMetrics { get; set; }
+    
+    [JsonPropertyName("metricsProcessName")]
+    public string MetricsProcessName { get; set; }
 
     [JsonPropertyName("scenarios")]
     public List<Scenario> Scenarios { get; set; }
@@ -46,10 +52,12 @@ public class Config : ProcessData
         FilePath = string.Empty;
         Path = string.Empty;
         FileName = string.Empty;
+        Name = string.Empty;
         WarmUpCount = 0;
         Count = 0;
         EnableDatadog = false;
         EnableMetrics = true;
+        MetricsProcessName = string.Empty;
         Scenarios = new();
         JsonExporterFilePath = string.Empty;
         Exporters = new();
@@ -92,10 +100,12 @@ public class Config : ProcessData
         FilePath = FilePath,
         Path = Path,
         FileName = FileName,
+        Name = Name,
         WarmUpCount = WarmUpCount,
         Count = Count,
         EnableDatadog = EnableDatadog,
         EnableMetrics = EnableMetrics,
+        MetricsProcessName = MetricsProcessName,
         Scenarios = Scenarios.Select(i => i.Clone()).ToList(),
         JsonExporterFilePath = JsonExporterFilePath,
         Exporters = Exporters.Select(i => i.Clone()).ToList(),
