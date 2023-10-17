@@ -250,12 +250,12 @@ internal sealed class ScenarioProcessor
         }
 
         // Get outliers
-        List<double> newDurations = new List<double>();
-        List<double> outliers = new List<double>();
+        var newDurations = new List<double>();
+        var outliers = new List<double>();
         var threshold = 0.5d;
         var peakCount = 0;
-        int[] histogram = Array.Empty<int>();
-        Range<double>[] labels = Array.Empty<Range<double>>();
+        var histogram = Array.Empty<int>();
+        var labels = Array.Empty<Range<double>>();
         var isBimodal = false;
         while (threshold < 2.0d)
         {
@@ -287,7 +287,23 @@ internal sealed class ScenarioProcessor
         foreach (var key in metricsData.Keys)
         {
             var originalMetricsValue = metricsData[key];
-            var metricsValue = Utils.RemoveOutliers(originalMetricsValue, 3).ToList();
+            var metricsValue = new List<double>();
+            var metricsOutliers = new List<double>();
+            var metricsThreshold = 0.5d;
+            while (metricsThreshold < 3.0d)
+            {
+                metricsValue = Utils.RemoveOutliers(originalMetricsValue, metricsThreshold).ToList();
+                metricsOutliers = originalMetricsValue.Where(d => !metricsValue.Contains(d)).ToList();
+                var outliersPercent = ((double)metricsOutliers.Count / originalMetricsValue.Count) * 100;
+                if (outliersPercent < 20)
+                {
+                    // outliers must be not more than 20% of the data
+                    break;
+                }
+
+                metricsThreshold += 0.1;
+            }
+            
             metricsData[key] = metricsValue;
             var mMean = metricsValue.Mean();
             var mMedian = metricsValue.Median();
@@ -309,7 +325,8 @@ internal sealed class ScenarioProcessor
             metricsStats[key + ".p99"] = mP99;
             metricsStats[key + ".p95"] = mP95;
             metricsStats[key + ".p90"] = mP90;
-            metricsStats[key + ".outliers"] = originalMetricsValue.Count - metricsValue.Count;
+            metricsStats[key + ".outliers"] = metricsOutliers.Count;
+            metricsStats[key + ".outliers_threshold"] = metricsThreshold;
         }
 
         var assertResponse = ScenarioAssertion(dataPoints);
