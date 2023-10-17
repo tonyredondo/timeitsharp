@@ -137,7 +137,7 @@ public sealed class ConsoleExporter : IExporter
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms[/]",
-                    $"[aqua]{result.Outliers.Count}[/]"
+                    $"[aqua]{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}[/]"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
@@ -207,7 +207,7 @@ public sealed class ConsoleExporter : IExporter
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms",
-                    $"{result.Outliers.Count}"
+                    $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)

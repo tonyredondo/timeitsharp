@@ -86,17 +86,6 @@ public sealed class ConfigBuilder
         return this;
     }
     
-    /// <summary>
-    /// Sets if the metrics importer should be enabled or not
-    /// </summary>
-    /// <param name="enabled">True if the metrics importer is enabled; false if disabled</param>
-    /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithMetrics(bool enabled)
-    {
-        _configuration.EnableMetrics = enabled;
-        return this;
-    }
-    
     #endregion
 
     #region Scenarios
@@ -135,13 +124,35 @@ public sealed class ConfigBuilder
     #endregion
  
     /// <summary>
+    /// Sets if the runtime metrics importer should be enabled or not
+    /// </summary>
+    /// <param name="enabled">True if the metrics importer is enabled; false if disabled</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMetrics(bool enabled)
+    {
+        _configuration.EnableMetrics = enabled;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets the process name to collect runtime metrics
+    /// </summary>
+    /// <param name="processName">Process name</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMetricsProcessName(string processName)
+    {
+        _configuration.MetricsProcessName = processName;
+        return this;
+    }
+    
+    /// <summary>
     /// Sets the name of the configuration
     /// </summary>
     /// <param name="name">Name of the configuration</param>
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithName(string name)
     {
-        _configuration.FileName = name;
+        _configuration.Name = name;
         return this;
     }
     

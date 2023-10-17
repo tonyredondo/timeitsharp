@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using TimeItSharp;
 using TimeItSharp.RuntimeMetrics;
 
@@ -9,8 +10,25 @@ public sealed class StartupHook
     public static void Initialize()
     {
         var startDate = Clock.UtcNow;
-        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is
-            { Length: > 0 } metricsPath)
+        var metricsPath = Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable);
+        if (string.IsNullOrEmpty(metricsPath))
+        {
+            return;
+        }
+
+        bool enableMetrics;
+        var processName = Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName);
+        if (string.IsNullOrEmpty(processName))
+        {
+            enableMetrics = true;
+        }
+        else
+        {
+            var currentProcessName = Process.GetCurrentProcess().ProcessName;
+            enableMetrics = string.Equals(currentProcessName, processName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (enableMetrics)
         {
             _fileStatsd = new FileStorage(metricsPath);
             _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
