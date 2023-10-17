@@ -83,7 +83,7 @@ public sealed class ConsoleExporter : IExporter
         var resultsList = results.Scenarios.ToList();
 
         // Show distribution of results
-        if (_options.Configuration.Count >= 30)
+        if (_options.Configuration.Count >= 10)
         {
             AnsiConsole.MarkupLine("[aqua bold underline]### Distribution:[/]");
             AnsiConsole.WriteLine();
