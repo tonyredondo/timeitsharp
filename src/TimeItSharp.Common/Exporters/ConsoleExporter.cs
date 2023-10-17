@@ -228,44 +228,47 @@ public sealed class ConsoleExporter : IExporter
         // ******************************
         // Write overhead table
 
-        AnsiConsole.MarkupLine("[aqua bold underline]### Overheads:[/]");
-        var overheadTable = new Table()
-            .MarkdownBorder();
-        
-        var lstOverheadColumns = new List<string>();
-        lstOverheadColumns.Add(string.Empty);
-        foreach (var scenario in results.Scenarios)
+        if (results.Scenarios.Count > 1)
         {
-            lstOverheadColumns.Add($"[dodgerblue1 bold]{scenario.Name}[/]");
-        }
+            AnsiConsole.MarkupLine("[aqua bold underline]### Overheads:[/]");
+            var overheadTable = new Table()
+                .MarkdownBorder();
 
-        overheadTable.AddColumns(lstOverheadColumns.ToArray());
-        for (var i = 0; i < results.Scenarios.Count; i++)
-        {
-            var row = new List<string>
+            var lstOverheadColumns = new List<string>();
+            lstOverheadColumns.Add(string.Empty);
+            foreach (var scenario in results.Scenarios)
             {
-                $"[dodgerblue1 bold]{results.Scenarios[i].Name}[/]"
-            };
-
-            for (var j = 0; j < results.Scenarios.Count; j++)
-            {
-                var value = results.Overheads?[i][j] ?? 0;
-                if (value == 0)
-                {
-                    row.Add("--");
-                }
-                else
-                {
-                    row.Add($"{value.ToString(CultureInfo.InvariantCulture)}%");
-                }
+                lstOverheadColumns.Add($"[dodgerblue1 bold]{scenario.Name}[/]");
             }
 
-            overheadTable.AddRow(row.ToArray());
+            overheadTable.AddColumns(lstOverheadColumns.ToArray());
+            for (var i = 0; i < results.Scenarios.Count; i++)
+            {
+                var row = new List<string>
+                {
+                    $"[dodgerblue1 bold]{results.Scenarios[i].Name}[/]"
+                };
+
+                for (var j = 0; j < results.Scenarios.Count; j++)
+                {
+                    var value = results.Overheads?[i][j] ?? 0;
+                    if (value == 0)
+                    {
+                        row.Add("--");
+                    }
+                    else
+                    {
+                        row.Add($"{value.ToString(CultureInfo.InvariantCulture)}%");
+                    }
+                }
+
+                overheadTable.AddRow(row.ToArray());
+            }
+
+            // Write overhead table
+            AnsiConsole.Write(overheadTable);
+            AnsiConsole.WriteLine();
         }
-        
-        // Write overhead table
-        AnsiConsole.Write(overheadTable);
-        AnsiConsole.WriteLine();
 
         // Check if is bimodal
         for (var idx = 0; idx < resultsList.Count; idx++)
