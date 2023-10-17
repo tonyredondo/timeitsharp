@@ -173,13 +173,23 @@ public sealed class ConsoleExporter : IExporter
                 for (var i = 0; i < totalNum; i++)
                 {
                     var item = orderedMetricsData[i];
-                    var itemResult = Utils.RemoveOutliers(item.Value, 3).ToList();
-                    int? outliersCount = item.Value.Count - itemResult.Count;
-                    if (outliersCount > (_options.Configuration.Count * 5) / 100)
+                    var itemResult = new List<double>();
+                    var metricsOutliers = new List<double>();
+                    var metricsThreshold = 0.5d;
+                    while (metricsThreshold < 3.0d)
                     {
-                        itemResult = item.Value;
-                        outliersCount = null;
+                        itemResult = Utils.RemoveOutliers(item.Value, metricsThreshold).ToList();
+                        metricsOutliers = item.Value.Where(d => !itemResult.Contains(d)).ToList();
+                        var outliersPercent = ((double)metricsOutliers.Count / item.Value.Count) * 100;
+                        if (outliersPercent < 20)
+                        {
+                            // outliers must be not more than 20% of the data
+                            break;
+                        }
+
+                        metricsThreshold += 0.1;
                     }
+                    
 
                     var mMean = itemResult.Mean();
                     var mMedian = itemResult.Median();
@@ -211,7 +221,7 @@ public sealed class ConsoleExporter : IExporter
                         Math.Round(mMax, 6).ToString(),
                         Math.Round(mP95, 6).ToString(),
                         Math.Round(mP90, 6).ToString(),
-                        outliersCount?.ToString() ?? "N/A");
+                        (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 2) + "}"));
                 }
             }
             else
