@@ -85,10 +85,10 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, j
     var exitCode = 0;
     if (isConfigFile)
     {
-        var configBuilder = new ConfigBuilder(Config.LoadConfiguration(configFile))
-            .WithWarmupCount(warmupValue ?? 1)
-            .WithCount(countValue ?? 10);
-
+        var config = Config.LoadConfiguration(configFile);
+        config.WarmUpCount = warmupValue ?? config.WarmUpCount;
+        config.Count = countValue ?? config.Count;
+        var configBuilder = new ConfigBuilder(config);
         if (jsonExporterValue)
         {
             configBuilder.WithExporter<JsonExporter>();
