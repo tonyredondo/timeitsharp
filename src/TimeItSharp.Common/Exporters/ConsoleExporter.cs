@@ -80,6 +80,28 @@ public sealed class ConsoleExporter : IExporter
         // Write table
         AnsiConsole.Write(outliersTable);
         
+        var resultsList = results.Scenarios.ToList();
+
+        // Show distribution of results
+        if (_options.Configuration.Count >= 30)
+        {
+            AnsiConsole.MarkupLine("[aqua bold underline]### Distribution:[/]");
+            AnsiConsole.WriteLine();
+            for (var idx = 0; idx < resultsList.Count; idx++)
+            {
+                var result = resultsList[idx];
+                AnsiConsole.MarkupLine($"[dodgerblue1 bold]{result.Scenario?.Name}:[/]");
+                if (result.IsBimodal)
+                {
+                    AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name,
+                        result.PeakCount);
+                }
+
+                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
+                AnsiConsole.WriteLine();
+            }
+        }
+
         // ****************************************
         // Summary table
         AnsiConsole.MarkupLine("[aqua bold underline]### Summary:[/]");
@@ -118,7 +140,6 @@ public sealed class ConsoleExporter : IExporter
         summaryTable.AddColumns(columnList.ToArray());
 
         // Add rows
-        var resultsList = results.Scenarios.ToList();
         for (var idx = 0; idx < resultsList.Count; idx++)
         {
             var result = resultsList[idx];
@@ -268,18 +289,6 @@ public sealed class ConsoleExporter : IExporter
             // Write overhead table
             AnsiConsole.Write(overheadTable);
             AnsiConsole.WriteLine();
-        }
-
-        // Check if is bimodal
-        for (var idx = 0; idx < resultsList.Count; idx++)
-        {
-            var result = resultsList[idx];
-            if (result.IsBimodal)
-            {
-                AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name, result.PeakCount);
-                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
-                AnsiConsole.WriteLine();
-            }
         }
 
         // Write Errors
