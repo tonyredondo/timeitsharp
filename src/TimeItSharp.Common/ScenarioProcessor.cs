@@ -260,7 +260,7 @@ internal sealed class ScenarioProcessor
         // Get outliers
         var newDurations = new List<double>();
         var outliers = new List<double>();
-        var threshold = 0.5d;
+        var threshold = 0.4d;
         var peakCount = 0;
         var histogram = Array.Empty<int>();
         var labels = Array.Empty<Range<double>>();
@@ -297,7 +297,7 @@ internal sealed class ScenarioProcessor
             var originalMetricsValue = metricsData[key];
             var metricsValue = new List<double>();
             var metricsOutliers = new List<double>();
-            var metricsThreshold = 0.5d;
+            var metricsThreshold = 0.4d;
             while (metricsThreshold < 3.0d)
             {
                 metricsValue = Utils.RemoveOutliers(originalMetricsValue, metricsThreshold).ToList();
