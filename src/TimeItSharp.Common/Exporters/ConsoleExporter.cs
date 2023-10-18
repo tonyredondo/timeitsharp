@@ -21,6 +21,7 @@ public sealed class ConsoleExporter : IExporter
 
     public void Export(TimeitResult results)
     {
+        AnsiConsole.Profile.Width = Utils.GetSafeWidth();
         if (_options.Configuration is null)
         {
             AnsiConsole.MarkupLine("[red bold]Configuration is missing.[/]");
@@ -55,31 +56,35 @@ public sealed class ConsoleExporter : IExporter
         
         // ****************************************
         // Outliers table
-        AnsiConsole.MarkupLine("[aqua bold underline]### Outliers:[/]");
-        var outliersTable = new Table()
-            .MarkdownBorder();
-        
-        // Add columns
-        outliersTable.AddColumns(results.Scenarios.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
-
-        // Add rows
         var maxOutliersCount = results.Scenarios.Select(r => r.Outliers.Count).Max();
-        for (var i = 0; i < maxOutliersCount; i++)
+        if (maxOutliersCount > 0)
         {
-            outliersTable.AddRow(results.Scenarios.Select(r =>
-            {
-                if (i < r.Outliers.Count)
-                {
-                    return Utils.FromNanosecondsToMilliseconds(r.Outliers[i]) + "ms";
-                }
+            AnsiConsole.MarkupLine("[aqua bold underline]### Outliers:[/]");
+            var outliersTable = new Table()
+                .MarkdownBorder();
 
-                return "-";
-            }).ToArray());
+            // Add columns
+            outliersTable.AddColumns(results.Scenarios
+                .Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
+
+            // Add rows
+            for (var i = 0; i < maxOutliersCount; i++)
+            {
+                outliersTable.AddRow(results.Scenarios.Select(r =>
+                {
+                    if (i < r.Outliers.Count)
+                    {
+                        return Utils.FromNanosecondsToMilliseconds(r.Outliers[i]) + "ms";
+                    }
+
+                    return "-";
+                }).ToArray());
+            }
+
+            // Write table
+            AnsiConsole.Write(outliersTable);
         }
-        
-        // Write table
-        AnsiConsole.Write(outliersTable);
-        
+
         var resultsList = results.Scenarios.ToList();
 
         // Show distribution of results
@@ -146,6 +151,7 @@ public sealed class ConsoleExporter : IExporter
             var totalNum = result.MetricsData.Count;
             if (totalNum > 0)
             {
+                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}" : "0";
                 var rowList = new List<string>
                 {
                     $"[aqua underline]{result.Name}[/]",
@@ -158,7 +164,7 @@ public sealed class ConsoleExporter : IExporter
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms[/]",
-                    $"[aqua]{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}[/]"
+                    $"[aqua]{outliersValue}[/]"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
@@ -226,6 +232,7 @@ public sealed class ConsoleExporter : IExporter
             }
             else
             {
+                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}" : "0";
                 var rowList = new List<string>
                 {
                     $"{result.Name}",
@@ -238,7 +245,7 @@ public sealed class ConsoleExporter : IExporter
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms",
-                    $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}"
+                    $"{outliersValue}"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)

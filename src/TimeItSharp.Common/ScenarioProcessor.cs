@@ -201,26 +201,34 @@ internal sealed class ScenarioProcessor
             }
         }
 
-        AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
-        await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (cancellationToken.IsCancellationRequested)
+        if (_configuration.WarmUpCount > 0)
         {
-            return null;
+            AnsiConsole.Markup("  [gold3_1]Warming up[/]");
+            watch.Restart();
+            await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            watch.Stop();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
         }
 
-        AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
         watch.Restart();
         var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, true, cancellationToken: cancellationToken).ConfigureAwait(false);
+        watch.Stop();
         if (cancellationToken.IsCancellationRequested)
         {
             return null;
         }
 
         watch.Stop();
-        AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
+        AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
         AnsiConsole.WriteLine();
 
         var durations = new List<double>();
