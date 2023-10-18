@@ -59,11 +59,15 @@ public sealed class DataPoint
     
     [JsonIgnore]
     public AssertResponse AssertResults { get; set; }
+    
+    [JsonIgnore]
+    public string StandardOutput { get; set; }
 
     public DataPoint()
     {
         Error = string.Empty;
         Metrics = new Dictionary<string, double>();
         AssertResults = new AssertResponse(Status.Passed);
+        StandardOutput = string.Empty;
     }
 }

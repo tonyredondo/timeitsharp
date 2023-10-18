@@ -1,6 +1,8 @@
 ﻿using System.Globalization;
+using System.Reflection;
 using DatadogTestLogger.Vendors.Datadog.Trace;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
+using DatadogTestLogger.Vendors.Datadog.Trace.Ci.Logging.DirectSubmission;
 using Spectre.Console;
 using TimeItSharp.Common.Results;
 using Status = TimeItSharp.Common.Results.Status;
@@ -14,9 +16,11 @@ public sealed class DatadogExporter : IExporter
     private readonly TestSession _testSession;
     private readonly DateTime _startDate;
     private TestModule? _testModule;
+    private FieldInfo? _scopeField = typeof(Test).GetField("_scope", BindingFlags.Instance | BindingFlags.NonPublic);
 
     public DatadogExporter()
     {
+        Environment.SetEnvironmentVariable("DD_CIVISIBILITY_LOGS_ENABLED", "true");
         _testSession = TestSession.GetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
         _startDate = DateTime.UtcNow;
     }
@@ -162,6 +166,16 @@ public sealed class DatadogExporter : IExporter
                     }
                 }
 
+                // Add log messages
+                if (!string.IsNullOrEmpty(scenarioResult.LastStandardOutput) && _scopeField?.GetValue(test) is Scope scope)
+                {
+                    foreach (var line in scenarioResult.LastStandardOutput.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        Tracer.Instance.TracerManager.DirectLogSubmission.Sink.EnqueueLog(
+                            new CIVisibilityLogEvent("xunit", "info", line, scope.Span));
+                    }
+                }
+                
                 // Close test
                 test.Close(scenarioResult.Status == Status.Passed ? TestStatus.Pass : TestStatus.Fail,
                     scenarioResult.Duration);

@@ -201,37 +201,51 @@ internal sealed class ScenarioProcessor
             }
         }
 
-        AnsiConsole.Markup("  [gold3_1]Warming up[/]");
         watch = Stopwatch.StartNew();
-        await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (cancellationToken.IsCancellationRequested)
+        if (_configuration.WarmUpCount > 0)
         {
-            return null;
+            AnsiConsole.Markup("  [gold3_1]Warming up[/]");
+            watch.Restart();
+            await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            watch.Stop();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
         }
 
-        AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
         watch.Restart();
         var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, true, cancellationToken: cancellationToken).ConfigureAwait(false);
+        watch.Stop();
         if (cancellationToken.IsCancellationRequested)
         {
             return null;
         }
 
         watch.Stop();
-        AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed.TotalSeconds);
+        AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
         AnsiConsole.WriteLine();
 
+        var lastStandardOutput = string.Empty;
         var durations = new List<double>();
         var metricsData = new Dictionary<string, List<double>>();
         foreach (var item in dataPoints)
         {
+            if (!string.IsNullOrEmpty(item.StandardOutput))
+            {
+                lastStandardOutput = item.StandardOutput;
+            }
+
             if (item.Status != Status.Passed)
             {
                 continue;
             }
-
+            
 #if NET7_0_OR_GREATER
             durations.Add(item.Duration.TotalNanoseconds);
 #else
@@ -252,7 +266,7 @@ internal sealed class ScenarioProcessor
         // Get outliers
         var newDurations = new List<double>();
         var outliers = new List<double>();
-        var threshold = 0.5d;
+        var threshold = 0.4d;
         var peakCount = 0;
         var histogram = Array.Empty<int>();
         var labels = Array.Empty<Range<double>>();
@@ -289,7 +303,7 @@ internal sealed class ScenarioProcessor
             var originalMetricsValue = metricsData[key];
             var metricsValue = new List<double>();
             var metricsOutliers = new List<double>();
-            var metricsThreshold = 0.5d;
+            var metricsThreshold = 0.4d;
             while (metricsThreshold < 3.0d)
             {
                 metricsValue = Utils.RemoveOutliers(originalMetricsValue, metricsThreshold).ToList();
@@ -367,6 +381,7 @@ internal sealed class ScenarioProcessor
             Tags = scenario.Tags,
             Status = assertResponse.Status,
             OutliersThreshold = threshold,
+            LastStandardOutput = lastStandardOutput,
         };
 
         _callbacksTriggers.ScenarioFinish(scenarioResult);
@@ -459,6 +474,7 @@ internal sealed class ScenarioProcessor
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                dataPoint.StandardOutput = cmdResult.StandardOutput;
                 ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)
@@ -502,6 +518,7 @@ internal sealed class ScenarioProcessor
                 timeoutCts?.Cancel();
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                dataPoint.StandardOutput = cmdResult.StandardOutput;
                 ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)

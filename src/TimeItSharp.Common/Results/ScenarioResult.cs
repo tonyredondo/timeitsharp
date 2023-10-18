@@ -90,6 +90,9 @@ public sealed class ScenarioResult : Scenario
     [JsonPropertyName("outliersThreshold")]
     public double OutliersThreshold { get; set; }
 
+    [JsonIgnore]
+    public string LastStandardOutput { get; set; }
+
     public ScenarioResult()
     {
         Scenario = null;
@@ -103,5 +106,6 @@ public sealed class ScenarioResult : Scenario
         MetricsData = new Dictionary<string, List<double>>();
         AdditionalMetrics = new Dictionary<string, double>();
         Status = Status.Passed;
+        LastStandardOutput = string.Empty;
     }
 }
