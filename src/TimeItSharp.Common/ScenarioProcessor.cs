@@ -231,15 +231,21 @@ internal sealed class ScenarioProcessor
         AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
         AnsiConsole.WriteLine();
 
+        var lastStandardOutput = string.Empty;
         var durations = new List<double>();
         var metricsData = new Dictionary<string, List<double>>();
         foreach (var item in dataPoints)
         {
+            if (!string.IsNullOrEmpty(item.StandardOutput))
+            {
+                lastStandardOutput = item.StandardOutput;
+            }
+
             if (item.Status != Status.Passed)
             {
                 continue;
             }
-
+            
 #if NET7_0_OR_GREATER
             durations.Add(item.Duration.TotalNanoseconds);
 #else
@@ -375,6 +381,7 @@ internal sealed class ScenarioProcessor
             Tags = scenario.Tags,
             Status = assertResponse.Status,
             OutliersThreshold = threshold,
+            LastStandardOutput = lastStandardOutput,
         };
 
         _callbacksTriggers.ScenarioFinish(scenarioResult);
@@ -467,6 +474,7 @@ internal sealed class ScenarioProcessor
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                dataPoint.StandardOutput = cmdResult.StandardOutput;
                 ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)
@@ -510,6 +518,7 @@ internal sealed class ScenarioProcessor
                 timeoutCts?.Cancel();
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                dataPoint.StandardOutput = cmdResult.StandardOutput;
                 ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)

@@ -6,8 +6,8 @@ using TimeItSharp.Common.Exporters;
 using TimeItSharp.Common.Services;
 
 var config = ConfigBuilder.Create()
-    .WithWarmupCount(10)
-    .WithCount(100)
+    .WithWarmupCount(1)
+    .WithCount(10)
     .WithName("dd-tracer-dotnet test")
     .WithMetrics(true)
     .WithMetricsProcessName("dotnet")
