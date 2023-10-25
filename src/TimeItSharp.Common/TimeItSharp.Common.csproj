@@ -9,6 +9,7 @@
     <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
     <NoWarn>NETSDK1138,0436</NoWarn>
     <InternalsAssemblyUseEmptyMethodBodies>false</InternalsAssemblyUseEmptyMethodBodies>
+    <PackageOutputPath>..\..\artifacts</PackageOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
