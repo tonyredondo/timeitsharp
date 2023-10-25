@@ -206,7 +206,7 @@ internal sealed class ScenarioProcessor
         {
             AnsiConsole.Markup("  [gold3_1]Warming up[/]");
             watch.Restart();
-            await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, false,
+            await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, TimeItPhase.WarmUp, false,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
@@ -220,7 +220,7 @@ internal sealed class ScenarioProcessor
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
         watch.Restart();
-        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, true, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, TimeItPhase.Run, true, cancellationToken: cancellationToken).ConfigureAwait(false);
         watch.Stop();
         if (cancellationToken.IsCancellationRequested)
         {
@@ -388,13 +388,13 @@ internal sealed class ScenarioProcessor
         return scenarioResult;
     }
 
-    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, bool checkShouldContinue, CancellationToken cancellationToken)
+    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, CancellationToken cancellationToken)
     {
         var dataPoints = new List<DataPoint>();
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
         {
-            var currentRun = await RunCommandAsync(index, scenario, cancellationToken).ConfigureAwait(false);
+            var currentRun = await RunCommandAsync(index, scenario, phase, cancellationToken).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 AnsiConsole.Markup("[red]cancelled[/]");
@@ -415,7 +415,7 @@ internal sealed class ScenarioProcessor
         return dataPoints;
     }
 
-    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario, CancellationToken cancellationToken)
+    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario, TimeItPhase phase, CancellationToken cancellationToken)
     {
         // Prepare variables
         var cmdString = scenario.ProcessName ?? string.Empty;
@@ -464,7 +464,7 @@ internal sealed class ScenarioProcessor
             ShouldContinue = true
         };
         
-        _callbacksTriggers.ExecutionStart(dataPoint, ref cmd);
+        _callbacksTriggers.ExecutionStart(dataPoint, phase, ref cmd);
         if (cmdTimeout <= 0)
         {
             try
@@ -475,7 +475,7 @@ internal sealed class ScenarioProcessor
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
                 dataPoint.StandardOutput = cmdResult.StandardOutput;
-                ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
+                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)
             {
@@ -519,7 +519,7 @@ internal sealed class ScenarioProcessor
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
                 dataPoint.StandardOutput = cmdResult.StandardOutput;
-                ExecuteAssertions(index, scenario.Name, dataPoint, cmdResult);
+                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
             }
             catch (TaskCanceledException)
             {
@@ -699,13 +699,13 @@ internal sealed class ScenarioProcessor
             }
         }
 
-        _callbacksTriggers.ExecutionEnd(dataPoint);
+        _callbacksTriggers.ExecutionEnd(dataPoint, phase);
         return dataPoint;
     }
 
-    private void ExecuteAssertions(int scenarioId, string scenarioName, DataPoint dataPoint, BufferedCommandResult cmdResult)
+    private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, BufferedCommandResult cmdResult)
     {
-        var assertionData = new AssertionData(scenarioId, scenarioName, dataPoint.Start, dataPoint.End,
+        var assertionData = new AssertionData(scenarioId, scenarioName, phase, dataPoint.Start, dataPoint.End,
             dataPoint.Duration, cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError, _services);
         var assertionResult = ExecutionAssertion(in assertionData);
         dataPoint.AssertResults = assertionResult;
