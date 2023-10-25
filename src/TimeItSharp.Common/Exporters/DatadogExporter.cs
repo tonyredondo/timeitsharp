@@ -35,7 +35,12 @@ public sealed class DatadogExporter : IExporter
     public void Initialize(InitOptions options)
     {
         _options = options;
-        _configName = options.Configuration?.Name ?? options.Configuration?.FileName;
+        _configName = options.Configuration?.Name;
+        if (string.IsNullOrEmpty(_configName))
+        {
+            _configName = options.Configuration?.FileName;
+        }
+
         _testModule ??= _testSession.CreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
     }
 
