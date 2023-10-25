@@ -9,6 +9,7 @@
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
         <PackageIcon>icon.png</PackageIcon>
         <NoWarn>NETSDK1138</NoWarn>
+        <PackageOutputPath>..\..\artifacts</PackageOutputPath>
     </PropertyGroup>
 
     <ItemGroup>

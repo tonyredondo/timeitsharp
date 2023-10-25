@@ -25,14 +25,22 @@ public sealed class StartupHook
         else
         {
             var currentProcessName = Process.GetCurrentProcess().ProcessName;
-            enableMetrics = string.Equals(currentProcessName, processName, StringComparison.OrdinalIgnoreCase);
+            if (processName.IndexOf(';') == -1)
+            {
+                enableMetrics = string.Equals(currentProcessName, processName, StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                enableMetrics = processName.Split(';').Any(pName =>
+                    string.Equals(currentProcessName, pName, StringComparison.OrdinalIgnoreCase));
+            }
         }
 
         if (enableMetrics)
         {
             _fileStatsd = new FileStorage(metricsPath);
             _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
-            _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(50));
+            _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(100));
             _metricsWriter.PushEvents();
             AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
             _fileStatsd.Gauge(Constants.MainMethodStartTimeUtcMetricName, Clock.UtcNow.ToBinary());

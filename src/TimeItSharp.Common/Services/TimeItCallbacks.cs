@@ -10,9 +10,9 @@ public sealed class TimeItCallbacks
 
     public delegate void OnScenarioStartDelegate(Scenario scenario);
 
-    public delegate void OnExecutionStartDelegate(DataPoint dataPoint, ref Command command);
+    public delegate void OnExecutionStartDelegate(DataPoint dataPoint, TimeItPhase phase, ref Command command);
 
-    public delegate void OnExecutionEndDelegate(DataPoint dataPoint);
+    public delegate void OnExecutionEndDelegate(DataPoint dataPoint, TimeItPhase phase);
     
     public delegate void OnScenarioFinishDelegate(ScenarioResult scenarioResults);
 
@@ -45,11 +45,11 @@ public sealed class TimeItCallbacks
         public void ScenarioStart(Scenario scenario)
             => _callbacks.OnScenarioStart?.Invoke(scenario);
 
-        public void ExecutionStart(DataPoint dataPoint, ref Command command)
-            => _callbacks.OnExecutionStart?.Invoke(dataPoint, ref command);
+        public void ExecutionStart(DataPoint dataPoint, TimeItPhase phase, ref Command command)
+            => _callbacks.OnExecutionStart?.Invoke(dataPoint, phase, ref command);
 
-        public void ExecutionEnd(DataPoint dataPoint)
-            => _callbacks.OnExecutionEnd?.Invoke(dataPoint);
+        public void ExecutionEnd(DataPoint dataPoint, TimeItPhase phase)
+            => _callbacks.OnExecutionEnd?.Invoke(dataPoint, phase);
 
         public void ScenarioFinish(ScenarioResult scenarioResults)
             => _callbacks.OnScenarioFinish?.Invoke(scenarioResults);

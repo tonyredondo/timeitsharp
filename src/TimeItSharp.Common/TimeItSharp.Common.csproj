@@ -9,6 +9,7 @@
     <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
     <NoWarn>NETSDK1138,0436</NoWarn>
     <InternalsAssemblyUseEmptyMethodBodies>false</InternalsAssemblyUseEmptyMethodBodies>
+    <PackageOutputPath>..\..\artifacts</PackageOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +22,7 @@
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Spectre.Console" Version="0.47.0" />
     <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.6.0" />
-    <PackageReference Include="DatadogTestLogger" Version="0.0.36" />
+    <PackageReference Include="DatadogTestLogger" Version="0.0.44" />
   </ItemGroup>
 
   <ItemGroup>

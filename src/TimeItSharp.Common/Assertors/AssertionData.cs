@@ -6,6 +6,7 @@ public readonly struct AssertionData
 {
     public readonly int ScenarioId;
     public readonly string ScenarioName;
+    public readonly TimeItPhase Phase;
     public readonly DateTime Start;
     public readonly DateTime End;
     public readonly TimeSpan Duration;
@@ -14,11 +15,12 @@ public readonly struct AssertionData
     public readonly string StandardError;
     public readonly IReadOnlyList<IService> Services;
 
-    public AssertionData(int scenarioId, string scenarioName, DateTime start, DateTime end, TimeSpan duration, int exitCode, string standardOutput,
+    public AssertionData(int scenarioId, string scenarioName, TimeItPhase phase, DateTime start, DateTime end, TimeSpan duration, int exitCode, string standardOutput,
         string standardError, IReadOnlyList<IService> services)
     {
         ScenarioId = scenarioId;
         ScenarioName = scenarioName;
+        Phase = phase;
         Start = start;
         End = end;
         Duration = duration;

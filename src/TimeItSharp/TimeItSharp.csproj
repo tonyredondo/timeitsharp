@@ -14,6 +14,7 @@
         <PackageIcon>icon.png</PackageIcon>
         <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
         <NoWarn>NETSDK1138</NoWarn>
+        <PackageOutputPath>..\..\artifacts</PackageOutputPath>
     </PropertyGroup>
 
     <ItemGroup>
