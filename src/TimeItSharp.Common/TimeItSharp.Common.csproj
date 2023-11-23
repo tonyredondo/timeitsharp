@@ -20,9 +20,9 @@
   <ItemGroup>
     <PackageReference Include="CliWrap" Version="3.6.4" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
-    <PackageReference Include="Spectre.Console" Version="0.47.0" />
+    <PackageReference Include="Spectre.Console" Version="0.48.0" />
     <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.6.0" />
-    <PackageReference Include="DatadogTestLogger" Version="0.0.44" />
+    <PackageReference Include="DatadogTestLogger" Version="0.0.50" />
   </ItemGroup>
 
   <ItemGroup>
