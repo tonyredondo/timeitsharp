@@ -16,6 +16,11 @@
         <NoWarn>NETSDK1138</NoWarn>
         <PackageOutputPath>..\..\artifacts</PackageOutputPath>
     </PropertyGroup>
+    
+    <PropertyGroup>
+        <PublishTrimmed>false</PublishTrimmed>
+        <SelfContained>false</SelfContained>
+    </PropertyGroup>
 
     <ItemGroup>
         <None Update="config-example.json">

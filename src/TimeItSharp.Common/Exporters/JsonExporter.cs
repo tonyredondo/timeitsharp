@@ -48,10 +48,16 @@ public sealed class JsonExporter : IExporter
             }
 
             using var fStream = File.OpenWrite(outputFile);
-            JsonSerializer.Serialize(fStream, results.Scenarios, new JsonSerializerOptions(JsonSerializerDefaults.General)
+#if NET8_0_OR_GREATER
+            JsonSerializer.Serialize(fStream, results.Scenarios, TimeItResultContext.Default.IReadOnlyListScenarioResult);
+#else
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.General)
             {
                 WriteIndented = true
-            });
+            };
+            options.AddContext<TimeItResultContext>();
+            JsonSerializer.Serialize(fStream, results.Scenarios, options);
+#endif
             
             AnsiConsole.MarkupLine($"[lime]The json file '{outputFile}' was exported.[/]");
         }

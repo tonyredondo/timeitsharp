@@ -83,7 +83,7 @@ public class Config : ProcessData
         }
 #else
         using var fStream = File.OpenRead(filePath);
-        if (JsonSerializer.Deserialize<Config>(fStream) is { } config)
+        if (JsonSerializer.Deserialize<Config>(fStream, ConfigContext.Default.Config) is { } config)
         {
             config.FilePath = filePath;
             config.FileName = System.IO.Path.GetFileName(filePath);

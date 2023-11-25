@@ -31,7 +31,11 @@ public sealed class DataPoint
     public Dictionary<string, double> Metrics { get; set; }
 
     [JsonPropertyName("status")]
+#if NET8_0_OR_GREATER
+    [JsonConverter(typeof(JsonStringEnumConverter<Status>))]
+#else
     [JsonConverter(typeof(JsonStringEnumConverter))]
+#endif
     public Status Status
     {
         get => AssertResults.Status; 

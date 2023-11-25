@@ -69,7 +69,7 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, j
         try
         {
             await using var fstream = File.Open(configFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var config = JsonSerializer.Deserialize<Config>(fstream);
+            var config = JsonSerializer.Deserialize<Config>(fstream, ConfigContext.Default.Config);
             isConfigFile = config is not null;
         }
         catch

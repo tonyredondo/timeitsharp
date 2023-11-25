@@ -564,8 +564,13 @@ internal sealed class ScenarioProcessor
                 {
                     try
                     {
-                        if (JsonSerializer.Deserialize<FileStatsdPayload>(metricJsonItem,
-                                new JsonSerializerOptions(JsonSerializerDefaults.Web)) is { } metricItem)
+                        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+#if NET7_0_OR_GREATER
+                        options.TypeInfoResolver = FileStatsdPayloadContext.Default;
+#else
+                        options.AddContext<FileStatsdPayloadContext>();
+#endif
+                        if (JsonSerializer.Deserialize<FileStatsdPayload>(metricJsonItem, options) is { } metricItem)
                         {
                             if (metricItem.Name is not null)
                             {
