@@ -12,6 +12,10 @@
     <PackageOutputPath>..\..\artifacts</PackageOutputPath>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsAssemblyName Include="DatadogTestLogger" />
     <InternalsAssemblyName Include="Datadog.testlogger" />
