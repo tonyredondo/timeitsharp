@@ -1,5 +1,6 @@
 ﻿using System.Collections;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using CliWrap;
@@ -564,13 +565,8 @@ internal sealed class ScenarioProcessor
                 {
                     try
                     {
-                        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-#if NET7_0_OR_GREATER
-                        options.TypeInfoResolver = FileStatsdPayloadContext.Default;
-#else
-                        options.AddContext<FileStatsdPayloadContext>();
-#endif
-                        if (JsonSerializer.Deserialize<FileStatsdPayload>(metricJsonItem, options) is { } metricItem)
+                        if (JsonSerializer.Deserialize<FileStatsdPayload>(metricJsonItem,
+                                FileStatsdPayloadContext.Default.FileStatsdPayload) is { } metricItem)
                         {
                             if (metricItem.Name is not null)
                             {
