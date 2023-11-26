@@ -264,13 +264,13 @@ public sealed class ConfigBuilder
         var exporterTypeLocation = exporterType.Assembly.Location;
         if (string.IsNullOrEmpty(exporterTypeLocation))
         {
-            exporterTypeLocation = AppContext.BaseDirectory;
+            exporterTypeLocation = exporterType.Assembly.GetName().Name + ".dll";
         }
 
         // Check if exporter is already there.
         foreach (var exporter in _configuration.Exporters)
         {
-            if (exporter.FilePath == exporterTypeLocation &&
+            if ((exporter.FilePath == exporterTypeLocation || exporter.InMemoryType == exporterType) &&
                 exporter.Type == exporterType.FullName)
             {
                 return this;
@@ -280,7 +280,8 @@ public sealed class ConfigBuilder
         _configuration.Exporters.Add(new AssemblyLoadInfo
         {
             FilePath = exporterTypeLocation,
-            Type = exporterType.FullName
+            Type = exporterType.FullName,
+            InMemoryType = exporterType,
         });
 
         if (exporterType == typeof(DatadogExporter))
@@ -412,13 +413,13 @@ public sealed class ConfigBuilder
         var assertorTypeLocation = assertorType.Assembly.Location;
         if (string.IsNullOrEmpty(assertorTypeLocation))
         {
-            assertorTypeLocation = AppContext.BaseDirectory;
+            assertorTypeLocation = assertorType.Assembly.GetName().Name + ".dll";
         }
 
         // Check if assertors is already there.
         foreach (var existing in _configuration.Assertors)
         {
-            if (existing.FilePath == assertorTypeLocation &&
+            if ((existing.FilePath == assertorTypeLocation || existing.InMemoryType == assertorType) &&
                 existing.Type == assertorType.FullName)
             {
                 return this;
@@ -428,7 +429,8 @@ public sealed class ConfigBuilder
         _configuration.Assertors.Add(new AssemblyLoadInfo
         {
             FilePath = assertorTypeLocation,
-            Type = assertorType.FullName
+            Type = assertorType.FullName,
+            InMemoryType = assertorType,
         });
 
         return this;
@@ -555,13 +557,13 @@ public sealed class ConfigBuilder
         var serviceTypeLocation = serviceType.Assembly.Location;
         if (string.IsNullOrEmpty(serviceTypeLocation))
         {
-            serviceTypeLocation = AppContext.BaseDirectory;
+            serviceTypeLocation = serviceType.Assembly.GetName().Name + ".dll";
         }
 
         // Check if services is already there.
         foreach (var existing in _configuration.Services)
         {
-            if (existing.FilePath == serviceTypeLocation &&
+            if ((existing.FilePath == serviceTypeLocation || existing.InMemoryType == serviceType) &&
                 existing.Type == serviceType.FullName)
             {
                 return this;
@@ -571,7 +573,8 @@ public sealed class ConfigBuilder
         _configuration.Services.Add(new AssemblyLoadInfo
         {
             FilePath = serviceTypeLocation,
-            Type = serviceType.FullName
+            Type = serviceType.FullName,
+            InMemoryType = serviceType,
         });
 
         return this;

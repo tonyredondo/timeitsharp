@@ -12,11 +12,15 @@ public class AssemblyLoadInfo
     
     [JsonPropertyName("name")]
     public string? Name { get; set; }
-
-    internal virtual AssemblyLoadInfo Clone() => new AssemblyLoadInfo
+    
+    [JsonIgnore]
+    public Type? InMemoryType { get; set; }
+    
+    internal AssemblyLoadInfo Clone() => new()
     {
         FilePath = FilePath,
         Type = Type,
         Name = Name,
+        InMemoryType = InMemoryType,
     };
 }

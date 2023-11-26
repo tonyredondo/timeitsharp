@@ -82,7 +82,7 @@ public static class TimeItEngine
         // Services
         var timeitCallbacks = new TimeItCallbacks();
         var callbacksTriggers = timeitCallbacks.GetTriggers();
-        var services = GetFromAssemblyLoadInfoList<IService>(config.Services);
+        var services = GetFromAssemblyLoadInfoList<IService>(config.Services, () => new List<IService> { new NoopService() });
         foreach (var service in services)
         {
             if (!statesByType.TryGetValue(service.GetType(), out var state))
@@ -193,6 +193,21 @@ public static class TimeItEngine
         {
             if (assemblyLoadInfo is null)
             {
+                continue;
+            }
+
+            if (assemblyLoadInfo.InMemoryType is { } inMemoryType)
+            {
+                if (Activator.CreateInstance(inMemoryType) is T instance)
+                {
+                    resultList.Add(instance);
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("[red]Error creating {0}[/]: {1}", typeof(T).Name,
+                        inMemoryType.FullName ?? string.Empty);
+                }
+
                 continue;
             }
 

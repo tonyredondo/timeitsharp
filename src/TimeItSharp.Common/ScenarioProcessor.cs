@@ -103,10 +103,6 @@ internal sealed class ScenarioProcessor
         if (_configuration.EnableMetrics)
         {
             var startupHookAssemblyLocation = typeof(StartupHook).Assembly.Location;
-            if (string.IsNullOrEmpty(startupHookAssemblyLocation))
-            {
-                startupHookAssemblyLocation = AppContext.BaseDirectory;
-            }
 
             // Add the .NET startup hook to collect metrics
             if (startupHookAssemblyLocation is { Length: > 0 } startupHookLocation)
