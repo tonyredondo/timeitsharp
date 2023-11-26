@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.Loader;
 using Spectre.Console;
 using TimeItSharp.Common.Assertors;
@@ -19,13 +20,14 @@ public static class TimeItEngine
     /// <param name="options">TimeIt options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
+    [RequiresUnreferencedCode("")]
     public static Task<int> RunAsync(string configurationFile, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
         // Load configuration
         var config = Config.LoadConfiguration(configurationFile);
         return RunAsync(config, options, cancellationToken);
     }
-    
+
     /// <summary>
     /// Runs TimeIt
     /// </summary>
@@ -33,6 +35,7 @@ public static class TimeItEngine
     /// <param name="options">TimeIt options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
+    [RequiresUnreferencedCode("")]
     public static Task<int> RunAsync(ConfigBuilder configBuilder, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
         return RunAsync(configBuilder.Build(), options, cancellationToken);
@@ -45,6 +48,7 @@ public static class TimeItEngine
     /// <param name="options">TimeIt options</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
+    [RequiresUnreferencedCode("")]
     public static async Task<int> RunAsync(Config config, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
         config = config.Clone();
@@ -172,6 +176,7 @@ public static class TimeItEngine
         return 0;
     }
 
+    [RequiresUnreferencedCode("Calls System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String)")]
     private static List<T> GetFromAssemblyLoadInfoList<T>(
         IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
         Func<List<T>>? defaultListFunc = null)
