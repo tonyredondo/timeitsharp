@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using TimeItSharp.Common.Assertors;
 using TimeItSharp.Common.Exporters;
 using TimeItSharp.Common.Services;
@@ -257,12 +258,19 @@ public sealed class ConfigBuilder
     /// </summary>
     /// <param name="exporterType">Type of exporter</param>
     /// <returns>Configuration builder instance</returns>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithExporter(Type exporterType)
     {
+        var exporterTypeLocation = exporterType.Assembly.Location;
+        if (string.IsNullOrEmpty(exporterTypeLocation))
+        {
+            exporterTypeLocation = AppContext.BaseDirectory;
+        }
+
         // Check if exporter is already there.
         foreach (var exporter in _configuration.Exporters)
         {
-            if (exporter.FilePath == exporterType.Assembly.Location &&
+            if (exporter.FilePath == exporterTypeLocation &&
                 exporter.Type == exporterType.FullName)
             {
                 return this;
@@ -271,7 +279,7 @@ public sealed class ConfigBuilder
         
         _configuration.Exporters.Add(new AssemblyLoadInfo
         {
-            FilePath = exporterType.Assembly.Location,
+            FilePath = exporterTypeLocation,
             Type = exporterType.FullName
         });
 
@@ -398,12 +406,19 @@ public sealed class ConfigBuilder
     /// </summary>
     /// <param name="assertorType">Type of assertor</param>
     /// <returns>Configuration builder instance</returns>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithAssertor(Type assertorType)
     {
+        var assertorTypeLocation = assertorType.Assembly.Location;
+        if (string.IsNullOrEmpty(assertorTypeLocation))
+        {
+            assertorTypeLocation = AppContext.BaseDirectory;
+        }
+
         // Check if assertors is already there.
         foreach (var existing in _configuration.Assertors)
         {
-            if (existing.FilePath == assertorType.Assembly.Location &&
+            if (existing.FilePath == assertorTypeLocation &&
                 existing.Type == assertorType.FullName)
             {
                 return this;
@@ -412,7 +427,7 @@ public sealed class ConfigBuilder
 
         _configuration.Assertors.Add(new AssemblyLoadInfo
         {
-            FilePath = assertorType.Assembly.Location,
+            FilePath = assertorTypeLocation,
             Type = assertorType.FullName
         });
 
@@ -534,12 +549,19 @@ public sealed class ConfigBuilder
     /// </summary>
     /// <param name="serviceType">Type of service</param>
     /// <returns>Configuration builder instance</returns>
+    [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithService(Type serviceType)
     {
+        var serviceTypeLocation = serviceType.Assembly.Location;
+        if (string.IsNullOrEmpty(serviceTypeLocation))
+        {
+            serviceTypeLocation = AppContext.BaseDirectory;
+        }
+
         // Check if services is already there.
         foreach (var existing in _configuration.Services)
         {
-            if (existing.FilePath == serviceType.Assembly.Location &&
+            if (existing.FilePath == serviceTypeLocation &&
                 existing.Type == serviceType.FullName)
             {
                 return this;
@@ -548,7 +570,7 @@ public sealed class ConfigBuilder
 
         _configuration.Services.Add(new AssemblyLoadInfo
         {
-            FilePath = serviceType.Assembly.Location,
+            FilePath = serviceTypeLocation,
             Type = serviceType.FullName
         });
 

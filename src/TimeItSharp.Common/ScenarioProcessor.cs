@@ -37,6 +37,7 @@ internal sealed class ScenarioProcessor
         _callbacksTriggers = callbacksTriggers;
     }
 
+    [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public void PrepareScenario(Scenario scenario)
     {
         if (string.IsNullOrEmpty(scenario.ProcessName))
@@ -101,8 +102,14 @@ internal sealed class ScenarioProcessor
 
         if (_configuration.EnableMetrics)
         {
+            var startupHookAssemblyLocation = typeof(StartupHook).Assembly.Location;
+            if (string.IsNullOrEmpty(startupHookAssemblyLocation))
+            {
+                startupHookAssemblyLocation = AppContext.BaseDirectory;
+            }
+
             // Add the .NET startup hook to collect metrics
-            if (typeof(StartupHook).Assembly.Location is { Length: > 0 } startupHookLocation)
+            if (startupHookAssemblyLocation is { Length: > 0 } startupHookLocation)
             {
                 if (scenario.EnvironmentVariables.TryGetValue(Constants.StartupHookEnvironmentVariable,
                         out var startupHook))
