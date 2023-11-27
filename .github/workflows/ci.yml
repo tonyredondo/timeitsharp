@@ -31,11 +31,11 @@ jobs:
 
     - name: Run timeitsharp dotnet tool sample
       run: ./TimeItSharp config-example.json
-      working-directory: src/TimeItSharp/bin/Release/net7.0
+      working-directory: src/TimeItSharp/bin/Release/net8.0
 
     - name: Run timeitsharp engine sample
       run: ./TimeItSharp.FluentConfiguration.Sample
-      working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Release/net7.0
+      working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Release/net8.0
 
     - uses: actions/upload-artifact@v3
       with:
