@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using Spectre.Console;
 using TimeItSharp.Common.Results;
 
@@ -48,11 +49,7 @@ public sealed class JsonExporter : IExporter
             }
 
             using var fStream = File.OpenWrite(outputFile);
-            JsonSerializer.Serialize(fStream, results.Scenarios, new JsonSerializerOptions(JsonSerializerDefaults.General)
-            {
-                WriteIndented = true
-            });
-            
+            JsonSerializer.Serialize(fStream, results.Scenarios, TimeItResultContext.Default.IReadOnlyListScenarioResult);
             AnsiConsole.MarkupLine($"[lime]The json file '{outputFile}' was exported.[/]");
         }
         catch (Exception ex)

@@ -12,6 +12,11 @@
     <PackageOutputPath>..\..\artifacts</PackageOutputPath>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
   <ItemGroup>
     <InternalsAssemblyName Include="DatadogTestLogger" />
     <InternalsAssemblyName Include="Datadog.testlogger" />
@@ -31,6 +36,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TimeItSharp.StartupHook\TimeItSharp.StartupHook.csproj" />
+    <ProjectReference Include="..\TimeItSharp.StartupHook\TimeItSharp.StartupHook.csproj">
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </ProjectReference>
   </ItemGroup>
 </Project>

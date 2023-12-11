@@ -84,7 +84,11 @@ public sealed class ScenarioResult : Scenario
     public Dictionary<string, double> AdditionalMetrics { get; set; }
 
     [JsonPropertyName("status")]
+#if NET8_0_OR_GREATER
+    [JsonConverter(typeof(JsonStringEnumConverter<Status>))]
+#else
     [JsonConverter(typeof(JsonStringEnumConverter))]
+#endif
     public Status Status { get; set; }
     
     [JsonPropertyName("outliersThreshold")]
