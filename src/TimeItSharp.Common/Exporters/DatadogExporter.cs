@@ -21,7 +21,7 @@ public sealed class DatadogExporter : IExporter
     public DatadogExporter()
     {
         Environment.SetEnvironmentVariable("DD_CIVISIBILITY_LOGS_ENABLED", "true");
-        _testSession = TestSession.GetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
+        _testSession = TestSession.InternalGetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
         _startDate = DateTime.UtcNow;
     }
     
@@ -41,7 +41,7 @@ public sealed class DatadogExporter : IExporter
             _configName = options.Configuration?.FileName;
         }
 
-        _testModule ??= _testSession.CreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
+        _testModule ??= _testSession.InternalCreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", _startDate);
     }
 
     /// <inheritdoc />
@@ -49,14 +49,14 @@ public sealed class DatadogExporter : IExporter
     {
         var errors = false;
         var minStartDate = results.Scenarios.Select(r => r.Start).Min();
-        _testModule ??= _testSession.CreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
-        var testSuite = _testModule.GetOrCreateSuite(_configName is not null ? $"{_configName}.scenarios" : "scenarios", minStartDate);
+        _testModule ??= _testSession.InternalCreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
+        var testSuite = _testModule.InternalGetOrCreateSuite(_configName is not null ? $"{_configName}.scenarios" : "scenarios", minStartDate);
         try
         {
             for (var i = 0; i < results.Scenarios.Count; i++)
             {
                 var scenarioResult = results.Scenarios[i];
-                var test = testSuite.CreateTest(scenarioResult.Name, scenarioResult.Start);
+                var test = testSuite.InternalCreateTest(scenarioResult.Name, scenarioResult.Start);
 
                 // Set benchmark metadata
                 test.SetBenchmarkMetadata(new BenchmarkHostInfo
