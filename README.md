@@ -14,6 +14,42 @@ dotnet tool install --global TimeItSharp
 dotnet timeit [configuration file.json]
 ```
 
+or
+
+```bash
+dotnet timeit -- "[command]"
+```
+
+```bash
+❯ dotnet timeit --help
+TimeItSharp v0.1.15
+Description:
+
+Usage:
+  TimeItSharp <configuration file or process name> [options]
+
+Arguments:
+  <configuration file or process name>  The JSON configuration file or process name
+
+Options:
+  --variable <variable>  Variables used to instantiate the configuration file [default: TimeItSharp.Common.TemplateVariables]
+  --count <count>        Number of iterations to run
+  --warmup <warmup>      Number of iterations to warm up
+  --json-exporter        Enable JSON exporter [default: False]
+  --datadog-exporter     Enable Datadog exporter [default: False]
+  --version              Show version information
+  -?, -h, --help         Show help and usage information
+```
+
+
+#### Default Configuration when running a command
+```
+Warmup count = 1
+Count = 10
+Exporters = ConsoleExporter
+Assertors = DefaultAssertor
+```
+
 ## Sample Configuration
 
 ```json
