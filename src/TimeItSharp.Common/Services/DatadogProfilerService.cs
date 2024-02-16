@@ -4,6 +4,7 @@ using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci.Tags;
 using DatadogTestLogger.Vendors.Datadog.Trace.Configuration;
 using DatadogTestLogger.Vendors.Datadog.Trace.Util;
+using Spectre.Console;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 
@@ -11,11 +12,22 @@ namespace TimeItSharp.Common.Services;
 
 public sealed class DatadogProfilerService : IService
 {
+    private bool _isEnabled = false;
+    
     public string Name => nameof(DatadogProfilerService);
 
     public void Initialize(InitOptions options, TimeItCallbacks callbacks)
     {
         callbacks.OnExecutionStart += CallbacksOnOnExecutionStart;
+        callbacks.OnFinish += CallbacksOnOnFinish;
+    }
+
+    private void CallbacksOnOnFinish()
+    {
+        if (_isEnabled)
+        {
+            AnsiConsole.MarkupLine($"[lime]The Datadog profiler was successfully attached to the .NET processes.[/]");
+        }
     }
 
     private void CallbacksOnOnExecutionStart(DataPoint datapoint, TimeItPhase phase, ref Command command)
@@ -29,6 +41,7 @@ public sealed class DatadogProfilerService : IService
             }
 
             command = command.WithEnvironmentVariables(environmentVariables);
+            _isEnabled = true;
         }
     }
 
