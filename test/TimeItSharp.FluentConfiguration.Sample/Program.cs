@@ -13,7 +13,7 @@ var config = ConfigBuilder.Create()
     .WithMetricsProcessName("dotnet")
     .WithExporters<ConsoleExporter, JsonExporter, DatadogExporter>()
     .WithAssertor<DefaultAssertor>()
-    .WithService<NoopService>()
+    .WithService<DatadogProfilerService>()
     .WithProcessName("dotnet")
     .WithProcessArguments("--version")
     .WithEnvironmentVariables(new Dictionary<string, string>
