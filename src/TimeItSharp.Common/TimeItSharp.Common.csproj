@@ -7,7 +7,7 @@
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageIcon>icon.png</PackageIcon>
     <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
-    <NoWarn>NETSDK1138,0436</NoWarn>
+    <NoWarn>NETSDK1138,0436,IL3000</NoWarn>
     <InternalsAssemblyUseEmptyMethodBodies>false</InternalsAssemblyUseEmptyMethodBodies>
     <PackageOutputPath>..\..\artifacts</PackageOutputPath>
   </PropertyGroup>

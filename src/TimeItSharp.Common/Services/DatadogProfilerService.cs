@@ -219,6 +219,16 @@ public sealed class DatadogProfilerService : IService
         yield return Path.Combine(
             Path.GetDirectoryName(typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser).Assembly.Location) ?? string.Empty,
             "datadog");
+        
+        // try to locate it in the default path using relative path from the benchmark assembly.
+        yield return Path.Combine(
+            Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory) ?? string.Empty,
+            "datadog");
+        
+        // try to locate it in the default path using relative path from the current directory.
+        yield return Path.Combine(
+            Environment.CurrentDirectory,
+            "datadog");
     }
     
     private static bool GetProfilerPaths(string monitoringHome, ref string? profiler32Path, ref string? profiler64Path, ref string? loaderConfig, ref string? ldPreload)
