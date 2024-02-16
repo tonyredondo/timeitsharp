@@ -28,6 +28,10 @@ public sealed class DatadogProfilerService : IService
         {
             AnsiConsole.MarkupLine($"[lime]The Datadog profiler was successfully attached to the .NET processes.[/]");
         }
+        else
+        {
+            AnsiConsole.MarkupLine("[red]The Datadog profiler could not be attached to the .NET processes.[/]");
+        }
     }
 
     private void CallbacksOnOnExecutionStart(DataPoint datapoint, TimeItPhase phase, ref Command command)
