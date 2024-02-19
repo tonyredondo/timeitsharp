@@ -5,46 +5,45 @@ using DatadogTestLogger.Vendors.Datadog.Trace.Ci.Tags;
 using DatadogTestLogger.Vendors.Datadog.Trace.Configuration;
 using DatadogTestLogger.Vendors.Datadog.Trace.Util;
 using Spectre.Console;
-using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common.Services;
 
 public sealed class DatadogProfilerService : IService
 {
-    private bool _isEnabled = false;
+    private bool _isEnabled;
+    private IReadOnlyDictionary<string, string?>? _profilerEnvironmentVariables = null;
     
     public string Name => nameof(DatadogProfilerService);
 
     public void Initialize(InitOptions options, TimeItCallbacks callbacks)
     {
+        _profilerEnvironmentVariables = GetProfilerEnvironmentVariables();
         callbacks.OnExecutionStart += CallbacksOnOnExecutionStart;
         callbacks.OnFinish += CallbacksOnOnFinish;
     }
 
     private void CallbacksOnOnFinish()
     {
-        if (_isEnabled)
-        {
-            AnsiConsole.MarkupLine($"[lime]The Datadog profiler was successfully attached to the .NET processes.[/]");
-        }
-        else
-        {
-            AnsiConsole.MarkupLine("[red]The Datadog profiler could not be attached to the .NET processes.[/]");
-        }
+        AnsiConsole.MarkupLine(_isEnabled
+            ? $"[lime]The Datadog profiler was successfully attached to the .NET processes.[/]"
+            : "[red]The Datadog profiler could not be attached to the .NET processes.[/]");
     }
 
     private void CallbacksOnOnExecutionStart(DataPoint datapoint, TimeItPhase phase, ref Command command)
     {
-        if (datapoint.Scenario is { } scenario &&
-            GetProfilerEnvironmentVariables(scenario) is { } environmentVariables)
+        if (_profilerEnvironmentVariables is { } profilerEnvironmentVariables && datapoint.Scenario is { } scenario)
         {
+            var envVar = new Dictionary<string, string?>(profilerEnvironmentVariables);
             foreach (var kvp in command.EnvironmentVariables)
             {
-                environmentVariables[kvp.Key] = kvp.Value;
+                envVar[kvp.Key] = kvp.Value;
             }
 
-            command = command.WithEnvironmentVariables(environmentVariables);
+            DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
+            envVar["DD_INTERNAL_CIVISIBILITY_SPANID"] = spanId.ToString();
+
+            command = command.WithEnvironmentVariables(envVar);
             _isEnabled = true;
         }
     }
@@ -53,7 +52,7 @@ public sealed class DatadogProfilerService : IService
 
     public object? GetScenarioServiceData() => null;
 
-    private static Dictionary<string, string?>? GetProfilerEnvironmentVariables(Scenario scenario)
+    private static Dictionary<string, string?>? GetProfilerEnvironmentVariables()
     {
         string? monitoringHome = null;
         string? profiler32Path = null;
@@ -88,7 +87,6 @@ public sealed class DatadogProfilerService : IService
             return null;
         }
 
-        DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
         var tracer = Tracer.Instance;
         var environment = new Dictionary<string, string?>();
         if (!environment.TryGetValue(ConfigurationKeys.ServiceName, out _))
@@ -134,7 +132,6 @@ public sealed class DatadogProfilerService : IService
         // CI Visibility integration environment variables
         environment[ConfigurationKeys.CIVisibility.Enabled] = "1";
         environment["DD_INTERNAL_CIVISIBILITY_RUNTIMEID"] = RuntimeId.Get();
-        environment["DD_INTERNAL_CIVISIBILITY_SPANID"] = spanId.ToString();
 
         // Profiler options
         const string profilerEnabled = "DD_PROFILING_ENABLED";
@@ -225,73 +222,73 @@ public sealed class DatadogProfilerService : IService
         }
 
         return environment;
-    }
-    
-    private static IEnumerable<string> GetProfilersHomeFolder()
-    {
-        // try to locate it from the environment variable
-        yield return EnvironmentHelpers.GetEnvironmentVariable("DD_DOTNET_TRACER_HOME");
-        
-        // try to locate it in the default path using relative path from the benchmark assembly.
-        yield return Path.Combine(
-            Path.GetDirectoryName(typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser).Assembly.Location) ?? string.Empty,
-            "datadog");
-        
-        // try to locate it in the default path using relative path from the benchmark assembly.
-        yield return Path.Combine(
-            Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory) ?? string.Empty,
-            "datadog");
-        
-        // try to locate it in the default path using relative path from the current directory.
-        yield return Path.Combine(
-            Environment.CurrentDirectory,
-            "datadog");
-    }
-    
-    private static bool GetProfilerPaths(string monitoringHome, ref string? profiler32Path, ref string? profiler64Path, ref string? loaderConfig, ref string? ldPreload)
-    {
-        var osPlatform = FrameworkDescription.Instance.OSPlatform;
-        var processArch = FrameworkDescription.Instance.ProcessArchitecture;
-        if (string.Equals(osPlatform, OSPlatformName.Windows, StringComparison.OrdinalIgnoreCase))
-        {
-            // set required file paths
-            profiler32Path = Path.Combine(monitoringHome, "win-x86", "Datadog.Trace.ClrProfiler.Native.dll");
-            profiler64Path = Path.Combine(monitoringHome, "win-x64", "Datadog.Trace.ClrProfiler.Native.dll");
-            loaderConfig = Path.Combine(monitoringHome, "win-x64", "loader.conf");
-            ldPreload = null;
-        }
-        else if (string.Equals(osPlatform, OSPlatformName.Linux, StringComparison.OrdinalIgnoreCase))
-        {
-            // set required file paths
-            if (string.Equals(processArch, "arm64", StringComparison.OrdinalIgnoreCase))
-            {
-                const string rid = "linux-arm64";
-                profiler32Path = null;
-                profiler64Path = Path.Combine(monitoringHome, rid, "Datadog.Trace.ClrProfiler.Native.so");
-                loaderConfig = Path.Combine(monitoringHome, rid, "loader.conf");
-                ldPreload = Path.Combine(monitoringHome, rid, "Datadog.Linux.ApiWrapper.x64.so");
-            }
-            else
-            {
-                const string rid = "linux-x64";
-                profiler32Path = null;
-                profiler64Path = Path.Combine(monitoringHome, rid, "Datadog.Trace.ClrProfiler.Native.so");
-                loaderConfig = Path.Combine(monitoringHome, rid, "loader.conf");
-                ldPreload = Path.Combine(monitoringHome, rid, "Datadog.Linux.ApiWrapper.x64.so");
-            }
-        }
-        else if (string.Equals(osPlatform, OSPlatformName.MacOS, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new PlatformNotSupportedException("Datadog Profiler is not supported in macOS");
-        }
 
-        if (!File.Exists(profiler64Path) ||
-            (profiler32Path is not null && !File.Exists(profiler64Path)) ||
-            !File.Exists(loaderConfig))
+        static IEnumerable<string> GetProfilersHomeFolder()
         {
-            return false;
+            // try to locate it from the environment variable
+            yield return EnvironmentHelpers.GetEnvironmentVariable("DD_DOTNET_TRACER_HOME");
+        
+            // try to locate it in the default path using relative path from the benchmark assembly.
+            yield return Path.Combine(
+                Path.GetDirectoryName(typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser).Assembly.Location) ?? string.Empty,
+                "datadog");
+        
+            // try to locate it in the default path using relative path from the benchmark assembly.
+            yield return Path.Combine(
+                Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory) ?? string.Empty,
+                "datadog");
+        
+            // try to locate it in the default path using relative path from the current directory.
+            yield return Path.Combine(
+                Environment.CurrentDirectory,
+                "datadog");
         }
+        
+        static bool GetProfilerPaths(string monitoringHome, ref string? profiler32Path, ref string? profiler64Path, ref string? loaderConfig, ref string? ldPreload)
+        {
+            var osPlatform = FrameworkDescription.Instance.OSPlatform;
+            var processArch = FrameworkDescription.Instance.ProcessArchitecture;
+            if (string.Equals(osPlatform, OSPlatformName.Windows, StringComparison.OrdinalIgnoreCase))
+            {
+                // set required file paths
+                profiler32Path = Path.Combine(monitoringHome, "win-x86", "Datadog.Trace.ClrProfiler.Native.dll");
+                profiler64Path = Path.Combine(monitoringHome, "win-x64", "Datadog.Trace.ClrProfiler.Native.dll");
+                loaderConfig = Path.Combine(monitoringHome, "win-x64", "loader.conf");
+                ldPreload = null;
+            }
+            else if (string.Equals(osPlatform, OSPlatformName.Linux, StringComparison.OrdinalIgnoreCase))
+            {
+                // set required file paths
+                if (string.Equals(processArch, "arm64", StringComparison.OrdinalIgnoreCase))
+                {
+                    const string rid = "linux-arm64";
+                    profiler32Path = null;
+                    profiler64Path = Path.Combine(monitoringHome, rid, "Datadog.Trace.ClrProfiler.Native.so");
+                    loaderConfig = Path.Combine(monitoringHome, rid, "loader.conf");
+                    ldPreload = Path.Combine(monitoringHome, rid, "Datadog.Linux.ApiWrapper.x64.so");
+                }
+                else
+                {
+                    const string rid = "linux-x64";
+                    profiler32Path = null;
+                    profiler64Path = Path.Combine(monitoringHome, rid, "Datadog.Trace.ClrProfiler.Native.so");
+                    loaderConfig = Path.Combine(monitoringHome, rid, "loader.conf");
+                    ldPreload = Path.Combine(monitoringHome, rid, "Datadog.Linux.ApiWrapper.x64.so");
+                }
+            }
+            else if (string.Equals(osPlatform, OSPlatformName.MacOS, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new PlatformNotSupportedException("Datadog Profiler is not supported in macOS");
+            }
 
-        return true;
+            if (!File.Exists(profiler64Path) ||
+                (profiler32Path is not null && !File.Exists(profiler64Path)) ||
+                !File.Exists(loaderConfig))
+            {
+                return false;
+            }
+
+            return true;
+        }
     }
 }
