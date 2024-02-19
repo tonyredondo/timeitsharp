@@ -116,16 +116,19 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
             processArgs = string.Join(' ', commandLineArray.Skip(1));
         }
 
+        var finalCount = countValue ?? 10;
         var configBuilder = ConfigBuilder.Create()
             .WithName(configFile)
             .WithProcessName(processName)
             .WithProcessArguments(processArgs)
             .WithMetrics(metricsValue)
             .WithWarmupCount(warmupValue ?? 1)
-            .WithCount(countValue ?? 10)
+            .WithCount(finalCount)
             .WithExporter<ConsoleExporter>()
             .WithTimeout(t => t.WithMaxDuration((int)TimeSpan.FromMinutes(30).TotalSeconds))
             .WithScenario(s => s.WithName("Default"));
+
+        var timeitOption = new TimeItOptions(templateVariables);
 
         if (jsonExporterValue)
         {
@@ -140,9 +143,11 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
         if (datadogProfilerValue)
         {
             configBuilder.WithService<DatadogProfilerService>();
+            timeitOption = timeitOption.AddServiceState<DatadogProfilerService>(
+                new DatadogProfilerConfiguration().WithExtraRun(finalCount * 40 / 100));
         }
 
-        exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariables)).ConfigureAwait(false);
+        exitCode = await TimeItEngine.RunAsync(configBuilder, timeitOption).ConfigureAwait(false);
     }
     
     if (exitCode != 0)

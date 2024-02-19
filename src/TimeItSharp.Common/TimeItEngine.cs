@@ -73,7 +73,7 @@ public static class TimeItEngine
         var assertors = assertorsInfo.Select(i => i.Instance).ToList();
         foreach (var assertor in assertorsInfo)
         {
-            if (!statesByType.TryGetValue(assertor.GetType(), out var state))
+            if (!statesByType.TryGetValue(assertor.Instance.GetType(), out var state))
             {
                 state = null;
             }
@@ -88,7 +88,7 @@ public static class TimeItEngine
         var services = servicesInfo.Select(i => i.Instance).ToList();
         foreach (var service in servicesInfo)
         {
-            if (!statesByType.TryGetValue(service.GetType(), out var state))
+            if (!statesByType.TryGetValue(service.Instance.GetType(), out var state))
             {
                 state = null;
             }
@@ -150,7 +150,7 @@ public static class TimeItEngine
             // Export data
             foreach (var exporter in exportersInfo)
             {
-                if (!statesByType.TryGetValue(exporter.GetType(), out var state))
+                if (!statesByType.TryGetValue(exporter.Instance.GetType(), out var state))
                 {
                     state = null;
                 }
