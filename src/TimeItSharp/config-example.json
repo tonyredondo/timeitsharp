@@ -13,7 +13,12 @@
       "name": "NoopService"
     },
     {
-      "name": "DatadogProfilerService"
+      "name": "DatadogProfiler",
+      "options": {
+        "useExtraRun": true,
+        "extraRunCount": 5,
+        "scenarios" : [ "CallTarget" ]
+      }
     }
   ],
   "scenarios": [

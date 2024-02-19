@@ -1,4 +1,5 @@
 ﻿using System.Text.Json.Serialization;
+using TimeItSharp.Common.Services;
 
 namespace TimeItSharp.Common.Configuration;
 
@@ -6,6 +7,8 @@ public class Scenario : ProcessData
 {
     [JsonPropertyName("name")]
     public string Name { get; set; }
+    
+    public IService? ParentService { get; set; }
 
     public Scenario()
     {
@@ -15,6 +18,7 @@ public class Scenario : ProcessData
     public Scenario(string name, ProcessData? processData = null)
     {
         Name = name;
+        ParentService = null;
         if (processData is not null)
         {
             ProcessName = processData.ProcessName;
@@ -30,6 +34,7 @@ public class Scenario : ProcessData
     internal override Scenario Clone() => new Scenario
     {
         Name = Name,
+        ParentService = ParentService,
         ProcessName = ProcessName,
         ProcessArguments = ProcessArguments,
         WorkingDirectory = WorkingDirectory,
