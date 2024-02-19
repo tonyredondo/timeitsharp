@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace TimeItSharp.Common.Configuration;
@@ -13,6 +14,9 @@ public class AssemblyLoadInfo
     [JsonPropertyName("name")]
     public string? Name { get; set; }
     
+    [JsonPropertyName("options")]
+    public Dictionary<string, JsonElement?>? Options { get; set; }
+    
     [JsonIgnore]
     public Type? InMemoryType { get; set; }
     
@@ -21,6 +25,7 @@ public class AssemblyLoadInfo
         FilePath = FilePath,
         Type = Type,
         Name = Name,
+        Options = Options,
         InMemoryType = InMemoryType,
     };
 }

@@ -61,36 +61,39 @@ public static class TimeItEngine
         config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
 
         // Exporters
-        var exporters = GetFromAssemblyLoadInfoList(
+        var exportersInfo = GetFromAssemblyLoadInfoList(
             config.Exporters,
             () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() });
+        var exporters = exportersInfo.Select(i => i.Instance).ToList();
     
         // Assertors
-        var assertors = GetFromAssemblyLoadInfoList(
+        var assertorsInfo = GetFromAssemblyLoadInfoList(
             config.Assertors,
             () => new List<IAssertor> { new DefaultAssertor() });
-        foreach (var assertor in assertors)
+        var assertors = assertorsInfo.Select(i => i.Instance).ToList();
+        foreach (var assertor in assertorsInfo)
         {
             if (!statesByType.TryGetValue(assertor.GetType(), out var state))
             {
                 state = null;
             }
 
-            assertor.Initialize(new InitOptions(config, templateVariables, state));
+            assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state));
         }
 
         // Services
         var timeitCallbacks = new TimeItCallbacks();
         var callbacksTriggers = timeitCallbacks.GetTriggers();
-        var services = GetFromAssemblyLoadInfoList<IService>(config.Services, () => new List<IService> { new NoopService() });
-        foreach (var service in services)
+        var servicesInfo = GetFromAssemblyLoadInfoList<IService>(config.Services, () => new List<IService> { new NoopService() });
+        var services = servicesInfo.Select(i => i.Instance).ToList();
+        foreach (var service in servicesInfo)
         {
             if (!statesByType.TryGetValue(service.GetType(), out var state))
             {
                 state = null;
             }
 
-            service.Initialize(new InitOptions(config, templateVariables, state), timeitCallbacks);
+            service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state), timeitCallbacks);
         }
 
         // Create scenario processor
@@ -145,17 +148,17 @@ public static class TimeItEngine
             };
 
             // Export data
-            foreach (var exporter in exporters)
+            foreach (var exporter in exportersInfo)
             {
                 if (!statesByType.TryGetValue(exporter.GetType(), out var state))
                 {
                     state = null;
                 }
 
-                exporter.Initialize(new InitOptions(config, templateVariables, state));
-                if (exporter.Enabled)
+                exporter.Instance.Initialize(new InitOptions(config, exporter.LoadInfo, templateVariables, state));
+                if (exporter.Instance.Enabled)
                 {
-                    exporter.Export(results);
+                    exporter.Instance.Export(results);
                 }
             }
 
@@ -177,17 +180,17 @@ public static class TimeItEngine
     }
 
     [RequiresUnreferencedCode("Calls System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String)")]
-    private static List<T> GetFromAssemblyLoadInfoList<T>(
+    private static List<(T Instance, AssemblyLoadInfo? LoadInfo)> GetFromAssemblyLoadInfoList<T>(
         IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
         Func<List<T>>? defaultListFunc = null)
         where T : INamedExtension
     {
         if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
         {
-            return defaultListFunc?.Invoke() ?? new List<T>();
+            return (defaultListFunc?.Invoke() ?? new List<T>()).Select(i => (i, (AssemblyLoadInfo?)null)).ToList();
         }
         
-        var resultList = new List<T>();
+        var resultList = new List<(T, AssemblyLoadInfo?)>();
         var loadContext = AssemblyLoadContext.Default;
         foreach (var assemblyLoadInfo in assemblyLoadInfos)
         {
@@ -200,7 +203,7 @@ public static class TimeItEngine
             {
                 if (Activator.CreateInstance(inMemoryType) is T instance)
                 {
-                    resultList.Add(instance);
+                    resultList.Add((instance, assemblyLoadInfo));
                 }
                 else
                 {
@@ -220,7 +223,7 @@ public static class TimeItEngine
                     {
                         if (Activator.CreateInstance(type) is T instance)
                         {
-                            resultList.Add(instance);
+                            resultList.Add((instance, assemblyLoadInfo));
                         }
                         else
                         {
@@ -253,7 +256,7 @@ public static class TimeItEngine
                                 if (Activator.CreateInstance(typeInfo) is T instance &&
                                     instance.Name == assemblyLoadInfo.Name)
                                 {
-                                    resultList.Add(instance);
+                                    resultList.Add((instance, assemblyLoadInfo));
                                     // Let's exit the 3 nested foreach loops
                                     goto found_and_added;
                                 }

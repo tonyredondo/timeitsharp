@@ -3,5 +3,6 @@
 public enum TimeItPhase
 {
     WarmUp,
-    Run
+    Run,
+    ExtraRun
 }

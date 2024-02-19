@@ -164,7 +164,8 @@ internal sealed class ScenarioProcessor
 
     public async Task<ScenarioResult?> ProcessScenarioAsync(int index, Scenario scenario, CancellationToken cancellationToken)
     {
-        _callbacksTriggers.ScenarioStart(scenario);
+        var scenarioStartArgs = new TimeItCallbacks.ScenarioStartArg(scenario);
+        _callbacksTriggers.ScenarioStart(scenarioStartArgs);
         Stopwatch? watch = null;
         AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
 
@@ -233,6 +234,25 @@ internal sealed class ScenarioProcessor
 
         watch.Stop();
         AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
+
+        foreach (var repeat in scenarioStartArgs.GetRepeats())
+        {
+            AnsiConsole.Markup("  [green3]Run for '{0}'[/]", repeat.ServiceAskingForRepeat.Name);
+            scenario.ParentService = repeat.ServiceAskingForRepeat;
+            watch.Restart();
+            await RunScenarioAsync(repeat.Count, index, scenario, TimeItPhase.ExtraRun, false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            watch.Stop();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
+        }
+        
+        scenario.ParentService = null;
+
         AnsiConsole.WriteLine();
 
         var lastStandardOutput = string.Empty;
