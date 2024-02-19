@@ -506,3 +506,16 @@ The datadog exporter send all the data using the CI Test Visibility public api:
 
 ### Metrics from the startup hook
 <img width="818" alt="image" src="https://user-images.githubusercontent.com/69803/223069816-c3caf562-1cd2-46d3-8803-f42c6679647e.png">
+
+
+
+## Datadog Profiler Service
+
+The datadog profiler service injects the datadog profiler to the target .NET process
+
+![image](https://github.com/tonyredondo/timeitsharp/assets/69803/757e9dad-9418-40f5-9fc6-d0e0881c08f6)
+
+![image](https://github.com/tonyredondo/timeitsharp/assets/69803/b4b48267-c7f0-4e63-a4dd-a1a17f5c0f60)
+
+![image](https://github.com/tonyredondo/timeitsharp/assets/69803/d54dbe17-bc89-4fd4-b985-79449ae62f29)
+
