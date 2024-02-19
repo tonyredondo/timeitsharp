@@ -1,5 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 using TimeItSharp.Common.Assertors;
+using TimeItSharp.Common.Configuration;
 
 namespace TimeItSharp.Common.Results;
 
@@ -66,6 +67,9 @@ public sealed class DataPoint
     
     [JsonIgnore]
     public string StandardOutput { get; set; }
+    
+    [JsonIgnore]
+    public Scenario? Scenario { get; internal set; }
 
     public DataPoint()
     {

@@ -56,7 +56,16 @@ public sealed class DatadogExporter : IExporter
             for (var i = 0; i < results.Scenarios.Count; i++)
             {
                 var scenarioResult = results.Scenarios[i];
-                var test = testSuite.InternalCreateTest(scenarioResult.Name, scenarioResult.Start);
+                Test? test;
+                if (scenarioResult.Scenario is { } scenario)
+                {
+                    DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
+                    test = testSuite.InternalCreateTest(scenarioResult.Name, scenarioResult.Start, traceId, spanId);
+                }
+                else
+                {
+                    test = testSuite.InternalCreateTest(scenarioResult.Name, scenarioResult.Start);
+                }
 
                 // Set benchmark metadata
                 test.SetBenchmarkMetadata(new BenchmarkHostInfo

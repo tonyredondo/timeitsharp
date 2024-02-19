@@ -11,6 +11,9 @@
   "services": [
     {
       "name": "NoopService"
+    },
+    {
+      "name": "DatadogProfilerService"
     }
   ],
   "scenarios": [

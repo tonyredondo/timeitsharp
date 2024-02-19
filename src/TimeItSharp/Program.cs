@@ -5,6 +5,7 @@ using System.Text.Json;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
 using TimeItSharp.Common.Exporters;
+using TimeItSharp.Common.Services;
 
 var version = typeof(Program).Assembly.GetName().Version!;
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeItSharp v{0}[/]", $"{version.Major}.{version.Minor}.{version.Build}");
@@ -48,8 +49,10 @@ var templateVariables = new Option<TemplateVariables>(
     }) { Arity = ArgumentArity.OneOrMore };
 var count = new Option<int?>("--count", "Number of iterations to run");
 var warmup = new Option<int?>("--warmup", "Number of iterations to warm up");
+var metrics = new Option<bool>("--metrics", () => true, "Enable Metrics from startup hook");
 var jsonExporter = new Option<bool>("--json-exporter", () => false, "Enable JSON exporter");
 var datadogExporter = new Option<bool>("--datadog-exporter", () => false, "Enable Datadog exporter");
+var datadogProfiler = new Option<bool>("--datadog-profiler", () => false, "Enable Datadog profiler");
 
 var root = new RootCommand
 {
@@ -57,11 +60,13 @@ var root = new RootCommand
     templateVariables,
     count,
     warmup,
+    metrics,
     jsonExporter,
-    datadogExporter
+    datadogExporter,
+    datadogProfiler,
 };
 
-root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, jsonExporterValue, datadogExporterValue) =>
+root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, metricsValue, jsonExporterValue, datadogExporterValue, datadogProfilerValue) =>
 {
     var isConfigFile = false;
     if (File.Exists(configFile))
@@ -115,7 +120,7 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, j
             .WithName(configFile)
             .WithProcessName(processName)
             .WithProcessArguments(processArgs)
-            .WithMetrics(true)
+            .WithMetrics(metricsValue)
             .WithWarmupCount(warmupValue ?? 1)
             .WithCount(countValue ?? 10)
             .WithExporter<ConsoleExporter>()
@@ -132,6 +137,11 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, j
             configBuilder.WithExporter<DatadogExporter>();
         }
 
+        if (datadogProfilerValue)
+        {
+            configBuilder.WithService<DatadogProfilerService>();
+        }
+
         exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariables)).ConfigureAwait(false);
     }
     
@@ -139,6 +149,6 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, j
     {
         Environment.Exit(exitCode);
     }
-}, argument, templateVariables, count, warmup, jsonExporter, datadogExporter);
+}, argument, templateVariables, count, warmup, metrics, jsonExporter, datadogExporter, datadogProfiler);
 
 await root.InvokeAsync(args);

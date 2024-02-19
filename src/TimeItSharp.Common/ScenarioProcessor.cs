@@ -465,7 +465,8 @@ internal sealed class ScenarioProcessor
         // Execute the command
         var dataPoint = new DataPoint
         {
-            ShouldContinue = true
+            ShouldContinue = true,
+            Scenario = scenario,
         };
         
         _callbacksTriggers.ExecutionStart(dataPoint, phase, ref cmd);
