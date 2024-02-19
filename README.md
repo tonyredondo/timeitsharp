@@ -68,6 +68,9 @@ Assertors = DefaultAssertor
   "services": [
     {
       "name": "NoopService"
+    },
+    {
+      "name": "DatadogProfilerService"
     }
   ],
   "scenarios": [
