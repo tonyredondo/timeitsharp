@@ -73,13 +73,11 @@ public sealed class DatadogProfilerService : IService
                 (enabledScenarios.TryGetValue(scenario.Name, out var isEnabled) && isEnabled))
             {
                 var runProfiler = _profilerConfiguration?.UseExtraRun == true &&
-                                  phase == TimeItPhase.ExtraRun &&
-                                  scenario.ParentService == this;
+                                  phase == TimeItPhase.ExtraRun;
 
                 runProfiler = runProfiler ||
                               (_profilerConfiguration?.UseExtraRun != true &&
-                               phase == TimeItPhase.Run &&
-                               scenario.ParentService == null);
+                               phase == TimeItPhase.Run);
 
                 if (runProfiler)
                 {
