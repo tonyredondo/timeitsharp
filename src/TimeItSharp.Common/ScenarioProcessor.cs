@@ -233,6 +233,22 @@ internal sealed class ScenarioProcessor
 
         watch.Stop();
         AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
+
+        if (_configuration.CoolDownCount > 0)
+        {
+            AnsiConsole.Markup("  [gold3_1]Cooling down[/]");
+            watch.Restart();
+            await RunScenarioAsync(_configuration.CoolDownCount, index, scenario, TimeItPhase.CoolDown, false,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            watch.Stop();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            AnsiConsole.MarkupLine("    Duration: {0}s", Math.Round(watch.Elapsed.TotalSeconds, 3));
+        }
+
         AnsiConsole.WriteLine();
 
         var lastStandardOutput = string.Empty;

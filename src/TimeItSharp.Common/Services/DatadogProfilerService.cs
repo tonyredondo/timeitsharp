@@ -5,6 +5,7 @@ using DatadogTestLogger.Vendors.Datadog.Trace.Ci.Tags;
 using DatadogTestLogger.Vendors.Datadog.Trace.Configuration;
 using DatadogTestLogger.Vendors.Datadog.Trace.Util;
 using Spectre.Console;
+using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common.Services;
@@ -13,11 +14,23 @@ public sealed class DatadogProfilerService : IService
 {
     private bool _isEnabled;
     private IReadOnlyDictionary<string, string?>? _profilerEnvironmentVariables = null;
+    private DatadogProfilerConfiguration? _profilerConfiguration = null;
+    private Config? _configuration = null;
     
-    public string Name => nameof(DatadogProfilerService);
+    public string Name => "DatadogProfiler";
 
     public void Initialize(InitOptions options, TimeItCallbacks callbacks)
     {
+        if (options.State is DatadogProfilerConfiguration profilerConfiguration)
+        {
+            _profilerConfiguration = profilerConfiguration;
+        }
+        else
+        {
+            _profilerConfiguration = new();
+        }
+
+        _configuration = options.Configuration;
         _profilerEnvironmentVariables = GetProfilerEnvironmentVariables();
         callbacks.OnExecutionStart += CallbacksOnOnExecutionStart;
         callbacks.OnFinish += CallbacksOnOnFinish;
@@ -32,19 +45,39 @@ public sealed class DatadogProfilerService : IService
 
     private void CallbacksOnOnExecutionStart(DataPoint datapoint, TimeItPhase phase, ref Command command)
     {
-        if (_profilerEnvironmentVariables is { } profilerEnvironmentVariables && datapoint.Scenario is { } scenario)
+        if (_profilerEnvironmentVariables is { } profilerEnvironmentVariables &&
+            datapoint.Scenario is { } scenario)
         {
-            var envVar = new Dictionary<string, string?>(profilerEnvironmentVariables);
-            foreach (var kvp in command.EnvironmentVariables)
+            var enabledScenarios = _profilerConfiguration?.GetEnabledScenarios();
+            if (enabledScenarios is null ||
+                (enabledScenarios.TryGetValue(scenario.Name, out var isEnabled) && isEnabled))
             {
-                envVar[kvp.Key] = kvp.Value;
+                var runOnCoolDown = _profilerConfiguration?.HasToRunAtCoolDown ?? false;
+                if (runOnCoolDown && _configuration is not null)
+                {
+                    _configuration.CoolDownCount = Math.Max(_profilerConfiguration?.CoolDownCount ?? 0, _configuration.CoolDownCount);
+                    if (_configuration.CoolDownCount < 1)
+                    {
+                        _configuration.CoolDownCount = Math.Max(_configuration.Count / 10, 1);
+                    }
+                }
+
+                if ((!runOnCoolDown && phase == TimeItPhase.Run) ||
+                    (runOnCoolDown && phase == TimeItPhase.CoolDown))
+                {
+                    var envVar = new Dictionary<string, string?>(profilerEnvironmentVariables);
+                    foreach (var kvp in command.EnvironmentVariables)
+                    {
+                        envVar[kvp.Key] = kvp.Value;
+                    }
+
+                    DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
+                    envVar["DD_INTERNAL_CIVISIBILITY_SPANID"] = spanId.ToString();
+
+                    command = command.WithEnvironmentVariables(envVar);
+                    _isEnabled = true;
+                }
             }
-
-            DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
-            envVar["DD_INTERNAL_CIVISIBILITY_SPANID"] = spanId.ToString();
-
-            command = command.WithEnvironmentVariables(envVar);
-            _isEnabled = true;
         }
     }
 

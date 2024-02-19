@@ -64,6 +64,18 @@ public sealed class ConfigBuilder
         _configuration.Count = count;
         return this;
     }
+
+    /// <summary>
+    /// Sets the cool down count (number of iterations after the normal iterations)
+    /// This can be used to avoid services to impact on normal metrics.
+    /// </summary>
+    /// <param name="count">Number of times to execute each scenario in cool down phase</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithCoolDownCount(int count)
+    {
+        _configuration.CoolDownCount = count;
+        return this;
+    }
     
     #endregion
 

@@ -23,6 +23,9 @@ public class Config : ProcessData
     [JsonPropertyName("count")]
     public int Count { get; set; }
 
+    [JsonPropertyName("coolDownCount")]
+    public int CoolDownCount { get; set; }
+
     [JsonPropertyName("enableDatadog")]
     public bool EnableDatadog { get; set; }
     

@@ -53,4 +53,9 @@ Environment.ExitCode = await TimeItEngine.RunAsync(
     options: new TimeItOptions()
         .AddAssertorState<DefaultAssertor>(50)
         .AddExporterState<ConsoleExporter, JsonExporter, DatadogExporter>(51)
-        .AddServiceState<NoopService>(52));
+        .AddServiceState<NoopService>(52)
+        .AddServiceState<DatadogProfilerService>(
+            new DatadogProfilerConfiguration()
+                .RunAtCoolDown()
+                .WithCoolDownCount(5))
+    );
