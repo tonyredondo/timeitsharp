@@ -47,6 +47,12 @@ public class Config : ProcessData
     [JsonPropertyName("services")]
     public List<AssemblyLoadInfo> Services { get; set; }
     
+    [JsonPropertyName("processFailedDataPoints")]
+    public bool ProcessFailedDataPoints { get; set; }
+    
+    [JsonPropertyName("showStdOutForFirstRun")]
+    public bool ShowStdOutForFirstRun { get; set; }
+    
     public Config()
     {
         FilePath = string.Empty;
@@ -63,6 +69,8 @@ public class Config : ProcessData
         Exporters = new();
         Assertors = new();
         Services = new();
+        ProcessFailedDataPoints = false;
+        ShowStdOutForFirstRun = false;
     }
 
     public static Config LoadConfiguration(string filePath)
@@ -95,7 +103,7 @@ public class Config : ProcessData
         return new Config();
     }
 
-    internal override Config Clone() => new Config
+    internal override Config Clone() => new()
     {
         FilePath = FilePath,
         Path = Path,
@@ -118,5 +126,7 @@ public class Config : ProcessData
         PathValidations = new List<string>(PathValidations),
         Timeout = Timeout.Clone(),
         Tags = new Dictionary<string, object>(Tags),
+        ProcessFailedDataPoints = ProcessFailedDataPoints,
+        ShowStdOutForFirstRun = ShowStdOutForFirstRun,
     };
 }
