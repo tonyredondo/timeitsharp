@@ -173,6 +173,26 @@ public sealed class ConfigBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets if the failed data points should be processed
+    /// </summary>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder ProcessFailedDataPoints()
+    {
+        _configuration.ProcessFailedDataPoints = true;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets if the standard output should be shown for the first run
+    /// </summary>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder ShowStdOutForFirstRun()
+    {
+        _configuration.ShowStdOutForFirstRun = true;
+        return this;
+    }
+
     #region WithExporter
 
     /// <summary>

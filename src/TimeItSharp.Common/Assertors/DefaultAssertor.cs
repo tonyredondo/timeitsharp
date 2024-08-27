@@ -71,10 +71,21 @@ public sealed class DefaultAssertor : Assertor
             var message = _sbuilder.ToString();
             _sbuilder.Clear();
             _consecutiveErrorCount++;
-            return new AssertResponse(
-                status: Status.Failed,
-                shouldContinue: _consecutiveErrorCount < 5,
-                message: message);
+
+            if (Options.Configuration.ProcessFailedDataPoints)
+            {
+                return new AssertResponse(
+                    status: Status.Failed,
+                    shouldContinue: true,
+                    message: message);
+            }
+            else
+            {
+                return new AssertResponse(
+                    status: Status.Failed,
+                    shouldContinue: _consecutiveErrorCount < 5,
+                    message: message);
+            }
         }
 
         _consecutiveErrorCount = 0;

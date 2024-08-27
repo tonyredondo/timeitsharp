@@ -1,6 +1,8 @@
 ﻿using Spectre.Console;
 using TimeItSharp.Common;
 using System.CommandLine;
+using System.CommandLine.Binding;
+using System.CommandLine.Invocation;
 using System.Text.Json;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
@@ -53,6 +55,8 @@ var metrics = new Option<bool>("--metrics", () => true, "Enable Metrics from sta
 var jsonExporter = new Option<bool>("--json-exporter", () => false, "Enable JSON exporter");
 var datadogExporter = new Option<bool>("--datadog-exporter", () => false, "Enable Datadog exporter");
 var datadogProfiler = new Option<bool>("--datadog-profiler", () => false, "Enable Datadog profiler");
+var showStdOutForFistRun = new Option<bool>("--first-run-stdout", () => false, "Show the StdOut and StdErr for the first run");
+var processFailedExecutions = new Option<bool>("--process-failed-executions", () => false, "Include failed executions in the final results");
 
 var root = new RootCommand
 {
@@ -64,17 +68,30 @@ var root = new RootCommand
     jsonExporter,
     datadogExporter,
     datadogProfiler,
+    showStdOutForFistRun,
+    processFailedExecutions,
 };
 
-root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, metricsValue, jsonExporterValue, datadogExporterValue, datadogProfilerValue) =>
+root.SetHandler(async (context) =>
 {
+    var argumentValue = GetValueForHandlerParameter(argument, context) ?? string.Empty;
+    var templateVariablesValue = GetValueForHandlerParameter(templateVariables, context);
+    var countValue = GetValueForHandlerParameter(count, context);
+    var warmupValue = GetValueForHandlerParameter(warmup, context);
+    var metricsValue = GetValueForHandlerParameter(metrics, context);
+    var jsonExporterValue = GetValueForHandlerParameter(jsonExporter, context);
+    var datadogExporterValue = GetValueForHandlerParameter(datadogExporter, context);
+    var datadogProfilerValue = GetValueForHandlerParameter(datadogProfiler, context);
+    var showStdOutForFistRunValue = GetValueForHandlerParameter(showStdOutForFistRun, context);
+    var processFailedExecutionsValue = GetValueForHandlerParameter(processFailedExecutions, context);
+    
     var isConfigFile = false;
-    if (File.Exists(configFile))
+    if (File.Exists(argumentValue))
     {
         try
         {
-            await using var fstream = File.Open(configFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var config = JsonSerializer.Deserialize<Config>(fstream, ConfigContext.Default.Config);
+            await using var fstream = File.Open(argumentValue, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var config = JsonSerializer.Deserialize(fstream, ConfigContext.Default.Config);
             isConfigFile = config is not null;
         }
         catch
@@ -90,7 +107,7 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
     var exitCode = 0;
     if (isConfigFile)
     {
-        var config = Config.LoadConfiguration(configFile);
+        var config = Config.LoadConfiguration(argumentValue);
         config.WarmUpCount = warmupValue ?? config.WarmUpCount;
         config.Count = countValue ?? config.Count;
         var configBuilder = new ConfigBuilder(config);
@@ -104,11 +121,11 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
             configBuilder.WithExporter<DatadogExporter>();
         }
 
-        exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariables)).ConfigureAwait(false);
+        exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariablesValue)).ConfigureAwait(false);
     }
     else
     {
-        var commandLineArray = configFile.Split(' ', StringSplitOptions.None);
+        var commandLineArray = argumentValue.Split(' ', StringSplitOptions.None);
         var processName = commandLineArray[0];
         var processArgs = string.Empty;
         if (commandLineArray.Length > 1)
@@ -118,7 +135,7 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
 
         var finalCount = countValue ?? 10;
         var configBuilder = ConfigBuilder.Create()
-            .WithName(configFile)
+            .WithName(argumentValue)
             .WithProcessName(processName)
             .WithProcessArguments(processArgs)
             .WithMetrics(metricsValue)
@@ -128,7 +145,17 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
             .WithTimeout(t => t.WithMaxDuration((int)TimeSpan.FromMinutes(30).TotalSeconds))
             .WithScenario(s => s.WithName("Default"));
 
-        var timeitOption = new TimeItOptions(templateVariables);
+        if (showStdOutForFistRunValue)
+        {
+            configBuilder = configBuilder.ShowStdOutForFirstRun();
+        }
+
+        if (processFailedExecutionsValue)
+        {
+            configBuilder = configBuilder.ProcessFailedDataPoints();
+        }
+
+        var timeitOption = new TimeItOptions(templateVariablesValue);
 
         if (jsonExporterValue)
         {
@@ -154,6 +181,20 @@ root.SetHandler(async (configFile, templateVariables, countValue, warmupValue, m
     {
         Environment.Exit(exitCode);
     }
-}, argument, templateVariables, count, warmup, metrics, jsonExporter, datadogExporter, datadogProfiler);
+});
 
 await root.InvokeAsync(args);
+
+static T? GetValueForHandlerParameter<T>(
+    IValueDescriptor<T> symbol,
+    InvocationContext context)
+{
+    return symbol switch
+    {
+        IValueSource valueSource when valueSource.TryGetValue(symbol, context.BindingContext, out var boundValue) &&
+                                      boundValue is T value => value,
+        Argument argument => (T?)context.ParseResult.GetValueForArgument(argument),
+        Option option => (T?)context.ParseResult.GetValueForOption(option),
+        _ => default
+    };
+}

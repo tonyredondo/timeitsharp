@@ -258,6 +258,7 @@ internal sealed class ScenarioProcessor
         var lastStandardOutput = string.Empty;
         var durations = new List<double>();
         var metricsData = new Dictionary<string, List<double>>();
+        var anyPassedDataPoint = dataPoints.Any(d => d.Status == Status.Passed);
         foreach (var item in dataPoints)
         {
             if (!string.IsNullOrEmpty(item.StandardOutput))
@@ -265,25 +266,23 @@ internal sealed class ScenarioProcessor
                 lastStandardOutput = item.StandardOutput;
             }
 
-            if (item.Status != Status.Passed)
+            if (item.Status == Status.Passed || _configuration.ProcessFailedDataPoints || !anyPassedDataPoint)
             {
-                continue;
-            }
-            
 #if NET7_0_OR_GREATER
-            durations.Add(item.Duration.TotalNanoseconds);
+                durations.Add(item.Duration.TotalNanoseconds);
 #else
-            durations.Add(Utils.FromTimeSpanToNanoseconds(item.Duration));
+                durations.Add(Utils.FromTimeSpanToNanoseconds(item.Duration));
 #endif
-            foreach (var kv in item.Metrics)
-            {
-                if (!metricsData.TryGetValue(kv.Key, out var metricsItem))
+                foreach (var kv in item.Metrics)
                 {
-                    metricsItem = new List<double>();
-                    metricsData[kv.Key] = metricsItem;
-                }
+                    if (!metricsData.TryGetValue(kv.Key, out var metricsItem))
+                    {
+                        metricsItem = new List<double>();
+                        metricsData[kv.Key] = metricsItem;
+                    }
 
-                metricsItem.Add(kv.Value);
+                    metricsItem.Add(kv.Value);
+                }
             }
         }
 
@@ -418,7 +417,7 @@ internal sealed class ScenarioProcessor
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
         {
-            var currentRun = await RunCommandAsync(index, scenario, phase, cancellationToken).ConfigureAwait(false);
+            var currentRun = await RunCommandAsync(index, scenario, phase, i, cancellationToken).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 AnsiConsole.Markup("[red]cancelled[/]");
@@ -439,7 +438,7 @@ internal sealed class ScenarioProcessor
         return dataPoints;
     }
 
-    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario, TimeItPhase phase, CancellationToken cancellationToken)
+    private async Task<DataPoint> RunCommandAsync(int index, Scenario scenario, TimeItPhase phase, int executionId, CancellationToken cancellationToken)
     {
         // Prepare variables
         var cmdString = scenario.ProcessName ?? string.Empty;
@@ -482,6 +481,16 @@ internal sealed class ScenarioProcessor
             cmd = cmd.WithArguments(cmdArguments);
         }
 
+        if (executionId == 0 && _configuration.ShowStdOutForFirstRun)
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.WriteLine(new string('-', 80));
+            cmd = cmd.WithStandardOutputPipe(PipeTarget.Merge(cmd.StandardOutputPipe,
+                PipeTarget.ToStream(Console.OpenStandardOutput())));
+            cmd = cmd.WithStandardErrorPipe(PipeTarget.Merge(cmd.StandardErrorPipe,
+                PipeTarget.ToStream(Console.OpenStandardError())));
+        }
+        
         // Execute the command
         var dataPoint = new DataPoint
         {
@@ -725,6 +734,13 @@ internal sealed class ScenarioProcessor
         }
 
         _callbacksTriggers.ExecutionEnd(dataPoint, phase);
+
+        if (executionId == 0 && _configuration.ShowStdOutForFirstRun)
+        {
+            AnsiConsole.WriteLine(new string('-', 80));
+            AnsiConsole.Write("   ");
+        }
+        
         return dataPoint;
     }
 
