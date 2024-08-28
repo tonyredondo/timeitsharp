@@ -72,7 +72,7 @@ public sealed class DefaultAssertor : Assertor
             _sbuilder.Clear();
             _consecutiveErrorCount++;
 
-            if (Options.Configuration.ProcessFailedDataPoints)
+            if (Options.Configuration.ProcessFailedDataPoints || Options.Configuration.DebugMode)
             {
                 return new AssertResponse(
                     status: Status.Failed,

@@ -193,6 +193,16 @@ public sealed class ConfigBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets timeit to run in debug mode
+    /// </summary>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithDebugMode()
+    {
+        _configuration.DebugMode = true;
+        return this;
+    }
+
     #region WithExporter
 
     /// <summary>
