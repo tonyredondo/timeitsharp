@@ -53,6 +53,9 @@ public class Config : ProcessData
     [JsonPropertyName("showStdOutForFirstRun")]
     public bool ShowStdOutForFirstRun { get; set; }
     
+    [JsonPropertyName("debugMode")]
+    public bool DebugMode { get; set; }
+    
     public Config()
     {
         FilePath = string.Empty;
@@ -71,6 +74,7 @@ public class Config : ProcessData
         Services = new();
         ProcessFailedDataPoints = false;
         ShowStdOutForFirstRun = false;
+        DebugMode = false;
     }
 
     public static Config LoadConfiguration(string filePath)
@@ -128,5 +132,6 @@ public class Config : ProcessData
         Tags = new Dictionary<string, object>(Tags),
         ProcessFailedDataPoints = ProcessFailedDataPoints,
         ShowStdOutForFirstRun = ShowStdOutForFirstRun,
+        DebugMode = DebugMode,
     };
 }

@@ -57,6 +57,7 @@ var datadogExporter = new Option<bool>("--datadog-exporter", () => false, "Enabl
 var datadogProfiler = new Option<bool>("--datadog-profiler", () => false, "Enable Datadog profiler");
 var showStdOutForFistRun = new Option<bool>("--first-run-stdout", () => false, "Show the StdOut and StdErr for the first run");
 var processFailedExecutions = new Option<bool>("--process-failed-executions", () => false, "Include failed executions in the final results");
+var debugMode = new Option<bool>("--debug", () => false, "Run timeit in debug mode");
 
 var root = new RootCommand
 {
@@ -70,6 +71,7 @@ var root = new RootCommand
     datadogProfiler,
     showStdOutForFistRun,
     processFailedExecutions,
+    debugMode,
 };
 
 root.SetHandler(async (context) =>
@@ -84,6 +86,7 @@ root.SetHandler(async (context) =>
     var datadogProfilerValue = GetValueForHandlerParameter(datadogProfiler, context);
     var showStdOutForFistRunValue = GetValueForHandlerParameter(showStdOutForFistRun, context);
     var processFailedExecutionsValue = GetValueForHandlerParameter(processFailedExecutions, context);
+    var debugModeValue = GetValueForHandlerParameter(debugMode, context);
     
     var isConfigFile = false;
     if (File.Exists(argumentValue))
@@ -153,6 +156,11 @@ root.SetHandler(async (context) =>
         if (processFailedExecutionsValue)
         {
             configBuilder = configBuilder.ProcessFailedDataPoints();
+        }
+
+        if (debugModeValue)
+        {
+            configBuilder = configBuilder.WithDebugMode();
         }
 
         var timeitOption = new TimeItOptions(templateVariablesValue);

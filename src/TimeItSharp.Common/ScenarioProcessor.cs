@@ -266,7 +266,10 @@ internal sealed class ScenarioProcessor
                 lastStandardOutput = item.StandardOutput;
             }
 
-            if (item.Status == Status.Passed || _configuration.ProcessFailedDataPoints || !anyPassedDataPoint)
+            if (item.Status == Status.Passed ||
+                _configuration.ProcessFailedDataPoints ||
+                _configuration.DebugMode || 
+                !anyPassedDataPoint)
             {
 #if NET7_0_OR_GREATER
                 durations.Add(item.Duration.TotalNanoseconds);
@@ -426,6 +429,10 @@ internal sealed class ScenarioProcessor
 
             dataPoints.Add(currentRun);
             AnsiConsole.Markup(currentRun.Status == Status.Failed ? "[red]x[/]" : "[green].[/]");
+            if (_configuration.DebugMode)
+            {
+                AnsiConsole.WriteLine();
+            }
 
             if (checkShouldContinue && !currentRun.ShouldContinue)
             {
@@ -481,9 +488,24 @@ internal sealed class ScenarioProcessor
             cmd = cmd.WithArguments(cmdArguments);
         }
 
-        if (executionId == 0 && _configuration.ShowStdOutForFirstRun)
+        if ((executionId == 0 && _configuration.ShowStdOutForFirstRun) || _configuration.DebugMode)
         {
             AnsiConsole.WriteLine();
+            if (_configuration.DebugMode)
+            {
+                AnsiConsole.Markup("    [aqua]{0}. Running:[/] ", executionId + 1);
+            }
+            else
+            {
+                AnsiConsole.Markup("    [aqua]Running:[/] ");
+            }
+            AnsiConsole.WriteLine("{0} {1}", cmdString, cmdArguments);
+            if (!string.IsNullOrWhiteSpace(workingDirectory))
+            {
+                AnsiConsole.Markup("    [aqua]Working Folder:[/] ");
+                AnsiConsole.WriteLine(workingDirectory);
+            }
+
             AnsiConsole.WriteLine(new string('-', 80));
             cmd = cmd.WithStandardOutputPipe(PipeTarget.Merge(cmd.StandardOutputPipe,
                 PipeTarget.ToStream(Console.OpenStandardOutput())));
@@ -735,10 +757,14 @@ internal sealed class ScenarioProcessor
 
         _callbacksTriggers.ExecutionEnd(dataPoint, phase);
 
-        if (executionId == 0 && _configuration.ShowStdOutForFirstRun)
+        if ((executionId == 0 && _configuration.ShowStdOutForFirstRun) || _configuration.DebugMode)
         {
             AnsiConsole.WriteLine(new string('-', 80));
             AnsiConsole.Write("   ");
+            if (_configuration.DebugMode)
+            {
+                AnsiConsole.Markup(" [aqua]Result:[/] ");
+            }
         }
         
         return dataPoint;
