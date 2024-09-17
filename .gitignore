@@ -2,3 +2,5 @@ bin/
 obj/
 .idea/
 .DS_Store
+*.nupkg
+*.DotSettings.user

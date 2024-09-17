@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
@@ -523,84 +524,103 @@ internal sealed class ScenarioProcessor
         _callbacksTriggers.ExecutionStart(dataPoint, phase, ref cmd);
         if (cmdTimeout <= 0)
         {
+            BufferedCommandResult? cmdResult = null;
+            dataPoint.Start = DateTime.UtcNow;
             try
             {
-                var cmdResult = await cmd.ExecuteBufferedAsync(cancellationToken: cancellationToken)
+                cmdResult = await cmd.ExecuteBufferedAsync(cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = cmdResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
                 dataPoint.StandardOutput = cmdResult.StandardOutput;
-                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
             }
-            catch (TaskCanceledException)
+            catch (Win32Exception wEx)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = wEx.Message;
+            }
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
                 dataPoint.Error = "Execution cancelled.";
-                return dataPoint;
             }
-            catch (OperationCanceledException)
-            {
-                dataPoint.End = DateTime.UtcNow;
-                dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                dataPoint.Error = "Execution cancelled.";
-                return dataPoint;
-            }
+            
+            ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
         }
         else
         {
+            BufferedCommandResult? cmdResult = null;
             CancellationTokenSource? timeoutCts = null;
             var cmdCts = new CancellationTokenSource();
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmdCts.Token);
             dataPoint.Start = DateTime.UtcNow;
-            var cmdTask = cmd.ExecuteBufferedAsync(linkedCts.Token);
-
-            if (!string.IsNullOrEmpty(timeoutCmdString))
-            {
-                timeoutCts = new CancellationTokenSource();
-                _ = RunCommandTimeoutAsync(TimeSpan.FromSeconds(cmdTimeout), timeoutCmdString, timeoutCmdArguments,
-                    workingDirectory, cmdTask.ProcessId, () => cmdCts.Cancel(), timeoutCts.Token, cancellationToken);
-            }
-            else
-            {
-                cmdCts.CancelAfter(TimeSpan.FromSeconds(cmdTimeout));
-            }
+            CommandTask<BufferedCommandResult>? cmdTask = null;
 
             try
             {
-                var cmdResult = await cmdTask.ConfigureAwait(false);
-                dataPoint.End = DateTime.UtcNow;
-                timeoutCts?.Cancel();
-                dataPoint.Duration = cmdResult.RunTime;
-                dataPoint.Start = dataPoint.End - dataPoint.Duration;
-                dataPoint.StandardOutput = cmdResult.StandardOutput;
-                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+                dataPoint.Start = DateTime.UtcNow;
+                cmdTask = cmd.ExecuteBufferedAsync(linkedCts.Token);
             }
-            catch (TaskCanceledException)
+            catch (Win32Exception wEx)
             {
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    dataPoint.Error = "Execution cancelled.";
-                    return dataPoint;
-                }
-
-                dataPoint.Error = "Process timeout.";
+                dataPoint.Error = wEx.Message;
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                if (cancellationToken.IsCancellationRequested)
+                dataPoint.Error = "Execution cancelled.";
+            }
+
+            if (cmdTask is not null)
+            {
+                if (!string.IsNullOrEmpty(timeoutCmdString))
                 {
-                    dataPoint.Error = "Execution cancelled.";
-                    return dataPoint;
+                    timeoutCts = new CancellationTokenSource();
+                    _ = RunCommandTimeoutAsync(TimeSpan.FromSeconds(cmdTimeout), timeoutCmdString, timeoutCmdArguments,
+                        workingDirectory, cmdTask.ProcessId, () => cmdCts.Cancel(), timeoutCts.Token, cancellationToken);
+                }
+                else
+                {
+                    cmdCts.CancelAfter(TimeSpan.FromSeconds(cmdTimeout));
                 }
 
-                dataPoint.Error = "Process timeout.";
+                try
+                {
+                    cmdResult = await cmdTask.ConfigureAwait(false);
+                    dataPoint.End = DateTime.UtcNow;
+                    timeoutCts?.Cancel();
+                    dataPoint.Duration = cmdResult.RunTime;
+                    dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                    dataPoint.StandardOutput = cmdResult.StandardOutput;
+                }
+                catch (Win32Exception wEx)
+                {
+                    dataPoint.End = DateTime.UtcNow;
+                    dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                    dataPoint.Error = wEx.Message;
+                }
+                catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+                {
+                    dataPoint.End = DateTime.UtcNow;
+                    dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        dataPoint.Error = "Execution cancelled.";
+                    }
+                    else
+                    {
+                        dataPoint.Error = "Process timeout.";
+                    }
+                }
             }
+
+            ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
         }
 
         // Write metrics
@@ -770,10 +790,13 @@ internal sealed class ScenarioProcessor
         return dataPoint;
     }
 
-    private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, BufferedCommandResult cmdResult)
+    private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, BufferedCommandResult? cmdResult)
     {
+        var exitCode = cmdResult?.ExitCode ?? -1;
+        var standardOutput = cmdResult?.StandardOutput ?? string.Empty;
+        var standardError = cmdResult?.StandardError ?? dataPoint.Error;
         var assertionData = new AssertionData(scenarioId, scenarioName, phase, dataPoint.Start, dataPoint.End,
-            dataPoint.Duration, cmdResult.ExitCode, cmdResult.StandardOutput, cmdResult.StandardError, _services);
+            dataPoint.Duration, exitCode, standardOutput, standardError, _services);
         var assertionResult = ExecutionAssertion(in assertionData);
         dataPoint.AssertResults = assertionResult;
         if (assertionResult.Status == Status.Failed && string.IsNullOrEmpty(dataPoint.Error))
