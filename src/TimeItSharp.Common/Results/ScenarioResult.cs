@@ -68,12 +68,6 @@ public sealed class ScenarioResult : Scenario
     [JsonPropertyName("peakCount")]
     public int PeakCount { get; set; }
     
-    [JsonPropertyName("histogram")]
-    public int[] Histogram { get; set; }
-
-    [JsonPropertyName("histogramLabels")]
-    public Range<double>[] HistogramLabels { get; set; }
-
     [JsonPropertyName("metrics")]
     public Dictionary<string, double> Metrics { get; set; }
     
@@ -104,8 +98,6 @@ public sealed class ScenarioResult : Scenario
         Data = new List<DataPoint>();
         Durations = new List<double>();
         Outliers = new List<double>();
-        Histogram = Array.Empty<int>();
-        HistogramLabels = Array.Empty<Range<double>>();
         Metrics = new Dictionary<string, double>();
         MetricsData = new Dictionary<string, List<double>>();
         AdditionalMetrics = new Dictionary<string, double>();

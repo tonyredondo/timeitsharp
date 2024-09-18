@@ -102,7 +102,7 @@ public sealed class ConsoleExporter : IExporter
                         result.PeakCount);
                 }
 
-                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
+                GenerateDistributionChart(result.Durations, 10);
                 AnsiConsole.WriteLine();
             }
         }
@@ -327,22 +327,73 @@ public sealed class ConsoleExporter : IExporter
             }
         }
     }
-
-    private static void WriteHistogramHorizontal(int[] data, Range<double>[] labels)
+    
+    static void GenerateDistributionChart(List<double> dataNanoseconds, int numBins)
     {
-        int maxVal = Int32.MinValue;
-        for (int i = 0; i < data.Length; i++)
+        // Check if the data array is empty
+        if (dataNanoseconds == null || dataNanoseconds.Count == 0)
         {
-            if (data[i] > maxVal)
-            {
-                maxVal = data[i];
-            }
+            Console.WriteLine("No data available to generate the distribution chart.");
+            return;
+        }
+        
+        // Convert data from nanoseconds to milliseconds
+        double[] data = dataNanoseconds.Select(ns => ns / 1_000_000.0).ToArray();
+
+        // Find the minimum and maximum of the data
+        double minData = data.Min();
+        double maxData = data.Max();
+
+        // Calculate the range and bin size
+        double range = maxData - minData;
+
+        // Avoid division by zero if all data points are equal
+        if (range == 0)
+        {
+            range = 1;
         }
 
-        for (int i = 0; i < data.Length; i++)
+        double binSize = range / numBins;
+
+        // Create bins and ranges
+        var bins = new int[numBins];
+        var binRanges = new List<Tuple<double, double>>();
+
+        for (int i = 0; i < numBins; i++)
         {
-            string bar = new string('█', data[i] * 10 / maxVal);  // Escalar el valor
-            AnsiConsole.MarkupLine($" [green]{Math.Round(Utils.FromNanosecondsToMilliseconds(labels[i].Start), 4):0.0000}ms - {Math.Round(Utils.FromNanosecondsToMilliseconds(labels[i].End), 4):0.0000}ms[/]: [blue]{bar}[/] ({data[i]})");
+            double start = minData + binSize * i;
+            double end = start + binSize;
+            binRanges.Add(Tuple.Create(start, end));
+        }
+
+        // Count data in each bin
+        foreach (var dataPoint in data)
+        {
+            int binIndex = (int)((dataPoint - minData) / binSize);
+            if (binIndex == numBins) binIndex = numBins - 1; // Include the maximum in the last bin
+            bins[binIndex]++;
+        }
+
+        // Find the maximum count to normalize the chart
+        int maxCount = bins.Max();
+
+        // Generate the chart
+        for (int i = 0; i < numBins; i++)
+        {
+            double start = binRanges[i].Item1;
+            double end = binRanges[i].Item2;
+            int count = bins[i];
+
+            // Graphic representation
+            int barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * 30) : 0;
+            string bar = new string('█', barLength);
+
+            // Format the start and end values
+            
+            string startStr = (start.ToString("F4") + "ms").PadLeft(12);
+            string endStr = (end.ToString("F4") + "ms").PadRight(12);
+
+            Console.WriteLine($"{startStr} - {endStr}| {bar} ({count})");
         }
     }
 }
