@@ -19,6 +19,45 @@
         "extraRunCount": 5,
         "scenarios" : [ "CallTarget" ]
       }
+    },
+    {
+      "name": "Execute",
+      "options": {
+        "onScenarioStart": {
+          "processName": "echo",
+          "processArguments": "*** onScenarioStart ***",
+          "workingDirectory": "$(CWD)/",
+          "redirectStandardOutput": true
+        },
+        "onScenarioFinish": {
+          "processName": "echo",
+          "processArguments": "*** onScenarioFinish ***",
+          "workingDirectory": "$(CWD)/",
+          "redirectStandardOutput": true
+        },
+        "onExecutionStart": {
+          "processName": "echo",
+          "processArguments": "*** onExecutionStart ***",
+          "workingDirectory": "$(CWD)/"
+        },
+        "onExecutionEnd": {
+          "processName": "echo",
+          "processArguments": "*** onExecutionEnd ***",
+          "workingDirectory": "$(CWD)/"
+        },
+        "afterAllScenariosFinishes": {
+          "processName": "echo",
+          "processArguments": "*** afterAllScenariosFinishes ***",
+          "workingDirectory": "$(CWD)/",
+          "redirectStandardOutput": true
+        },
+        "onFinish": {
+          "processName": "echo",
+          "processArguments": "*** onFinish ***",
+          "workingDirectory": "$(CWD)/",
+          "redirectStandardOutput": true
+        }
+      }
     }
   ],
   "scenarios": [

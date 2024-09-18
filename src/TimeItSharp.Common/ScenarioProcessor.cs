@@ -537,9 +537,15 @@ internal sealed class ScenarioProcessor
             }
             catch (Win32Exception wEx)
             {
+                Exception ex = wEx;
+                while (ex.InnerException is not null)
+                {
+                    ex = ex.InnerException;
+                }
+                
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                dataPoint.Error = wEx.Message;
+                dataPoint.Error = ex.Message;
             }
             catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
@@ -566,9 +572,15 @@ internal sealed class ScenarioProcessor
             }
             catch (Win32Exception wEx)
             {
+                Exception ex = wEx;
+                while (ex.InnerException is not null)
+                {
+                    ex = ex.InnerException;
+                }
+
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                dataPoint.Error = wEx.Message;
+                dataPoint.Error = ex.Message;
             }
             catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
             {
@@ -601,9 +613,15 @@ internal sealed class ScenarioProcessor
                 }
                 catch (Win32Exception wEx)
                 {
+                    Exception ex = wEx;
+                    while (ex.InnerException is not null)
+                    {
+                        ex = ex.InnerException;
+                    }
+
                     dataPoint.End = DateTime.UtcNow;
                     dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                    dataPoint.Error = wEx.Message;
+                    dataPoint.Error = ex.Message;
                 }
                 catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
                 {
