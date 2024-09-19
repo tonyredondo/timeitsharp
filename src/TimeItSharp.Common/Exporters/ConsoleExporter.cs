@@ -568,15 +568,26 @@ public sealed class ConsoleExporter : IExporter
                 }
                 else if (seriesIndex == 0)
                 {
-                    linePrefix += "┌ ";
+                    if (seriesCount == 2)
+                    {
+                        linePrefix = rangeStr + " ┌ ";                        
+                    }
+                    else
+                    {
+                        linePrefix += "┌ ";
+                    }
                 }
                 else if (seriesIndex == seriesCount - 1)
                 {
                     linePrefix += "└ ";
                 }
+                else if (seriesIndex == seriesCount / 2)
+                {
+                    linePrefix = rangeStr + " \u2524 ";
+                }
                 else
                 {
-                    linePrefix = rangeStr + " ├ ";
+                    linePrefix += "\u2502 ";
                 }
 
                 // Use AnsiConsole to print colored bars with counts
