@@ -300,7 +300,7 @@ internal sealed class ScenarioProcessor
         {
             newDurations = Utils.RemoveOutliers(durations, threshold).ToList();
             outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
-            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, 10);
+            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, 11);
             var outliersPercent = ((double)outliers.Count / durations.Count) * 100;
             if (outliersPercent < 20 && !isBimodal)
             {
