@@ -84,18 +84,14 @@ internal static class Utils
     /// </summary>
     /// <param name="data">The dataset to analyze.</param>
     /// <param name="peakCount">Number of peaks detected</param>
-    /// <param name="histogram">Histogram data</param>
-    /// <param name="labels">Histogram labels</param>
     /// <param name="binCount">The number of bins to use for the histogram. Default is 10.</param>
     /// <returns>True if the dataset is bimodal, otherwise false.</returns>
-    public static bool IsBimodal(Span<double> data, out int peakCount, out int[] histogram,  out Range<double>[] labels, int binCount = 10)
+    public static bool IsBimodal(Span<double> data, out int peakCount, int binCount = 10)
     {
         // Return false if there are less than 3 data points, as bimodality can't be determined.
         if (data.Length < 3 || binCount < 3)
         {
             peakCount = 0;
-            histogram = Array.Empty<int>();
-            labels = Array.Empty<Range<double>>();
             return false;
         }
 
@@ -117,13 +113,7 @@ internal static class Utils
         }
 
         // Create and initialize a histogram with 'binCount' bins.
-        histogram = new int[binCount];
-        labels = new Range<double>[binCount];
-        for (var i = 0; i < binCount; i++)
-        {
-            labels[i] = new(double.MaxValue, double.MinValue);
-        }
-
+        var histogram = new int[binCount];
         var binWidth = (max - min) / binCount;
 
         // Populate the histogram based on where each data point falls.
@@ -137,15 +127,6 @@ internal static class Utils
             }
 
             histogram[binIndex]++;
-            if (labels[binIndex].Start > item)
-            {
-                labels[binIndex] = new(item, labels[binIndex].End);
-            }
-
-            if (labels[binIndex].End < item)
-            {
-                labels[binIndex] = new(labels[binIndex].Start, item);
-            }
         }
 
         // Initialize variable to count the number of peaks in the histogram.

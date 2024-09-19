@@ -92,19 +92,7 @@ public sealed class ConsoleExporter : IExporter
         {
             AnsiConsole.MarkupLine("[aqua bold underline]### Distribution:[/]");
             AnsiConsole.WriteLine();
-            for (var idx = 0; idx < resultsList.Count; idx++)
-            {
-                var result = resultsList[idx];
-                AnsiConsole.MarkupLine($"[dodgerblue1 bold]{result.Scenario?.Name}:[/]");
-                if (result.IsBimodal)
-                {
-                    AnsiConsole.MarkupLine("[yellow bold]Scenario '{0}' is Bimodal.[/] Peak count: {1}", result.Name,
-                        result.PeakCount);
-                }
-
-                WriteHistogramHorizontal(result.Histogram, result.HistogramLabels);
-                AnsiConsole.WriteLine();
-            }
+            GenerateDistributionChart(results.Scenarios.ToDictionary(k => k.Name, v => v), 11);
         }
 
         // ****************************************
@@ -327,22 +315,307 @@ public sealed class ConsoleExporter : IExporter
             }
         }
     }
-
-    private static void WriteHistogramHorizontal(int[] data, Range<double>[] labels)
+    
+    static void GenerateDistributionChart(List<double> dataNanoseconds, int numBins)
     {
-        int maxVal = Int32.MinValue;
-        for (int i = 0; i < data.Length; i++)
+        // Check if the data array is empty
+        if (dataNanoseconds == null || dataNanoseconds.Count == 0)
         {
-            if (data[i] > maxVal)
+            Console.WriteLine("No data available to generate the distribution chart.");
+            return;
+        }
+        
+        // Determine the unit based on the range
+        var maxNanoSeconds = dataNanoseconds.Max();
+        string unit;
+        double scale;
+        if (maxNanoSeconds >= 60_000_000_000)
+        {
+            unit = "m";
+            scale = 60_000_000_000.0;
+        }
+        else if (maxNanoSeconds >= 1_000_000_000)
+        {
+            unit = "s";
+            scale = 1_000_000_000.0;
+        }
+        else if (maxNanoSeconds >= 1_000_000)
+        {
+            unit = "ms";
+            scale = 1_000_000.0;
+        }
+        else if (maxNanoSeconds >= 1_000)
+        {
+            unit = "μs";
+            scale = 1_000.0;
+        }
+        else
+        {
+            unit = "ns";
+            scale = 1.0;
+        }
+
+        // Scale data
+        var data = dataNanoseconds.Select(ns => ns / scale).ToArray();
+        
+        // Find the minimum and maximum of the data
+        var minData = data.Min();
+        var maxData = data.Max();
+
+        // Calculate the range and bin size
+        var range = maxData - minData;
+
+        // Avoid division by zero if all data points are equal
+        if (range == 0)
+        {
+            range = 1;
+        }
+
+        var binSize = range / numBins;
+
+        // Create bins and ranges
+        var bins = new int[numBins];
+        var binRanges = new List<Tuple<double, double>>();
+
+        for (int i = 0; i < numBins; i++)
+        {
+            var start = Math.Round(minData + binSize * i, 4);
+            var end = Math.Round(start + binSize, 4);
+            binRanges.Add(Tuple.Create(start, end));
+        }
+
+        // Count data in each bin
+        foreach (var dataPoint in data)
+        {
+            var binIndex = (int)Math.Floor((dataPoint - minData) / binSize);
+            if (binIndex == numBins) binIndex = numBins - 1; // Include the maximum in the last bin
+            bins[binIndex]++;
+        }
+
+        // Find the maximum count to normalize the chart
+        var maxCount = bins.Max();
+
+        // Generate the chart
+        for (int i = 0; i < numBins; i++)
+        {
+            var start = binRanges[i].Item1;
+            var end = binRanges[i].Item2;
+            var count = bins[i];
+
+            // Graphic representation
+            var barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * 30) : 0;
+            var bar = new string('█', barLength);
+
+            // Format the start and end values
+            var startStr = (start.ToString("F4") + unit).PadLeft(12);
+            var endStr = (end.ToString("F4") + unit).PadRight(12);
+            Console.WriteLine($"{startStr} - {endStr}\u251c {bar} ({count})");
+        }
+    }
+    
+    static void GenerateDistributionChart(Dictionary<string, ScenarioResult> dataSeriesDict, int numBins)
+    {
+        // Check if the data series dictionary is null or empty
+        if (dataSeriesDict == null || dataSeriesDict.Count == 0)
+        {
+            Console.WriteLine("No data available to generate the distribution chart.");
+            return;
+        }
+
+        // Combine all durations from all series to find the overall minimum and maximum
+        var allDataNanoseconds = dataSeriesDict.Values.SelectMany(series => series.Durations).ToList();
+
+        // Determine the appropriate unit based on the maximum value
+        var maxNanoSeconds = allDataNanoseconds.Max();
+        string unit;
+        double scale;
+        if (maxNanoSeconds >= 60_000_000_000)
+        {
+            unit = "m";
+            scale = 60_000_000_000.0;
+        }
+        else if (maxNanoSeconds >= 1_000_000_000)
+        {
+            unit = "s";
+            scale = 1_000_000_000.0;
+        }
+        else if (maxNanoSeconds >= 1_000_000)
+        {
+            unit = "ms";
+            scale = 1_000_000.0;
+        }
+        else if (maxNanoSeconds >= 1_000)
+        {
+            unit = "μs";
+            scale = 1_000.0;
+        }
+        else
+        {
+            unit = "ns";
+            scale = 1.0;
+        }
+
+        // Scale the data and store it in a new dictionary
+        var scaledDataSeriesDict = new Dictionary<string, List<double>>();
+        foreach (var kvp in dataSeriesDict)
+        {
+            var scaledData = kvp.Value.Durations.Select(ns => ns / scale).ToList();
+            scaledDataSeriesDict[kvp.Key] = scaledData;
+        }
+
+        // Find the overall minimum and maximum of the scaled data
+        var allScaledData = scaledDataSeriesDict.Values.SelectMany(series => series).ToList();
+        var minData = allScaledData.Min();
+        var maxData = allScaledData.Max();
+
+        // Calculate the range and bin size
+        var range = maxData - minData;
+
+        // Avoid division by zero if all data points are equal
+        if (range == 0)
+        {
+            range = 1;
+        }
+
+        var binSize = range / numBins;
+
+        // Create bin ranges
+        var binRanges = new List<Tuple<double, double>>();
+        for (int i = 0; i < numBins; i++)
+        {
+            var start = Math.Round(minData + binSize * i, 4);
+            var end = Math.Round(start + binSize, 4);
+            binRanges.Add(Tuple.Create(start, end));
+        }
+
+        // Initialize bin counts for each series
+        var binsPerSeries = new Dictionary<string, int[]>();
+        foreach (var seriesLabel in scaledDataSeriesDict.Keys)
+        {
+            binsPerSeries[seriesLabel] = new int[numBins];
+        }
+
+        // Count data points in each bin for each series
+        foreach (var kvp in scaledDataSeriesDict)
+        {
+            var seriesLabel = kvp.Key;
+            var data = kvp.Value;
+            var bins = binsPerSeries[seriesLabel];
+
+            foreach (var dataPoint in data)
             {
-                maxVal = data[i];
+                var binIndex = (int)Math.Floor((dataPoint - minData) / binSize);
+                if (binIndex >= numBins) binIndex = numBins - 1; // Include the maximum in the last bin
+                bins[binIndex]++;
             }
         }
 
-        for (int i = 0; i < data.Length; i++)
+        // Find the maximum bin count across all series for normalizing the bars
+        var maxBinCount = binsPerSeries.Values.SelectMany(k => k).Max();
+
+        // Assign unique characters to each series for differentiation
+        var seriesChars = new Dictionary<string, char>();
+        var availableChars = new[] { '█', '▒', '░', '■', '□', '▲', '●', '○', '◆', '◇', '★', '☆', '•', '◦', '▌', '▐', '▖', '▗', '▘', '▝', '▞', '▟' };
+        var charIndex = 0;
+        foreach (var seriesLabel in scaledDataSeriesDict.Keys)
         {
-            string bar = new string('█', data[i] * 10 / maxVal);  // Escalar el valor
-            AnsiConsole.MarkupLine($" [green]{Math.Round(Utils.FromNanosecondsToMilliseconds(labels[i].Start), 4):0.0000}ms - {Math.Round(Utils.FromNanosecondsToMilliseconds(labels[i].End), 4):0.0000}ms[/]: [blue]{bar}[/] ({data[i]})");
+            seriesChars[seriesLabel] = availableChars[charIndex % availableChars.Length];
+            charIndex++;
         }
+        
+        // Assign colors to each series
+        var seriesColors = new Dictionary<string, string>();
+        var availableColors = new[] { "red", "green", "blue", "yellow", "magenta", "cyan", "white" };
+        int colorIndex = 0;
+        foreach (var seriesLabel in scaledDataSeriesDict.Keys)
+        {
+            seriesColors[seriesLabel] = availableColors[colorIndex % availableColors.Length];
+            colorIndex++;
+        }
+
+        // Generate the distribution chart
+        var labelWidth = 27; // Adjust as necessary
+        var barMaxLength = 40; // Maximum length of the bar
+
+        for (var i = 0; i < numBins; i++)
+        {
+            var start = binRanges[i].Item1;
+            var end = binRanges[i].Item2;
+
+            // Format the bin range string
+            var startStr = (start.ToString("F4") + unit).PadLeft(10);
+            var endStr = (end.ToString("F4") + unit).PadRight(10);
+            var rangeStr = $"{startStr} - {endStr}";
+            rangeStr = rangeStr.PadLeft(labelWidth);
+
+            var seriesCount = scaledDataSeriesDict.Keys.Count;
+            var seriesIndex = 0;
+
+            foreach (var seriesLabel in scaledDataSeriesDict.Keys)
+            {
+                var count = binsPerSeries[seriesLabel][i];
+                var maxCount = maxBinCount;
+                var barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * barMaxLength) : 0;
+                var barChar = seriesChars[seriesLabel];
+                var barColor = seriesColors[seriesLabel];
+                var bar = new string(barChar, barLength);
+
+                var linePrefix = string.Empty.PadLeft(labelWidth + 1);
+
+                if (seriesCount == 1)
+                {
+                    linePrefix = rangeStr + " ├ ";
+                }
+                else if (seriesIndex == 0)
+                {
+                    linePrefix += "┌ ";
+                }
+                else if (seriesIndex == seriesCount - 1)
+                {
+                    linePrefix += "└ ";
+                }
+                else
+                {
+                    linePrefix = rangeStr + " ├ ";
+                }
+
+                // Use AnsiConsole to print colored bars with counts
+                AnsiConsole.MarkupLine(linePrefix + $"[{barColor}]{bar.PadRight(barMaxLength)} ({count})[/]");
+                seriesIndex++;
+            }
+        }
+
+        // Display the legend
+        AnsiConsole.MarkupLine("  [aqua]Legend:[/]");
+        foreach (var kvp in seriesChars)
+        {
+            if (dataSeriesDict.TryGetValue(kvp.Key, out var result))
+            {
+                if (result.IsBimodal)
+                {
+                    if (seriesColors.TryGetValue(kvp.Key, out var color))
+                    {
+                        AnsiConsole.MarkupLine($"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                    }
+                }
+                else
+                {
+                    if (seriesColors.TryGetValue(kvp.Key, out var color))
+                    {
+                        AnsiConsole.MarkupLine($"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine($"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]");
+                    }
+                }
+            }
+        }
+        AnsiConsole.MarkupLine($"  [aqua]Range: {range:F4}{unit}[/]");
+        Console.WriteLine();
     }
 }
