@@ -5,7 +5,7 @@
         <TargetFrameworks>net6.0;net7.0;net8.0;net9.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <LangVersion>11</LangVersion>
+        <LangVersion>13</LangVersion>
         <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
         <ServerGarbageCollection>false</ServerGarbageCollection>
     </PropertyGroup>
