@@ -24,6 +24,8 @@ internal sealed class ScenarioProcessor
     private readonly IReadOnlyList<IService> _services;
     private readonly TimeItCallbacks.CallbacksTriggers _callbacksTriggers;
 
+    private static readonly IDictionary EnvironmentVariables = Environment.GetEnvironmentVariables();
+
     public ScenarioProcessor(
         Config configuration,
         TemplateVariables templateVariables,
@@ -453,7 +455,7 @@ internal sealed class ScenarioProcessor
         var timeoutCmdArguments = scenario.Timeout.ProcessArguments ?? string.Empty;
 
         var cmdEnvironmentVariables = new Dictionary<string, string?>();
-        foreach (DictionaryEntry osEnv in Environment.GetEnvironmentVariables())
+        foreach (DictionaryEntry osEnv in EnvironmentVariables)
         {
             if (osEnv.Key?.ToString() is { Length: > 0 } keyString)
             {
@@ -472,8 +474,15 @@ internal sealed class ScenarioProcessor
         }
 
         // add working directory as a path to resolve binary
-        var pathWithWorkingDir = workingDirectory + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
-        Environment.SetEnvironmentVariable("PATH", pathWithWorkingDir);
+        if (!string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            var currentPath = Environment.GetEnvironmentVariable("PATH");
+            if (currentPath != null && !currentPath.Contains(workingDirectory))
+            {
+                var pathWithWorkingDir = workingDirectory + Path.PathSeparator + currentPath;
+                Environment.SetEnvironmentVariable("PATH", pathWithWorkingDir);
+            }
+        }
 
         // Setup the command
         var cmd = Cli.Wrap(cmdString)
