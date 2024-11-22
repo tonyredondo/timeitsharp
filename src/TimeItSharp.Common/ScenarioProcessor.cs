@@ -3,9 +3,12 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CliWrap;
 using CliWrap.Buffered;
+using DatadogTestLogger.Vendors.Datadog.Trace;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeItSharp.Common.Assertors;
@@ -659,14 +662,23 @@ internal sealed class ScenarioProcessor
                 DateTime? inProcEndDate = null;
                 var metrics = new Dictionary<string, double>();
                 var metricsCount = new Dictionary<string, int>();
+                
+                Span<byte> bytesBuffer = stackalloc byte[1024];
                 foreach (var metricJsonItem in File.ReadLines(metricsFilePath))
                 {
                     try
                     {
-                        if (JsonSerializer.Deserialize<FileStatsdPayload>(metricJsonItem,
-                                FileStatsdPayloadContext.Default.FileStatsdPayload) is { } metricItem)
+                        var bytesCount = Encoding.UTF8.GetBytes(metricJsonItem, bytesBuffer);
+                        var metricsJsonItemBytes = bytesBuffer.Slice(0, bytesCount);
+                        var jsonReader = new Utf8JsonReader(metricsJsonItemBytes);
+                        if (JsonDocument.TryParseValue(ref jsonReader, out var jsonMetricsItem))
                         {
-                            if (metricItem.Name is not null)
+                            var jsonRoot = jsonMetricsItem.RootElement;
+                            var type = jsonRoot.GetProperty("type").GetString();
+                            var name = jsonRoot.GetProperty("name").GetString();
+                            var value = jsonRoot.GetProperty("value").GetDouble();
+
+                            if (name is not null)
                             {
                                 static void EnsureMainDuration(Dictionary<string, double> values,
                                     DateTime? mainStartDate, DateTime? mainEndDate)
@@ -701,9 +713,9 @@ internal sealed class ScenarioProcessor
                                     }
                                 }
 
-                                if (metricItem.Name == Constants.ProcessStartTimeUtcMetricName)
+                                if (name == Constants.ProcessStartTimeUtcMetricName)
                                 {
-                                    inProcStartDate = DateTime.FromBinary((long)metricItem.Value);
+                                    inProcStartDate = DateTime.FromBinary((long)value);
                                     metrics[Constants.ProcessTimeToStartMetricName] =
                                         (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
                                     EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
@@ -711,9 +723,9 @@ internal sealed class ScenarioProcessor
                                     continue;
                                 }
 
-                                if (metricItem.Name == Constants.MainMethodStartTimeUtcMetricName)
+                                if (name == Constants.MainMethodStartTimeUtcMetricName)
                                 {
-                                    inProcMainStartDate = DateTime.FromBinary((long)metricItem.Value);
+                                    inProcMainStartDate = DateTime.FromBinary((long)value);
                                     metrics[Constants.ProcessTimeToMainMetricName] =
                                         (inProcMainStartDate.Value - dataPoint.Start).TotalMilliseconds;
                                     EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
@@ -722,9 +734,9 @@ internal sealed class ScenarioProcessor
                                     continue;
                                 }
 
-                                if (metricItem.Name == Constants.MainMethodEndTimeUtcMetricName)
+                                if (name == Constants.MainMethodEndTimeUtcMetricName)
                                 {
-                                    inProcMainEndDate = DateTime.FromBinary((long)metricItem.Value);
+                                    inProcMainEndDate = DateTime.FromBinary((long)value);
                                     metrics[Constants.ProcessTimeToMainEndMetricName] =
                                         (dataPoint.End - inProcMainEndDate.Value).TotalMilliseconds;
                                     EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
@@ -733,9 +745,9 @@ internal sealed class ScenarioProcessor
                                     continue;
                                 }
 
-                                if (metricItem.Name == Constants.ProcessEndTimeUtcMetricName)
+                                if (name == Constants.ProcessEndTimeUtcMetricName)
                                 {
-                                    inProcEndDate = DateTime.FromBinary((long)metricItem.Value);
+                                    inProcEndDate = DateTime.FromBinary((long)value);
                                     metrics[Constants.ProcessTimeToEndMetricName] =
                                         (dataPoint.End - inProcEndDate.Value).TotalMilliseconds;
                                     EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
@@ -743,32 +755,32 @@ internal sealed class ScenarioProcessor
                                     continue;
                                 }
 
-                                if (metricItem.Type == "counter")
+                                if (type == "counter")
                                 {
-                                    metrics[metricItem.Name] = metricItem.Value;
+                                    metrics[name] = value;
                                 }
-                                else if (metricItem.Type is "gauge" or "timer")
+                                else if (type is "gauge" or "timer")
                                 {
-                                    if (metrics.TryGetValue(metricItem.Name, out var oldValue))
+                                    if (metrics.TryGetValue(name, out var oldValue))
                                     {
-                                        metrics[metricItem.Name] = oldValue + metricItem.Value;
-                                        metricsCount[metricItem.Name]++;
+                                        metrics[name] = oldValue + value;
+                                        metricsCount[name]++;
                                     }
                                     else
                                     {
-                                        metrics[metricItem.Name] = metricItem.Value;
-                                        metricsCount[metricItem.Name] = 1;
+                                        metrics[name] = value;
+                                        metricsCount[name] = 1;
                                     }
                                 }
-                                else if (metricItem.Type == "increment")
+                                else if (type == "increment")
                                 {
-                                    if (metrics.TryGetValue(metricItem.Name, out var oldValue))
+                                    if (metrics.TryGetValue(name, out var oldValue))
                                     {
-                                        metrics[metricItem.Name] = oldValue + metricItem.Value;
+                                        metrics[name] = oldValue + value;
                                     }
                                     else
                                     {
-                                        metrics[metricItem.Name] = metricItem.Value;
+                                        metrics[name] = value;
                                     }
                                 }
                             }
