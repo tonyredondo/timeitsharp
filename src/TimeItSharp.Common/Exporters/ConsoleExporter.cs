@@ -412,7 +412,7 @@ public sealed class ConsoleExporter : IExporter
             Console.WriteLine($"{startStr} - {endStr}\u251c {bar} ({count})");
         }
     }
-    
+
     static void GenerateDistributionChart(Dictionary<string, ScenarioResult> dataSeriesDict, int numBins)
     {
         // Check if the data series dictionary is null or empty
@@ -479,12 +479,15 @@ public sealed class ConsoleExporter : IExporter
 
         var binSize = range / numBins;
 
+        // Determine the number of decimal places based on binSize
+        int decimalPlaces = binSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(binSize)) + 1;
+
         // Create bin ranges
         var binRanges = new List<Tuple<double, double>>();
         for (int i = 0; i < numBins; i++)
         {
-            var start = Math.Round(minData + binSize * i, 4);
-            var end = Math.Round(start + binSize, 4);
+            var start = Math.Round(minData + binSize * i, decimalPlaces);
+            var end = Math.Round(start + binSize, decimalPlaces);
             binRanges.Add(Tuple.Create(start, end));
         }
 
@@ -515,14 +518,17 @@ public sealed class ConsoleExporter : IExporter
 
         // Assign unique characters to each series for differentiation
         var seriesChars = new Dictionary<string, char>();
-        var availableChars = new[] { '█', '▒', '░', '■', '□', '▲', '●', '○', '◆', '◇', '★', '☆', '•', '◦', '▌', '▐', '▖', '▗', '▘', '▝', '▞', '▟' };
+        var availableChars = new[]
+        {
+            '█', '▒', '░', '■', '□', '▲', '●', '○', '◆', '◇', '★', '☆', '•', '◦', '▌', '▐', '▖', '▗', '▘', '▝', '▞', '▟'
+        };
         var charIndex = 0;
         foreach (var seriesLabel in scaledDataSeriesDict.Keys)
         {
             seriesChars[seriesLabel] = availableChars[charIndex % availableChars.Length];
             charIndex++;
         }
-        
+
         // Assign colors to each series
         var seriesColors = new Dictionary<string, string>();
         var availableColors = new[] { "red", "green", "blue", "yellow", "magenta", "cyan", "white" };
@@ -537,14 +543,16 @@ public sealed class ConsoleExporter : IExporter
         var labelWidth = 27; // Adjust as necessary
         var barMaxLength = 40; // Maximum length of the bar
 
+        var formatStr = "F" + decimalPlaces; // Format string for decimal places
+
         for (var i = 0; i < numBins; i++)
         {
             var start = binRanges[i].Item1;
             var end = binRanges[i].Item2;
 
             // Format the bin range string
-            var startStr = (start.ToString("F4") + unit).PadLeft(10);
-            var endStr = (end.ToString("F4") + unit).PadRight(10);
+            var startStr = (start.ToString(formatStr) + unit).PadLeft(10);
+            var endStr = (end.ToString(formatStr) + unit).PadRight(10);
             var rangeStr = $"{startStr} - {endStr}";
             rangeStr = rangeStr.PadLeft(labelWidth);
 
@@ -570,7 +578,7 @@ public sealed class ConsoleExporter : IExporter
                 {
                     if (seriesCount == 2)
                     {
-                        linePrefix = rangeStr + " ┌ ";                        
+                        linePrefix = rangeStr + " ┌ ";
                     }
                     else
                     {
@@ -606,11 +614,13 @@ public sealed class ConsoleExporter : IExporter
                 {
                     if (seriesColors.TryGetValue(kvp.Key, out var color))
                     {
-                        AnsiConsole.MarkupLine($"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        AnsiConsole.MarkupLine(
+                            $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        AnsiConsole.MarkupLine(
+                            $"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
                     }
                 }
                 else
@@ -626,7 +636,9 @@ public sealed class ConsoleExporter : IExporter
                 }
             }
         }
-        AnsiConsole.MarkupLine($"  [aqua]Range: {range:F4}{unit}[/]");
+
+        // Display the overall range
+        AnsiConsole.MarkupLine($"  [aqua]Range: {range.ToString(formatStr)}{unit}[/]");
         Console.WriteLine();
     }
 }
