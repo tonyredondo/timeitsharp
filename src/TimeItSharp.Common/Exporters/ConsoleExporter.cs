@@ -277,14 +277,14 @@ public sealed class ConsoleExporter : IExporter
 
                 for (var j = 0; j < results.Scenarios.Count; j++)
                 {
-                    var value = results.Overheads?[i][j] ?? 0;
-                    if (value == 0)
+                    var value = results.Overheads?[i][j] ?? default;
+                    if (value.OverheadPercentage == 0)
                     {
                         row.Add("--");
                     }
                     else
                     {
-                        row.Add($"{value.ToString(CultureInfo.InvariantCulture)}%");
+                        row.Add($"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 6)}ms)");
                     }
                 }
 

@@ -176,7 +176,8 @@ public sealed class DatadogExporter : IExporter
 
                         var overheads = results.Overheads[j];
                         var name = results.Scenarios[j].Name;
-                        test.SetTag($"test.overhead_over.{name}", Math.Round(overheads[i], 2));
+                        test.SetTag($"test.overhead_over.{name}", Math.Round(overheads[i].OverheadPercentage, 2));
+                        test.SetTag($"test.overhead_over.{name}.delta", Math.Round(overheads[i].DeltaValue, 2));
                     }
                 }
 

@@ -172,25 +172,26 @@ internal static class Utils
 
     /// <summary>
     /// Generates a comparison table based on a list of ScenarioResult objects.
-    /// Each cell [i, j] in the table contains the overhead percentage of the mean value of results[j] over results[i].
+    /// Each cell [i, j] in the table contains the overhead percentage and delta value
+    /// of the mean of results[j] over results[i].
     /// </summary>
     /// <param name="results">A read-only list of ScenarioResult objects.</param>
     /// <returns>A 2D array containing the comparison data, or an empty array if the input list is null or empty.</returns>
-    public static double[][] GetComparisonTableData(IReadOnlyList<ScenarioResult> results)
+    public static OverheadResult[][] GetComparisonTableData(IReadOnlyList<ScenarioResult> results)
     {
         // Check if the results list is null or empty
         if (results is null || results.Count == 0)
         {
-            return Array.Empty<double[]>();
+            return Array.Empty<OverheadResult[]>();
         }
 
         // Initialize a 2D array to hold the comparison table data
-        var tableData = new double[results.Count][];
+        var tableData = new OverheadResult[results.Count][];
 
         // Loop through each pair of results to populate the table
         for (var i = 0; i < results.Count; i++)
         {
-            tableData[i] = new double[results.Count];
+            tableData[i] = new OverheadResult[results.Count];
             for (var j = 0; j < results.Count; j++)
             {
                 // Retrieve the mean values for the i-th and j-th results
@@ -200,15 +201,22 @@ internal static class Utils
                 var secondItem = results[j];
                 var secondMean = secondItem.Mean;
 
-                // Calculate the overhead of secondMean over firstMean and store it in the table
-                var overhead = ((secondMean * 100) / firstMean) - 100;
-                tableData[i][j] = Math.Round(overhead, 1);
+                // Calculate the overhead percentage of secondMean over firstMean
+                var overheadPercentage = ((secondMean * 100) / firstMean) - 100;
+                overheadPercentage = Math.Round(overheadPercentage, 1);
+
+                // Calculate the delta value
+                var deltaValue = secondMean - firstMean;
+                deltaValue = Math.Round(deltaValue, 1);
+
+                // Store the results in the table using the constructor
+                tableData[i][j] = new OverheadResult(overheadPercentage, deltaValue);
             }
         }
 
         return tableData;
     }
-    
+
     /// <summary>
     /// Retrieves the width of the console buffer safely. 
     /// If unable to determine the width, returns a default value.
