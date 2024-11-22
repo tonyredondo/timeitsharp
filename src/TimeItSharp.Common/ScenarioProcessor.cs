@@ -761,27 +761,16 @@ internal sealed class ScenarioProcessor
                                 }
                                 else if (type is "gauge" or "timer")
                                 {
-                                    if (metrics.TryGetValue(name, out var oldValue))
-                                    {
-                                        metrics[name] = oldValue + value;
-                                        metricsCount[name]++;
-                                    }
-                                    else
-                                    {
-                                        metrics[name] = value;
-                                        metricsCount[name] = 1;
-                                    }
+                                    ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
+                                    oldValue += value;
+                                    
+                                    ref var count = ref CollectionsMarshal.GetValueRefOrAddDefault(metricsCount, name, out _);
+                                    count++;
                                 }
                                 else if (type == "increment")
                                 {
-                                    if (metrics.TryGetValue(name, out var oldValue))
-                                    {
-                                        metrics[name] = oldValue + value;
-                                    }
-                                    else
-                                    {
-                                        metrics[name] = value;
-                                    }
+                                    ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
+                                    oldValue += value;
                                 }
                             }
                         }
