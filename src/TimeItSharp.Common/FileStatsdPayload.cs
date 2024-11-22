@@ -2,21 +2,14 @@
 
 namespace TimeItSharp.Common;
 
-internal sealed class FileStatsdPayload
+internal sealed class FileStatsdPayload(string type, string name, double value)
 {
-    public FileStatsdPayload(string type, string name, double value)
-    {
-        Type = type;
-        Name = name;
-        Value = value;
-    }
-
     [JsonPropertyName("type")]
-    public string? Type { get; set; }
+    public string Type { get; set; } = type;
 
     [JsonPropertyName("name")]
-    public string? Name { get; set; }
+    public string Name { get; set; } = name;
 
     [JsonPropertyName("value")]
-    public double Value { get; set; }
+    public double Value { get; set; } = value;
 }

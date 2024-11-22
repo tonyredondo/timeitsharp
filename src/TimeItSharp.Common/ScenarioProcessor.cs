@@ -659,7 +659,7 @@ internal sealed class ScenarioProcessor
                 DateTime? inProcEndDate = null;
                 var metrics = new Dictionary<string, double>();
                 var metricsCount = new Dictionary<string, int>();
-                foreach (var metricJsonItem in await File.ReadAllLinesAsync(metricsFilePath).ConfigureAwait(false))
+                foreach (var metricJsonItem in File.ReadLines(metricsFilePath))
                 {
                     try
                     {
