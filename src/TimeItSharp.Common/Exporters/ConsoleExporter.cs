@@ -44,7 +44,7 @@ public sealed class ConsoleExporter : IExporter
             {
                 if (i < r.Durations.Count)
                 {
-                    return Utils.FromNanosecondsToMilliseconds(r.Durations[i]) + "ms";
+                    return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Durations[i]), 2) + "ms";
                 }
                 
                 return "-";
@@ -74,7 +74,7 @@ public sealed class ConsoleExporter : IExporter
                 {
                     if (i < r.Outliers.Count)
                     {
-                        return Utils.FromNanosecondsToMilliseconds(r.Outliers[i]) + "ms";
+                        return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Outliers[i]), 2) + "ms";
                     }
 
                     return "-";
@@ -144,21 +144,21 @@ public sealed class ConsoleExporter : IExporter
                 {
                     $"[aqua underline]{result.Name}[/]",
                     $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 2)}ms[/]",
                     $"[aqua]{outliersValue}[/]"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
                     var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
-                    rowList.Add(metricValue is null ? $"[aqua]-[/]" : $"[aqua]{Math.Round(metricValue.Value, 6)}[/]");
+                    rowList.Add(metricValue is null ? $"[aqua]-[/]" : $"[aqua]{Math.Round(metricValue.Value, 2)}[/]");
                 }
 
                 summaryTable.AddRow(rowList.ToArray());
@@ -207,14 +207,14 @@ public sealed class ConsoleExporter : IExporter
                     summaryTable.AddRow(
                         name,
                         string.Empty,
-                        Math.Round(mMean, 6).ToString(),
-                        Math.Round(mStdDev, 6).ToString(),
-                        Math.Round(mStdErr, 6).ToString(),
-                        Math.Round(mMin, 6).ToString(),
-                        Math.Round(mMedian, 6).ToString(),
-                        Math.Round(mMax, 6).ToString(),
-                        Math.Round(mP95, 6).ToString(),
-                        Math.Round(mP90, 6).ToString(),
+                        Math.Round(mMean, 2).ToString(),
+                        Math.Round(mStdDev, 2).ToString(),
+                        Math.Round(mStdErr, 2).ToString(),
+                        Math.Round(mMin, 2).ToString(),
+                        Math.Round(mMedian, 2).ToString(),
+                        Math.Round(mMax, 2).ToString(),
+                        Math.Round(mP95, 2).ToString(),
+                        Math.Round(mP90, 2).ToString(),
                         (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 2) + "}"));
                 }
             }
@@ -225,21 +225,21 @@ public sealed class ConsoleExporter : IExporter
                 {
                     $"{result.Name}",
                     $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 6)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 6)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 2)}ms",
                     $"{outliersValue}"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
                     var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
-                    rowList.Add(metricValue is null ? "-" : Math.Round(metricValue.Value, 6).ToString());
+                    rowList.Add(metricValue is null ? "-" : Math.Round(metricValue.Value, 2).ToString());
                 }
 
                 summaryTable.AddRow(rowList.ToArray());
@@ -284,7 +284,7 @@ public sealed class ConsoleExporter : IExporter
                     }
                     else
                     {
-                        row.Add($"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 6)}ms)");
+                        row.Add($"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 2)}ms)");
                     }
                 }
 
@@ -313,103 +313,6 @@ public sealed class ConsoleExporter : IExporter
                     AnsiConsole.WriteLine(result.Error);
                 }
             }
-        }
-    }
-    
-    static void GenerateDistributionChart(List<double> dataNanoseconds, int numBins)
-    {
-        // Check if the data array is empty
-        if (dataNanoseconds == null || dataNanoseconds.Count == 0)
-        {
-            Console.WriteLine("No data available to generate the distribution chart.");
-            return;
-        }
-        
-        // Determine the unit based on the range
-        var maxNanoSeconds = dataNanoseconds.Max();
-        string unit;
-        double scale;
-        if (maxNanoSeconds >= 60_000_000_000)
-        {
-            unit = "m";
-            scale = 60_000_000_000.0;
-        }
-        else if (maxNanoSeconds >= 1_000_000_000)
-        {
-            unit = "s";
-            scale = 1_000_000_000.0;
-        }
-        else if (maxNanoSeconds >= 1_000_000)
-        {
-            unit = "ms";
-            scale = 1_000_000.0;
-        }
-        else if (maxNanoSeconds >= 1_000)
-        {
-            unit = "μs";
-            scale = 1_000.0;
-        }
-        else
-        {
-            unit = "ns";
-            scale = 1.0;
-        }
-
-        // Scale data
-        var data = dataNanoseconds.Select(ns => ns / scale).ToArray();
-        
-        // Find the minimum and maximum of the data
-        var minData = data.Min();
-        var maxData = data.Max();
-
-        // Calculate the range and bin size
-        var range = maxData - minData;
-
-        // Avoid division by zero if all data points are equal
-        if (range == 0)
-        {
-            range = 1;
-        }
-
-        var binSize = range / numBins;
-
-        // Create bins and ranges
-        var bins = new int[numBins];
-        var binRanges = new List<Tuple<double, double>>();
-
-        for (int i = 0; i < numBins; i++)
-        {
-            var start = Math.Round(minData + binSize * i, 4);
-            var end = Math.Round(start + binSize, 4);
-            binRanges.Add(Tuple.Create(start, end));
-        }
-
-        // Count data in each bin
-        foreach (var dataPoint in data)
-        {
-            var binIndex = (int)Math.Floor((dataPoint - minData) / binSize);
-            if (binIndex == numBins) binIndex = numBins - 1; // Include the maximum in the last bin
-            bins[binIndex]++;
-        }
-
-        // Find the maximum count to normalize the chart
-        var maxCount = bins.Max();
-
-        // Generate the chart
-        for (int i = 0; i < numBins; i++)
-        {
-            var start = binRanges[i].Item1;
-            var end = binRanges[i].Item2;
-            var count = bins[i];
-
-            // Graphic representation
-            var barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * 30) : 0;
-            var bar = new string('█', barLength);
-
-            // Format the start and end values
-            var startStr = (start.ToString("F4") + unit).PadLeft(12);
-            var endStr = (end.ToString("F4") + unit).PadRight(12);
-            Console.WriteLine($"{startStr} - {endStr}\u251c {bar} ({count})");
         }
     }
 
