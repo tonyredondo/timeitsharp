@@ -212,7 +212,7 @@ internal sealed class ScenarioProcessor
             }
         }
 
-        AnsiConsole.MarkupLine("  [deepskyblue4]Cmd:[/] {0} {1}", scenario.ProcessName ?? string.Empty, scenario.ProcessArguments ?? string.Empty);
+        AnsiConsole.MarkupLine("  [purple_1]Cmd:[/] {0} {1}", scenario.ProcessName ?? string.Empty, scenario.ProcessArguments ?? string.Empty);
         watch = Stopwatch.StartNew();
         if (_configuration.WarmUpCount > 0)
         {
