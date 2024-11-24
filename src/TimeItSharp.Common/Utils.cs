@@ -1,9 +1,13 @@
-﻿using TimeItSharp.Common.Results;
+﻿using System.Text;
+using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common;
 
 internal static class Utils
 {
+    [ThreadStatic]
+    private static StringBuilder? _strBuilder;
+    
     /// <summary>
     /// Calculates the standard deviation of a sequence of double-precision floating-point numbers.
     /// </summary>
@@ -243,5 +247,34 @@ internal static class Utils
             // If an IOException occurs (e.g., console not available), return the default value.
             return defaultValue;
         }
+    }
+    
+    /// <summary>
+    /// Converts a TimeSpan object to a human-readable string.
+    /// </summary>
+    /// <param name="timeSpan">Timespan</param>
+    /// <returns>human-readable string</returns>
+    public static string ToDurationString(this TimeSpan timeSpan)
+    {
+        _strBuilder ??= new StringBuilder();
+        if (timeSpan.Hours > 0)
+        {
+            _strBuilder.Append($"{timeSpan.Hours} h ");
+        }
+
+        if (timeSpan.Minutes > 0)
+        {
+            _strBuilder.Append($"{timeSpan.Minutes} min ");
+        }
+        
+        if (timeSpan.Seconds > 0)
+        {
+            _strBuilder.Append($"{timeSpan.Seconds} sec ");
+        }
+        
+        _strBuilder.Append($"{timeSpan.Milliseconds} ms");
+        var value = _strBuilder.ToString();
+        _strBuilder.Clear();
+        return value;
     }
 }

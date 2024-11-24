@@ -52,7 +52,7 @@ public sealed class ScenarioResult : Scenario
 
     [JsonPropertyName("stderr")]
     public double StdErr { get; set; }
-
+    
     [JsonPropertyName("p99")]
     public double P99 { get; set; }
 
@@ -61,6 +61,15 @@ public sealed class ScenarioResult : Scenario
 
     [JsonPropertyName("p90")]
     public double P90 { get; set; }
+
+    [JsonPropertyName("ci99")]
+    public double[] Ci99 { get; set; }
+
+    [JsonPropertyName("ci95")]
+    public double[] Ci95 { get; set; }
+    
+    [JsonPropertyName("ci90")]
+    public double[] Ci90 { get; set; }
     
     [JsonPropertyName("isBimodal")]
     public bool IsBimodal { get; set; }

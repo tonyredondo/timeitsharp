@@ -115,8 +115,7 @@ public sealed class ConsoleExporter : IExporter
             "[dodgerblue1 bold]StdErr[/]",
             "[dodgerblue1 bold]Median[/]",
             "[dodgerblue1 bold]CI 100%[/]",
-            "[dodgerblue1 bold]P95[/]",
-            "[dodgerblue1 bold]P90[/]",
+            "[dodgerblue1 bold]CI 95%[/]",
             "[dodgerblue1 bold]Outliers[/]"
         };
 
@@ -150,8 +149,9 @@ public sealed class ConsoleExporter : IExporter
                     Math.Abs(result.Min - result.Max) > 0.0001 ?
                         $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms[/]" :
                         $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 3)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 3)}ms[/]",
+                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001 ?
+                        $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms[/]" :
+                        $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms[/]",
                     $"[aqua]{outliersValue}[/]"
                 };
 
@@ -191,8 +191,7 @@ public sealed class ConsoleExporter : IExporter
                     var mStdErr = mStdDev / Math.Sqrt(itemResult.Count);
                     var mMin = itemResult.Min();
                     var mMax = itemResult.Max();
-                    var mP95 = itemResult.Percentile(95);
-                    var mP90 = itemResult.Percentile(90);
+                    double[] ci95 = [mMean - 1.96 * mStdErr, mMean + 1.96 * mStdErr];
 
                     string name;
                     if (i < totalNum - 1)
@@ -214,8 +213,9 @@ public sealed class ConsoleExporter : IExporter
                         Math.Abs(mMin - mMax) > 0.0001 ?
                             $"[[{Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(mMax, 3).ToString(CultureInfo.InvariantCulture)}]]" : 
                             Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture),
-                        Math.Round(mP95, 3).ToString(CultureInfo.InvariantCulture),
-                        Math.Round(mP90, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Abs(ci95[0] - ci95[1]) > 0.0001 ?
+                            $"[[{Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(ci95[1], 3).ToString(CultureInfo.InvariantCulture)}]]" : 
+                            Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture),
                         (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 3) + "}"));
                 }
             }
@@ -233,8 +233,9 @@ public sealed class ConsoleExporter : IExporter
                     Math.Abs(result.Min - result.Max) > 0.0001 ?
                         $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms" :
                         $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 3)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 3)}ms",
+                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001 ?
+                        $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms" :
+                        $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms",
                     $"{outliersValue}"
                 };
 

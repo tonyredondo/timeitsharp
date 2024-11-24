@@ -226,7 +226,7 @@ internal sealed class ScenarioProcessor
                 return null;
             }
 
-            AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed);
+            AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed.ToDurationString());
         }
 
         AnsiConsole.Markup("  [green3]Run[/]");
@@ -240,7 +240,7 @@ internal sealed class ScenarioProcessor
         }
 
         watch.Stop();
-        AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed);
+        AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed.ToDurationString());
 
         foreach (var repeat in scenarioStartArgs.GetRepeats())
         {
@@ -255,7 +255,7 @@ internal sealed class ScenarioProcessor
                 return null;
             }
 
-            AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed);
+            AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed.ToDurationString());
         }
         
         scenario.ParentService = null;
@@ -326,6 +326,9 @@ internal sealed class ScenarioProcessor
         var p95 = newDurations.Percentile(95);
         var p90 = newDurations.Percentile(90);
         var stderr = stdev / Math.Sqrt(newDurations.Count);
+        double[] ci99 = [mean - 2.576 * stderr, mean + 2.576 * stderr];
+        double[] ci95 = [mean - 1.96 * stderr, mean + 1.96 * stderr];
+        double[] ci90 = [mean - 1.645 * stderr, mean + 1.645 * stderr];
 
         // Calculate metrics stats
         var metricsStats = new Dictionary<string, double>();
@@ -392,6 +395,9 @@ internal sealed class ScenarioProcessor
             P99 = p99,
             P95 = p95,
             P90 = p90,
+            Ci99 = ci99,
+            Ci95 = ci95,
+            Ci90 = ci90,
             IsBimodal = isBimodal,
             PeakCount = peakCount,
             Metrics = metricsStats,
