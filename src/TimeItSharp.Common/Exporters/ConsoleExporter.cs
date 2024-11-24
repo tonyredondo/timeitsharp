@@ -44,7 +44,7 @@ public sealed class ConsoleExporter : IExporter
             {
                 if (i < r.Durations.Count)
                 {
-                    return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Durations[i]), 2) + "ms";
+                    return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Durations[i]), 3) + "ms";
                 }
                 
                 return "-";
@@ -74,7 +74,7 @@ public sealed class ConsoleExporter : IExporter
                 {
                     if (i < r.Outliers.Count)
                     {
-                        return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Outliers[i]), 2) + "ms";
+                        return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Outliers[i]), 3) + "ms";
                     }
 
                     return "-";
@@ -139,26 +139,26 @@ public sealed class ConsoleExporter : IExporter
             var totalNum = result.MetricsData.Count;
             if (totalNum > 0)
             {
-                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}" : "0";
+                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}" : "0";
                 var rowList = new List<string>
                 {
                     $"[aqua underline]{result.Name}[/]",
                     $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 2)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 2)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 3)}ms[/]",
+                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 3)}ms[/]",
                     $"[aqua]{outliersValue}[/]"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
                     var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
-                    rowList.Add(metricValue is null ? $"[aqua]-[/]" : $"[aqua]{Math.Round(metricValue.Value, 2)}[/]");
+                    rowList.Add(metricValue is null ? $"[aqua]-[/]" : $"[aqua]{Math.Round(metricValue.Value, 3)}[/]");
                 }
 
                 summaryTable.AddRow(rowList.ToArray());
@@ -207,39 +207,39 @@ public sealed class ConsoleExporter : IExporter
                     summaryTable.AddRow(
                         name,
                         string.Empty,
-                        Math.Round(mMean, 2).ToString(),
-                        Math.Round(mStdDev, 2).ToString(),
-                        Math.Round(mStdErr, 2).ToString(),
-                        Math.Round(mMin, 2).ToString(),
-                        Math.Round(mMedian, 2).ToString(),
-                        Math.Round(mMax, 2).ToString(),
-                        Math.Round(mP95, 2).ToString(),
-                        Math.Round(mP90, 2).ToString(),
-                        (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 2) + "}"));
+                        Math.Round(mMean, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mStdDev, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mStdErr, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mMedian, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mMax, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mP95, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Round(mP90, 3).ToString(CultureInfo.InvariantCulture),
+                        (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 3) + "}"));
                 }
             }
             else
             {
-                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 2)}}}" : "0";
+                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}" : "0";
                 var rowList = new List<string>
                 {
                     $"{result.Name}",
                     $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 2)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 2)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 3)}ms",
+                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 3)}ms",
                     $"{outliersValue}"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
                     var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
-                    rowList.Add(metricValue is null ? "-" : Math.Round(metricValue.Value, 2).ToString());
+                    rowList.Add(metricValue is null ? "-" : Math.Round(metricValue.Value, 3).ToString(CultureInfo.InvariantCulture));
                 }
 
                 summaryTable.AddRow(rowList.ToArray());
@@ -260,8 +260,7 @@ public sealed class ConsoleExporter : IExporter
             var overheadTable = new Table()
                 .MarkdownBorder();
 
-            var lstOverheadColumns = new List<string>();
-            lstOverheadColumns.Add(string.Empty);
+            var lstOverheadColumns = new List<string> { string.Empty };
             foreach (var scenario in results.Scenarios)
             {
                 lstOverheadColumns.Add($"[dodgerblue1 bold]{scenario.Name}[/]");
@@ -284,7 +283,7 @@ public sealed class ConsoleExporter : IExporter
                     }
                     else
                     {
-                        row.Add($"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 2)}ms)");
+                        row.Add($"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 3)}ms)");
                     }
                 }
 
