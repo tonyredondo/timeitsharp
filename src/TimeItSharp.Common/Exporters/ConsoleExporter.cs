@@ -113,9 +113,8 @@ public sealed class ConsoleExporter : IExporter
             "[dodgerblue1 bold]Mean[/]",
             "[dodgerblue1 bold]StdDev[/]",
             "[dodgerblue1 bold]StdErr[/]",
-            "[dodgerblue1 bold]Min[/]",
             "[dodgerblue1 bold]Median[/]",
-            "[dodgerblue1 bold]Max[/]",
+            "[dodgerblue1 bold]CI 100%[/]",
             "[dodgerblue1 bold]P95[/]",
             "[dodgerblue1 bold]P90[/]",
             "[dodgerblue1 bold]Outliers[/]"
@@ -147,9 +146,10 @@ public sealed class ConsoleExporter : IExporter
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 3)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 3)}ms[/]",
-                    $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}ms[/]",
+                    Math.Abs(result.Min - result.Max) > 0.0001 ?
+                        $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms[/]" :
+                        $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 3)}ms[/]",
                     $"[aqua]{outliersValue}[/]"
@@ -210,9 +210,10 @@ public sealed class ConsoleExporter : IExporter
                         Math.Round(mMean, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mStdDev, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mStdErr, 3).ToString(CultureInfo.InvariantCulture),
-                        Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mMedian, 3).ToString(CultureInfo.InvariantCulture),
-                        Math.Round(mMax, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Abs(mMin - mMax) > 0.0001 ?
+                            $"[[{Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(mMax, 3).ToString(CultureInfo.InvariantCulture)}]]" : 
+                            Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mP95, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mP90, 3).ToString(CultureInfo.InvariantCulture),
                         (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 3) + "}"));
@@ -228,9 +229,10 @@ public sealed class ConsoleExporter : IExporter
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 3)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 3)}ms",
-                    $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}ms",
+                    Math.Abs(result.Min - result.Max) > 0.0001 ?
+                        $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms" :
+                        $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P95), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.P90), 3)}ms",
                     $"{outliersValue}"

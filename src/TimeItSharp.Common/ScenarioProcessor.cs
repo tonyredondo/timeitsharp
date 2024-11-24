@@ -226,7 +226,7 @@ internal sealed class ScenarioProcessor
                 return null;
             }
 
-            AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed);
+            AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed);
         }
 
         AnsiConsole.Markup("  [green3]Run[/]");
@@ -240,7 +240,7 @@ internal sealed class ScenarioProcessor
         }
 
         watch.Stop();
-        AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed);
+        AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed);
 
         foreach (var repeat in scenarioStartArgs.GetRepeats())
         {
@@ -255,7 +255,7 @@ internal sealed class ScenarioProcessor
                 return null;
             }
 
-            AnsiConsole.MarkupLine("    Duration: {0}s", watch.Elapsed);
+            AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed);
         }
         
         scenario.ParentService = null;
