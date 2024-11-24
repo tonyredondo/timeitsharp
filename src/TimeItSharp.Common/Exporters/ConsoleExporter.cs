@@ -387,13 +387,11 @@ public sealed class ConsoleExporter : IExporter
         // Determine the number of decimal places based on binSize
         int decimalPlaces = binSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(binSize)) + 1;
 
-        // Create bin ranges
-        var binRanges = new List<Tuple<double, double>>();
-        for (int i = 0; i < numBins; i++)
+        // Create bin edges without rounding
+        var binEdges = new List<double>();
+        for (int i = 0; i <= numBins; i++) // Need numBins + 1 edges
         {
-            var start = Math.Round(minData + binSize * i, decimalPlaces);
-            var end = Math.Round(start + binSize, decimalPlaces);
-            binRanges.Add(Tuple.Create(start, end));
+            binEdges.Add(minData + binSize * i);
         }
 
         // Initialize bin counts for each series
@@ -403,7 +401,7 @@ public sealed class ConsoleExporter : IExporter
             binsPerSeries[seriesLabel] = new int[numBins];
         }
 
-        // Count data points in each bin for each series
+        // Count data points in each bin for each series using precise edges
         foreach (var kvp in scaledDataSeriesDict)
         {
             var seriesLabel = kvp.Key;
@@ -412,10 +410,19 @@ public sealed class ConsoleExporter : IExporter
 
             foreach (var dataPoint in data)
             {
-                var binIndex = (int)Math.Floor((dataPoint - minData) / binSize);
+                var binIndex = (int)((dataPoint - minData) / binSize);
                 if (binIndex >= numBins) binIndex = numBins - 1; // Include the maximum in the last bin
                 bins[binIndex]++;
             }
+        }
+
+        // Generate bin ranges for display, applying rounding only here
+        var binRanges = new List<Tuple<double, double>>();
+        for (int i = 0; i < numBins; i++)
+        {
+            var start = Math.Round(binEdges[i], decimalPlaces);
+            var end = Math.Round(binEdges[i + 1], decimalPlaces);
+            binRanges.Add(Tuple.Create(start, end));
         }
 
         // Find the maximum bin count across all series for normalizing the bars
@@ -496,11 +503,11 @@ public sealed class ConsoleExporter : IExporter
                 }
                 else if (seriesIndex == seriesCount / 2)
                 {
-                    linePrefix = rangeStr + " \u2524 ";
+                    linePrefix = rangeStr + " ┤ ";
                 }
                 else
                 {
-                    linePrefix += "\u2502 ";
+                    linePrefix += "│ ";
                 }
 
                 // Use AnsiConsole to print colored bars with counts
