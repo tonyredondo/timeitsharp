@@ -104,13 +104,16 @@ public sealed class ScenarioResult : Scenario
     {
         Scenario = null;
         Error = string.Empty;
-        Data = new List<DataPoint>();
-        Durations = new List<double>();
-        Outliers = new List<double>();
-        Metrics = new Dictionary<string, double>();
-        MetricsData = new Dictionary<string, List<double>>();
-        AdditionalMetrics = new Dictionary<string, double>();
+        Data = [];
+        Durations = [];
+        Outliers = [];
+        Metrics = [];
+        MetricsData = [];
+        AdditionalMetrics = [];
         Status = Status.Passed;
         LastStandardOutput = string.Empty;
+        Ci99 = [];
+        Ci95 = [];
+        Ci90 = [];
     }
 }
