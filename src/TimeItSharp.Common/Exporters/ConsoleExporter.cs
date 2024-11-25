@@ -114,8 +114,8 @@ public sealed class ConsoleExporter : IExporter
             "[dodgerblue1 bold]StdDev[/]",
             "[dodgerblue1 bold]StdErr[/]",
             "[dodgerblue1 bold]Median[/]",
-            "[dodgerblue1 bold]CI 100%[/]",
-            "[dodgerblue1 bold]CI 95%[/]",
+            "[dodgerblue1 bold]C. Interval 100%[/]",
+            "[dodgerblue1 bold]C. Interval 95%[/]",
             "[dodgerblue1 bold]Outliers[/]"
         };
 
