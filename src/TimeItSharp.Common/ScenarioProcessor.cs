@@ -326,9 +326,9 @@ internal sealed class ScenarioProcessor
         var p95 = newDurations.Percentile(95);
         var p90 = newDurations.Percentile(90);
         var stderr = stdev / Math.Sqrt(newDurations.Count);
-        double[] ci99 = [mean - 2.576 * stderr, mean + 2.576 * stderr];
-        double[] ci95 = [mean - 1.96 * stderr, mean + 1.96 * stderr];
-        double[] ci90 = [mean - 1.645 * stderr, mean + 1.645 * stderr];
+        double[] ci99 = Utils.CalculateConfidenceInterval(mean, stderr, newDurations.Count, 0.99);
+        double[] ci95 = Utils.CalculateConfidenceInterval(mean, stderr, newDurations.Count, 0.95);
+        double[] ci90 = Utils.CalculateConfidenceInterval(mean, stderr, newDurations.Count, 0.90);
 
         // Calculate metrics stats
         var metricsStats = new Dictionary<string, double>();

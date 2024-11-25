@@ -191,7 +191,7 @@ public sealed class ConsoleExporter : IExporter
                     var mStdErr = mStdDev / Math.Sqrt(itemResult.Count);
                     var mMin = itemResult.Min();
                     var mMax = itemResult.Max();
-                    double[] ci95 = [mMean - 1.96 * mStdErr, mMean + 1.96 * mStdErr];
+                    var ci95 = Utils.CalculateConfidenceInterval(mMean, mStdErr, itemResult.Count, 0.95);
 
                     string name;
                     if (i < totalNum - 1)

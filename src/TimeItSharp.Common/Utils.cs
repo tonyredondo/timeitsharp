@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using MathNet.Numerics.Distributions;
 using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common;
@@ -276,5 +277,31 @@ internal static class Utils
         var value = _strBuilder.ToString();
         _strBuilder.Clear();
         return value;
+    }
+    
+    public static double[] CalculateConfidenceInterval(double mean, double standardError, int sampleSize, double confidenceLevel)
+    {
+        // Check if we should use the Student's t-distribution or the standard normal distribution
+        double criticalValue;
+        if (sampleSize < 30)
+        {
+            // Let's use the t-distribution
+            var degreesOfFreedom = sampleSize - 1;
+            criticalValue = StudentT.InvCDF(0, 1, degreesOfFreedom, 1 - (1 - confidenceLevel) / 2);
+        }
+        else
+        {
+            // Let's use the standard normal distribution
+            criticalValue = Normal.InvCDF(0, 1, 1 - (1 - confidenceLevel) / 2);
+        }
+
+        // Calc the margin of error
+        var marginOfError = criticalValue * standardError;
+
+        // Create confidence interval
+        var lowerBound = mean - marginOfError;
+        var upperBound = mean + marginOfError;
+
+        return [lowerBound, upperBound];
     }
 }
