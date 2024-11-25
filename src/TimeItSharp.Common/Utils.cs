@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using MathNet.Numerics.Distributions;
+using Spectre.Console;
 using TimeItSharp.Common.Results;
 
 namespace TimeItSharp.Common;
@@ -42,7 +43,7 @@ internal static class Utils
         // If the data is empty, return an empty array
         if (lstData.Count == 0)
         {
-            return Array.Empty<double>();
+            return [];
         }
 
         // Calculate the standard deviation of the data
@@ -187,7 +188,7 @@ internal static class Utils
         // Check if the results list is null or empty
         if (results is null || results.Count == 0)
         {
-            return Array.Empty<OverheadResult[]>();
+            return [];
         }
 
         // Initialize a 2D array to hold the comparison table data
@@ -281,27 +282,42 @@ internal static class Utils
     
     public static double[] CalculateConfidenceInterval(double mean, double standardError, int sampleSize, double confidenceLevel)
     {
-        // Check if we should use the Student's t-distribution or the standard normal distribution
-        double criticalValue;
-        if (sampleSize < 30)
+        try
         {
-            // Let's use the t-distribution
-            var degreesOfFreedom = sampleSize - 1;
-            criticalValue = StudentT.InvCDF(0, 1, degreesOfFreedom, 1 - (1 - confidenceLevel) / 2);
+            // Check if we should use the Student's t-distribution or the standard normal distribution
+            double criticalValue;
+            if (sampleSize < 30)
+            {
+                // Let's use the t-distribution
+                var degreesOfFreedom = sampleSize - 1;
+                if (degreesOfFreedom > 0)
+                {
+                    criticalValue = StudentT.InvCDF(0, 1, degreesOfFreedom, 1 - (1 - confidenceLevel) / 2);
+                }
+                else
+                {
+                    return [mean, mean];
+                }
+            }
+            else
+            {
+                // Let's use the standard normal distribution
+                criticalValue = Normal.InvCDF(0, 1, 1 - (1 - confidenceLevel) / 2);
+            }
+
+            // Calc the margin of error
+            var marginOfError = criticalValue * standardError;
+
+            // Create confidence interval
+            var lowerBound = mean - marginOfError;
+            var upperBound = mean + marginOfError;
+
+            return [lowerBound, upperBound];
         }
-        else
+        catch (Exception ex)
         {
-            // Let's use the standard normal distribution
-            criticalValue = Normal.InvCDF(0, 1, 1 - (1 - confidenceLevel) / 2);
+            AnsiConsole.WriteException(ex);
+            return [mean, mean];
         }
-
-        // Calc the margin of error
-        var marginOfError = criticalValue * standardError;
-
-        // Create confidence interval
-        var lowerBound = mean - marginOfError;
-        var upperBound = mean + marginOfError;
-
-        return [lowerBound, upperBound];
     }
 }
