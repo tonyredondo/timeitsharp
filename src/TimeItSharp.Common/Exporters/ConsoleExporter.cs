@@ -218,6 +218,11 @@ public sealed class ConsoleExporter : IExporter
                             Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture),
                         (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 3) + "}"));
                 }
+                
+                if (resultsList.Count - idx > 1)
+                {
+                    summaryTable.AddEmptyRow();
+                }
             }
             else
             {
