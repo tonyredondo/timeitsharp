@@ -556,6 +556,6 @@ public sealed class ConsoleExporter : IExporter
 
         // Display the overall range
         AnsiConsole.MarkupLine($"  [aqua]Range: {range.ToString(formatStr)}{unit}[/]");
-        Console.WriteLine();
+        AnsiConsole.WriteLine();
     }
 }
