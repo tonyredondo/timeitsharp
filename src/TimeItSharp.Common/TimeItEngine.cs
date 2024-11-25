@@ -114,6 +114,8 @@ public static class TimeItEngine
                 processor.PrepareScenario(scenario);
 
                 // Process scenario
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
                 var result = await processor.ProcessScenarioAsync(i, scenario, cancellationToken: cancellationToken.Value).ConfigureAwait(false);
                 if (cancellationToken.Value.IsCancellationRequested)
                 {
@@ -129,11 +131,10 @@ public static class TimeItEngine
                 {
                     scenariosResults.Add(result);
                 }
-                
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
             }
 
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
 
             var results = new TimeitResult
