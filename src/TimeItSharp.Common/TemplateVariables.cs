@@ -21,12 +21,10 @@ public sealed class TemplateVariables
     public void Add(string name, string value)
     {
         var key = CreateVariable(name);
-        if (_variables.ContainsKey(key))
+        if (!_variables.TryAdd(key, value))
         {
             AnsiConsole.MarkupLine("[bold red] This variable '{0}' already exists.[/]", name);
-            return;
         }
-        _variables.Add(key, value);
     }
 
     public string Expand(string s)

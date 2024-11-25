@@ -7,6 +7,7 @@ namespace TimeItSharp.Common.Services;
 
 public sealed class ExecuteService : IService
 {
+    private static readonly TaskFactory _taskFactory = new(CancellationToken.None, TaskCreationOptions.None, TaskContinuationOptions.None, TaskScheduler.Default);
     private ExecuteConfiguration? _configuration = null;
 
     public string Name => "Execute";
@@ -116,7 +117,7 @@ public sealed class ExecuteService : IService
 
     private static (BufferedCommandResult Result, int ProcessId) ExecuteBufferedSync(Command command, CancellationToken cancellationToken = default)
     {
-        return AsyncUtil.Factory
+        return _taskFactory
             .StartNew(() => ExecuteBufferedAsync(command, cancellationToken), cancellationToken)
             .Unwrap()
             .GetAwaiter()

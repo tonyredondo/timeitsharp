@@ -8,31 +8,22 @@ namespace TimeItSharp.Common;
 internal static class DatadogMetadata
 {
     private static readonly ConcurrentDictionary<object, Metadata> MetadataByExecution;
+    private static readonly bool UseAllBits;
 
     static DatadogMetadata()
     {
         MetadataByExecution = new();
         CIVisibility.InitializeFromManualInstrumentation();
+        UseAllBits = CIVisibility.Settings.TracerSettings?.TraceId128BitGenerationEnabled ?? true;
     }
 
     public static void GetIds(object key, out TraceId traceId, out ulong spanId)
     {
-        var value = MetadataByExecution.GetOrAdd(key, @case => new());
-        if (value.TraceId is null)
-        {
-            var useAllBits = CIVisibility.Settings.TracerSettings?.TraceId128BitGenerationEnabled ?? true;
-            value.TraceId = RandomIdGenerator.Shared.NextTraceId(useAllBits);
-            value.SpanId = RandomIdGenerator.Shared.NextSpanId(useAllBits);
-        }
-
-        traceId = value.TraceId.Value;
+        var value = MetadataByExecution.GetOrAdd(key, @case => new Metadata(RandomIdGenerator.Shared.NextTraceId(UseAllBits),
+            RandomIdGenerator.Shared.NextSpanId(UseAllBits)));
+        traceId = value.TraceId;
         spanId = value.SpanId;
     }
 
-    private class Metadata
-    {
-        public TraceId? TraceId { get; set; }
-
-        public ulong SpanId { get; set; }
-    }
+    private record struct Metadata(TraceId TraceId, ulong SpanId);
 }

@@ -73,11 +73,7 @@ public static class TimeItEngine
         var assertors = assertorsInfo.Select(i => i.Instance).ToList();
         foreach (var assertor in assertorsInfo)
         {
-            if (!statesByType.TryGetValue(assertor.Instance.GetType(), out var state))
-            {
-                state = null;
-            }
-
+            var state = statesByType.GetValueOrDefault(assertor.Instance.GetType());
             assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state));
         }
 
@@ -88,11 +84,7 @@ public static class TimeItEngine
         var services = servicesInfo.Select(i => i.Instance).ToList();
         foreach (var service in servicesInfo)
         {
-            if (!statesByType.TryGetValue(service.Instance.GetType(), out var state))
-            {
-                state = null;
-            }
-
+            var state = statesByType.GetValueOrDefault(service.Instance.GetType());
             service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state), timeitCallbacks);
         }
 
@@ -122,6 +114,8 @@ public static class TimeItEngine
                 processor.PrepareScenario(scenario);
 
                 // Process scenario
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
                 var result = await processor.ProcessScenarioAsync(i, scenario, cancellationToken: cancellationToken.Value).ConfigureAwait(false);
                 if (cancellationToken.Value.IsCancellationRequested)
                 {
@@ -139,6 +133,8 @@ public static class TimeItEngine
                 }
             }
 
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
 
             var results = new TimeitResult
@@ -150,11 +146,7 @@ public static class TimeItEngine
             // Export data
             foreach (var exporter in exportersInfo)
             {
-                if (!statesByType.TryGetValue(exporter.Instance.GetType(), out var state))
-                {
-                    state = null;
-                }
-
+                var state = statesByType.GetValueOrDefault(exporter.Instance.GetType());
                 exporter.Instance.Initialize(new InitOptions(config, exporter.LoadInfo, templateVariables, state));
                 if (exporter.Instance.Enabled)
                 {
