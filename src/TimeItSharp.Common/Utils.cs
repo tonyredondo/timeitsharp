@@ -284,25 +284,16 @@ internal static class Utils
     {
         try
         {
-            // Check if we should use the Student's t-distribution or the standard normal distribution
+            // Let's use the t-distribution
             double criticalValue;
-            if (sampleSize < 30)
+            var degreesOfFreedom = sampleSize - 1;
+            if (degreesOfFreedom > 0)
             {
-                // Let's use the t-distribution
-                var degreesOfFreedom = sampleSize - 1;
-                if (degreesOfFreedom > 0)
-                {
-                    criticalValue = StudentT.InvCDF(0, 1, degreesOfFreedom, 1 - (1 - confidenceLevel) / 2);
-                }
-                else
-                {
-                    return [mean, mean];
-                }
+                criticalValue = StudentT.InvCDF(0, 1, degreesOfFreedom, 1 - (1 - confidenceLevel) / 2);
             }
             else
             {
-                // Let's use the standard normal distribution
-                criticalValue = Normal.InvCDF(0, 1, 1 - (1 - confidenceLevel) / 2);
+                return [mean, mean];
             }
 
             // Calc the margin of error

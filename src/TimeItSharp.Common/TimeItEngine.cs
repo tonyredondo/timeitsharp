@@ -93,7 +93,11 @@ public static class TimeItEngine
 
         AnsiConsole.Profile.Width = Utils.GetSafeWidth();
         AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
-        AnsiConsole.MarkupLine("[bold aqua]Count:[/] {0}", config.Count);
+        AnsiConsole.MarkupLine("[bold aqua]Max count:[/] {0}", config.Count);
+        AnsiConsole.MarkupLine("[bold aqua]Acceptable relative width:[/] {0}%", Math.Round(config.AcceptableRelativeWidth * 100, 2));
+        AnsiConsole.MarkupLine("[bold aqua]Confidence level:[/] {0}%", Math.Round(config.ConfidenceLevel * 100, 2));
+        AnsiConsole.MarkupLine("[bold aqua]Minimum error reduction:[/] {0}%", Math.Round(config.MinimumErrorReduction * 100, 2));
+        AnsiConsole.MarkupLine("[bold aqua]Maximum duration:[/] {0}min", config.MaximumDurationInMinutes);
         AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
         AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
         AnsiConsole.MarkupLine("[bold aqua]Assertors:[/] {0}", string.Join(", ", assertors.Select(e => e.Name)));

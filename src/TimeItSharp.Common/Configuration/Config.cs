@@ -56,6 +56,22 @@ public class Config : ProcessData
     [JsonPropertyName("debugMode")]
     public bool DebugMode { get; set; }
     
+    [JsonPropertyName("acceptableRelativeWidth")]
+    public double AcceptableRelativeWidth { get; set; }
+
+    [JsonPropertyName("confidenceLevel")]
+    public double ConfidenceLevel { get; set; }
+
+    [JsonPropertyName("maximumDurationInMinutes")]
+    public int MaximumDurationInMinutes { get; set; }
+    
+    [JsonPropertyName("evaluationInterval")]
+    public int EvaluationInterval { get; set; }
+    
+    [JsonPropertyName("minimumErrorReduction")]
+    public double MinimumErrorReduction { get; set; }
+    
+    
     public Config()
     {
         FilePath = string.Empty;
@@ -75,6 +91,11 @@ public class Config : ProcessData
         ProcessFailedDataPoints = false;
         ShowStdOutForFirstRun = false;
         DebugMode = false;
+        AcceptableRelativeWidth = 0.012;
+        ConfidenceLevel = 0.95;
+        MaximumDurationInMinutes = 45;
+        EvaluationInterval = 10;
+        MinimumErrorReduction = 0.0005;
     }
 
     public static Config LoadConfiguration(string filePath)
@@ -133,5 +154,10 @@ public class Config : ProcessData
         ProcessFailedDataPoints = ProcessFailedDataPoints,
         ShowStdOutForFirstRun = ShowStdOutForFirstRun,
         DebugMode = DebugMode,
+        AcceptableRelativeWidth = AcceptableRelativeWidth,
+        ConfidenceLevel = ConfidenceLevel,
+        MaximumDurationInMinutes = MaximumDurationInMinutes,
+        EvaluationInterval = EvaluationInterval,
+        MinimumErrorReduction = MinimumErrorReduction,
     };
 }
