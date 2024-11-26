@@ -426,7 +426,8 @@ internal sealed class ScenarioProcessor
 
     private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, Stopwatch stopwatch, CancellationToken cancellationToken)
     {
-        const int minIterations = 10;
+        var minIterations = count / 3;
+        minIterations = minIterations < 10 ? 10 : minIterations;
         var confidenceLevel = _configuration.ConfidenceLevel;
         if (confidenceLevel is <= 0 or >= 1)
         {
