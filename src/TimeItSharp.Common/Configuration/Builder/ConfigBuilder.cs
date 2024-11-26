@@ -202,6 +202,61 @@ public sealed class ConfigBuilder
         _configuration.DebugMode = true;
         return this;
     }
+    
+    /// <summary>
+    /// Sets the acceptable relative width for the confidence interval where timeit will consider the results as valid and stop iterating
+    /// </summary>
+    /// <param name="acceptableRelativeWidth">Acceptable relative width</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithAcceptableRelativeWidth(double acceptableRelativeWidth)
+    {
+        _configuration.AcceptableRelativeWidth = acceptableRelativeWidth;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets the confidence level for the confidence interval where timeit will compare the acceptable relative width
+    /// </summary>
+    /// <param name="confidenceLevel">Confidence level</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithConfidenceLevel(double confidenceLevel)
+    {
+        _configuration.ConfidenceLevel = confidenceLevel;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets the maximum duration in minutes for all scenarios to run
+    /// </summary>
+    /// <param name="maximumDurationInMinutes">Maximum number of minutes</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMaximumDurationInMinutes(int maximumDurationInMinutes)
+    {
+        _configuration.MaximumDurationInMinutes = maximumDurationInMinutes;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets the interval in which timeit will evaluate the results and decide if there's error reductions.
+    /// </summary>
+    /// <param name="evaluationInterval">Interval in number of iterations</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithEvaluationInterval(int evaluationInterval)
+    {
+        _configuration.EvaluationInterval = evaluationInterval;
+        return this;
+    }
+    
+    /// <summary>
+    /// Sets the minimum error reduction required for timeit to consider the results as valid and stop iterating
+    /// </summary>
+    /// <param name="minimumErrorReduction">Minimum error reduction required</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMinimumErrorReduction(double minimumErrorReduction)
+    {
+        _configuration.MinimumErrorReduction = minimumErrorReduction;
+        return this;
+    }
 
     #region WithExporter
 

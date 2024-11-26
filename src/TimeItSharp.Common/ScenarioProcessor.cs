@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using CliWrap;
 using CliWrap.Buffered;
 using DatadogTestLogger.Vendors.Datadog.Trace;
+using MathNet.Numerics.Distributions;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
 using TimeItSharp.Common.Assertors;
@@ -29,6 +30,8 @@ internal sealed class ScenarioProcessor
 
     private static readonly IDictionary EnvironmentVariables = Environment.GetEnvironmentVariables();
 
+    private double _remainingTimeInMinutes;
+    
     public ScenarioProcessor(
         Config configuration,
         TemplateVariables templateVariables,
@@ -41,6 +44,7 @@ internal sealed class ScenarioProcessor
         _assertors = assertors;
         _services = services;
         _callbacksTriggers = callbacksTriggers;
+        _remainingTimeInMinutes = configuration.MaximumDurationInMinutes;
     }
 
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
@@ -212,6 +216,7 @@ internal sealed class ScenarioProcessor
             AnsiConsole.Markup("  [gold3_1]Warming up[/]");
             watch.Restart();
             await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, TimeItPhase.WarmUp, false,
+                stopwatch: watch,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
@@ -225,7 +230,9 @@ internal sealed class ScenarioProcessor
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
         watch.Restart();
-        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, TimeItPhase.Run, true, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, TimeItPhase.Run, true,
+            stopwatch: watch,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         watch.Stop();
         if (cancellationToken.IsCancellationRequested)
         {
@@ -241,6 +248,7 @@ internal sealed class ScenarioProcessor
             scenario.ParentService = repeat.ServiceAskingForRepeat;
             watch.Restart();
             await RunScenarioAsync(repeat.Count, index, scenario, TimeItPhase.ExtraRun, false,
+                stopwatch: watch,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
@@ -416,8 +424,17 @@ internal sealed class ScenarioProcessor
         return scenarioResult;
     }
 
-    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, CancellationToken cancellationToken)
+    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, Stopwatch stopwatch, CancellationToken cancellationToken)
     {
+        var minIterations = count / 3;
+        minIterations = minIterations < 10 ? 10 : minIterations;
+        var confidenceLevel = _configuration.ConfidenceLevel;
+        if (confidenceLevel is <= 0 or >= 1)
+        {
+            confidenceLevel = 0.95;
+        }
+        var previousRelativeWidth = double.MaxValue;
+
         var dataPoints = new List<DataPoint>();
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
@@ -440,9 +457,118 @@ internal sealed class ScenarioProcessor
             {
                 break;
             }
+
+            try
+            {
+                // If we are in a run phase, let's do the automatic checks
+                if (phase == TimeItPhase.Run)
+                {
+                    static double GetDuration(DataPoint point)
+                    {
+#if NET7_0_OR_GREATER
+                        return point.Duration.TotalNanoseconds;
+#else
+                        return Utils.FromTimeSpanToNanoseconds(point.Duration);
+#endif
+                    }
+
+                    var durations = Utils.RemoveOutliers(dataPoints.Select(GetDuration), threshold: 1.5).ToList();
+                    if (durations.Count >= minIterations || stopwatch.Elapsed.TotalMinutes >= _remainingTimeInMinutes)
+                    {
+                        var mean = durations.Average();
+                        var stdev = durations.StandardDeviation();
+                        var stderr = stdev / Math.Sqrt(durations.Count);
+
+                        // Critical t value
+                        var tCritical = StudentT.InvCDF(0, 1, durations.Count - 1, 1 - (1 - confidenceLevel) / 2);
+
+                        // Confidence intervals
+                        var marginOfError = tCritical * stderr;
+                        var confidenceIntervalLower = mean - marginOfError;
+                        var confidenceIntervalUpper = mean + marginOfError;
+                        var relativeWidth = (confidenceIntervalUpper - confidenceIntervalLower) / mean;
+
+                        // Check if the maximum duration is reached
+                        if (stopwatch.Elapsed.TotalMinutes >= _remainingTimeInMinutes)
+                        {
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine(
+                                "    [blueviolet]Maximum duration has been reached. Stopping iterations for this scenario.[/]");
+                            AnsiConsole.MarkupLine("    [blueviolet]N: {0}[/]", durations.Count);
+                            AnsiConsole.MarkupLine("    [blueviolet]Mean: {0}ms[/]",
+                                Math.Round(Utils.FromNanosecondsToMilliseconds(mean), 3));
+                            AnsiConsole.Markup(
+                                "    [blueviolet]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
+                                confidenceLevel * 100,
+                                Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalLower), 3),
+                                Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalUpper), 3),
+                                Math.Round(relativeWidth * 100, 4));
+
+                            break;
+                        }
+
+                        // Check if the statistical criterion is met
+                        if (relativeWidth < _configuration.AcceptableRelativeWidth)
+                        {
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine(
+                                "    [blueviolet]Acceptable relative width criteria met. Stopping iterations for this scenario.[/]");
+                            AnsiConsole.MarkupLine("    [blueviolet]N: {0}[/]", durations.Count);
+                            AnsiConsole.MarkupLine("    [blueviolet]Mean: {0}ms[/]",
+                                Math.Round(Utils.FromNanosecondsToMilliseconds(mean), 3));
+                            AnsiConsole.Markup(
+                                "    [blueviolet]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
+                                confidenceLevel * 100,
+                                Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalLower), 3),
+                                Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalUpper), 3),
+                                Math.Round(relativeWidth * 100, 4));
+                            break;
+                        }
+
+                        // Check for each `evaluationInterval` iteration
+                        if ((durations.Count - minIterations) % _configuration.EvaluationInterval == 0)
+                        {
+                            var errorReduction = (previousRelativeWidth - relativeWidth) / previousRelativeWidth;
+                            if (errorReduction < _configuration.MinimumErrorReduction)
+                            {
+                                AnsiConsole.WriteLine();
+                                AnsiConsole.MarkupLine(
+                                    "    [blueviolet]The error is not decreasing significantly. Stopping iterations for this scenario.[/]");
+                                AnsiConsole.MarkupLine("    [blueviolet]N: {0}[/]", durations.Count);
+                                AnsiConsole.MarkupLine("    [blueviolet]Mean: {0}ms[/]",
+                                    Math.Round(Utils.FromNanosecondsToMilliseconds(mean), 3));
+                                AnsiConsole.MarkupLine(
+                                    "    [blueviolet]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
+                                    confidenceLevel * 100,
+                                    Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalLower), 3),
+                                    Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalUpper), 3),
+                                    Math.Round(relativeWidth * 100, 4));
+                                AnsiConsole.Markup("    [blueviolet]Error reduction: {0}%. Minimal expected: {1}%[/]",
+                                    Math.Round(errorReduction * 100, 4),
+                                    Math.Round(_configuration.MinimumErrorReduction * 100, 4));
+
+                                break;
+                            }
+
+                            previousRelativeWidth = relativeWidth;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("    [red]Error: {0}[/]", ex.Message);
+                break;
+            }
         }
 
         AnsiConsole.WriteLine();
+
+        if (phase == TimeItPhase.Run)
+        {
+            _remainingTimeInMinutes -= (int)stopwatch.Elapsed.TotalMinutes;
+        }
 
         return dataPoints;
     }

@@ -30,7 +30,7 @@ public sealed class ConsoleExporter : IExporter
 
         // ****************************************
         // Results table
-        AnsiConsole.MarkupLine("[aqua bold underline]### Results:[/]");
+        AnsiConsole.MarkupLine("[aqua bold underline]### Results (last 10):[/]");
         var resultsTable = new Table()
             .MarkdownBorder();
         
@@ -38,13 +38,14 @@ public sealed class ConsoleExporter : IExporter
         resultsTable.AddColumns(results.Scenarios.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
         
         // Add rows
-        for (var i = 0; i < _options.Configuration.Count; i++)
+        var minDurationCount = Math.Min(results.Scenarios.Select(r => r.Durations.Count).Min(), 10);
+        for (var i = minDurationCount; i > 0; i--)
         {
             resultsTable.AddRow(results.Scenarios.Select(r =>
             {
                 if (i < r.Durations.Count)
                 {
-                    return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Durations[i]), 3) + "ms";
+                    return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Durations[^i]), 3) + "ms";
                 }
                 
                 return "-";
@@ -56,10 +57,10 @@ public sealed class ConsoleExporter : IExporter
         
         // ****************************************
         // Outliers table
-        var maxOutliersCount = results.Scenarios.Select(r => r.Outliers.Count).Max();
+        var maxOutliersCount = Math.Min(results.Scenarios.Select(r => r.Outliers.Count).Max(), 5);
         if (maxOutliersCount > 0)
         {
-            AnsiConsole.MarkupLine("[aqua bold underline]### Outliers:[/]");
+            AnsiConsole.MarkupLine("[aqua bold underline]### Outliers (last 5):[/]");
             var outliersTable = new Table()
                 .MarkdownBorder();
 
@@ -68,13 +69,13 @@ public sealed class ConsoleExporter : IExporter
                 .Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
 
             // Add rows
-            for (var i = 0; i < maxOutliersCount; i++)
+            for (var i = maxOutliersCount; i > 0; i--)
             {
                 outliersTable.AddRow(results.Scenarios.Select(r =>
                 {
                     if (i < r.Outliers.Count)
                     {
-                        return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Outliers[i]), 3) + "ms";
+                        return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Outliers[^i]), 3) + "ms";
                     }
 
                     return "-";
