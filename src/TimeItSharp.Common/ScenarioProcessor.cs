@@ -492,12 +492,12 @@ internal sealed class ScenarioProcessor
                         {
                             AnsiConsole.WriteLine();
                             AnsiConsole.MarkupLine(
-                                "    [darkgreen]Maximum duration has been reached. Stopping iterations for this scenario.[/]");
-                            AnsiConsole.MarkupLine("    [darkgreen]N: {0}[/]", durations.Count);
-                            AnsiConsole.MarkupLine("    [darkgreen]Mean: {0}ms[/]",
+                                "    [blueviolet]Maximum duration has been reached. Stopping iterations for this scenario.[/]");
+                            AnsiConsole.MarkupLine("    [blueviolet]N: {0}[/]", durations.Count);
+                            AnsiConsole.MarkupLine("    [blueviolet]Mean: {0}ms[/]",
                                 Math.Round(Utils.FromNanosecondsToMilliseconds(mean), 3));
                             AnsiConsole.Markup(
-                                "    [darkgreen]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
+                                "    [blueviolet]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
                                 confidenceLevel * 100,
                                 Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalLower), 3),
                                 Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalUpper), 3),
@@ -511,12 +511,12 @@ internal sealed class ScenarioProcessor
                         {
                             AnsiConsole.WriteLine();
                             AnsiConsole.MarkupLine(
-                                "    [darkgreen]Acceptable relative width criteria met. Stopping iterations for this scenario.[/]");
-                            AnsiConsole.MarkupLine("    [darkgreen]N: {0}[/]", durations.Count);
-                            AnsiConsole.MarkupLine("    [darkgreen]Mean: {0}ms[/]",
+                                "    [blueviolet]Acceptable relative width criteria met. Stopping iterations for this scenario.[/]");
+                            AnsiConsole.MarkupLine("    [blueviolet]N: {0}[/]", durations.Count);
+                            AnsiConsole.MarkupLine("    [blueviolet]Mean: {0}ms[/]",
                                 Math.Round(Utils.FromNanosecondsToMilliseconds(mean), 3));
                             AnsiConsole.Markup(
-                                "    [darkgreen]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
+                                "    [blueviolet]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
                                 confidenceLevel * 100,
                                 Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalLower), 3),
                                 Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalUpper), 3),
@@ -532,17 +532,17 @@ internal sealed class ScenarioProcessor
                             {
                                 AnsiConsole.WriteLine();
                                 AnsiConsole.MarkupLine(
-                                    "    [darkgreen]The error is not decreasing significantly. Stopping iterations for this scenario.[/]");
-                                AnsiConsole.MarkupLine("    [darkgreen]N: {0}[/]", durations.Count);
-                                AnsiConsole.MarkupLine("    [darkgreen]Mean: {0}ms[/]",
+                                    "    [blueviolet]The error is not decreasing significantly. Stopping iterations for this scenario.[/]");
+                                AnsiConsole.MarkupLine("    [blueviolet]N: {0}[/]", durations.Count);
+                                AnsiConsole.MarkupLine("    [blueviolet]Mean: {0}ms[/]",
                                     Math.Round(Utils.FromNanosecondsToMilliseconds(mean), 3));
                                 AnsiConsole.MarkupLine(
-                                    "    [darkgreen]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
+                                    "    [blueviolet]Confidence Interval at {0}: [[{1}ms, {2}ms]]. Relative width: {3}%[/]",
                                     confidenceLevel * 100,
                                     Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalLower), 3),
                                     Math.Round(Utils.FromNanosecondsToMilliseconds(confidenceIntervalUpper), 3),
                                     Math.Round(relativeWidth * 100, 4));
-                                AnsiConsole.Markup("    [darkgreen]Error reduction: {0}%. Minimal expected: {1}%[/]",
+                                AnsiConsole.Markup("    [blueviolet]Error reduction: {0}%. Minimal expected: {1}%[/]",
                                     Math.Round(errorReduction * 100, 4),
                                     Math.Round(_configuration.MinimumErrorReduction * 100, 4));
 
