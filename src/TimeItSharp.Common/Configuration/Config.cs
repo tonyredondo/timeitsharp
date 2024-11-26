@@ -91,7 +91,7 @@ public class Config : ProcessData
         ProcessFailedDataPoints = false;
         ShowStdOutForFirstRun = false;
         DebugMode = false;
-        AcceptableRelativeWidth = 0.01;
+        AcceptableRelativeWidth = 0.007;
         ConfidenceLevel = 0.95;
         MaximumDurationInMinutes = 45;
         EvaluationInterval = 10;

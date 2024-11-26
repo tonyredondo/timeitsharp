@@ -426,7 +426,7 @@ internal sealed class ScenarioProcessor
 
     private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, Stopwatch stopwatch, CancellationToken cancellationToken)
     {
-        var minIterations = count / 3;
+        var minIterations = count / 2.5;
         minIterations = minIterations < 10 ? 10 : minIterations;
         var confidenceLevel = _configuration.ConfidenceLevel;
         if (confidenceLevel is <= 0 or >= 1)
@@ -529,7 +529,7 @@ internal sealed class ScenarioProcessor
                         if ((durations.Count - minIterations) % _configuration.EvaluationInterval == 0)
                         {
                             var errorReduction = (previousRelativeWidth - relativeWidth) / previousRelativeWidth;
-                            if (errorReduction < _configuration.MinimumErrorReduction)
+                            if (errorReduction > 0 && errorReduction < _configuration.MinimumErrorReduction)
                             {
                                 AnsiConsole.WriteLine();
                                 AnsiConsole.MarkupLine(
