@@ -91,11 +91,11 @@ public class Config : ProcessData
         ProcessFailedDataPoints = false;
         ShowStdOutForFirstRun = false;
         DebugMode = false;
-        AcceptableRelativeWidth = 0.007;
+        AcceptableRelativeWidth = 0.006;
         ConfidenceLevel = 0.95;
         MaximumDurationInMinutes = 45;
         EvaluationInterval = 10;
-        MinimumErrorReduction = 0.0005;
+        MinimumErrorReduction = 0.001;
     }
 
     public static Config LoadConfiguration(string filePath)
