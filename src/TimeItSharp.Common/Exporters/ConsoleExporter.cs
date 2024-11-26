@@ -141,7 +141,7 @@ public sealed class ConsoleExporter : IExporter
                 var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}" : "0";
                 var rowList = new List<string>
                 {
-                    $"[aqua underline]{result.Name}[/]",
+                    $"[aqua underline]{result.Name} [[N={result.Count}]][/]",
                     $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms[/]",

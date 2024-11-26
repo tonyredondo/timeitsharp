@@ -382,7 +382,7 @@ internal sealed class ScenarioProcessor
         var scenarioResult = new ScenarioResult
         {
             Scenario = scenario,
-            Count = _configuration.Count,
+            Count = dataPoints.Count,
             WarmUpCount = _configuration.WarmUpCount,
             Data = dataPoints,
             Durations = newDurations,
