@@ -420,19 +420,26 @@ public sealed class ConsoleExporter : IExporter
                 if (binIndex >= numBins) binIndex = numBins - 1; // Include the maximum in the last bin
                 bins[binIndex]++;
             }
-        }
+        } 
 
-        // Generate bin ranges for display, applying rounding only here
-        var binRanges = new List<Tuple<double, double>>();
-        for (int i = 0; i < numBins; i++)
+        // Check if distributions are overlapping or not
+        // Simplified overlapping detection
+        var overlappingBinsThreshold = 4; // Set your desired threshold here
+        var overlappingBinsCount = 0;
+
+        for (var i = 0; i < numBins; i++)
         {
-            var start = Math.Round(binEdges[i], decimalPlaces);
-            var end = Math.Round(binEdges[i + 1], decimalPlaces);
-            binRanges.Add(Tuple.Create(start, end));
+            var seriesWithCounts = 0;
+            foreach (var bins in binsPerSeries.Values)
+            {
+                if (bins[i] > 0)
+                    seriesWithCounts++;
+            }
+            if (seriesWithCounts > 1)
+                overlappingBinsCount++;
         }
 
-        // Find the maximum bin count across all series for normalizing the bars
-        var maxBinCount = binsPerSeries.Values.SelectMany(k => k).Max();
+        var plotSeparately = overlappingBinsCount < overlappingBinsThreshold;
 
         // Assign unique characters to each series for differentiation
         var seriesChars = new Dictionary<string, char>();
@@ -457,106 +464,276 @@ public sealed class ConsoleExporter : IExporter
             colorIndex++;
         }
 
-        // Generate the distribution chart
-        var labelWidth = 27; // Adjust as necessary
-        var barMaxLength = 40; // Maximum length of the bar
-
-        var formatStr = "F" + decimalPlaces; // Format string for decimal places
-
-        for (var i = 0; i < numBins; i++)
+        if (plotSeparately)
         {
-            var start = binRanges[i].Item1;
-            var end = binRanges[i].Item2;
-
-            // Format the bin range string
-            var startStr = (start.ToString(formatStr) + unit).PadLeft(10);
-            var endStr = (end.ToString(formatStr) + unit).PadRight(10);
-            var rangeStr = $"{startStr} - {endStr}";
-            rangeStr = rangeStr.PadLeft(labelWidth);
-
-            var seriesCount = scaledDataSeriesDict.Keys.Count;
-            var seriesIndex = 0;
-
+            // Plot histograms separately for each series
             foreach (var seriesLabel in scaledDataSeriesDict.Keys)
             {
-                var count = binsPerSeries[seriesLabel][i];
-                var maxCount = maxBinCount;
-                var barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * barMaxLength) : 0;
-                var barChar = seriesChars[seriesLabel];
-                var barColor = seriesColors[seriesLabel];
-                var bar = new string(barChar, barLength);
+                var data = scaledDataSeriesDict[seriesLabel];
+                // Compute minData and maxData for this series
+                var seriesMinData = data.Min();
+                var seriesMaxData = data.Max();
 
-                var linePrefix = string.Empty.PadLeft(labelWidth + 1);
-
-                if (seriesCount == 1)
+                // Determine unit and scale for this series based on its data
+                string seriesUnit;
+                double seriesScale;
+                if (seriesMaxData >= 60_000_000_000.0 / scale)
                 {
-                    linePrefix = rangeStr + " ├ ";
+                    seriesUnit = "m";
+                    seriesScale = 60_000_000_000.0 / scale;
                 }
-                else if (seriesIndex == 0)
+                else if (seriesMaxData >= 1_000_000_000.0 / scale)
                 {
-                    if (seriesCount == 2)
-                    {
-                        linePrefix = rangeStr + " ┌ ";
-                    }
-                    else
-                    {
-                        linePrefix += "┌ ";
-                    }
+                    seriesUnit = "s";
+                    seriesScale = 1_000_000_000.0 / scale;
                 }
-                else if (seriesIndex == seriesCount - 1)
+                else if (seriesMaxData >= 1_000_000.0 / scale)
                 {
-                    linePrefix += "└ ";
+                    seriesUnit = "ms";
+                    seriesScale = 1_000_000.0 / scale;
                 }
-                else if (seriesIndex == seriesCount / 2)
+                else if (seriesMaxData >= 1_000.0 / scale)
                 {
-                    linePrefix = rangeStr + " ┤ ";
+                    seriesUnit = "μs";
+                    seriesScale = 1_000.0 / scale;
                 }
                 else
                 {
-                    linePrefix += "│ ";
+                    seriesUnit = "ns";
+                    seriesScale = 1.0 / scale;
                 }
 
-                // Use AnsiConsole to print colored bars with counts
-                AnsiConsole.MarkupLine(linePrefix + $"[{barColor}]{bar.PadRight(barMaxLength)} ({count})[/]");
-                seriesIndex++;
+                // Re-scale data if necessary
+                if (seriesScale != 1.0)
+                {
+                    data = data.Select(d => d / seriesScale).ToList();
+                    seriesMinData = data.Min();
+                    seriesMaxData = data.Max();
+                }
+
+                // Calculate the range and bin size
+                var seriesRange = seriesMaxData - seriesMinData;
+
+                // Avoid division by zero if all data points are equal
+                if (seriesRange == 0)
+                {
+                    seriesRange = 1;
+                }
+
+                var seriesBinSize = seriesRange / numBins;
+
+                // Determine the number of decimal places based on binSize
+                int seriesDecimalPlaces = seriesBinSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(seriesBinSize)) + 1;
+
+                // Create bin edges without rounding
+                var seriesBinEdges = new List<double>();
+                for (int i = 0; i <= numBins; i++) // Need numBins + 1 edges
+                {
+                    seriesBinEdges.Add(seriesMinData + seriesBinSize * i);
+                }
+
+                // Initialize bin counts
+                var seriesBins = new int[numBins];
+
+                // Count data points in bins
+                foreach (var dataPoint in data)
+                {
+                    var binIndex = (int)((dataPoint - seriesMinData) / seriesBinSize);
+                    if (binIndex >= numBins) binIndex = numBins - 1; // Include the maximum in the last bin
+                    seriesBins[binIndex]++;
+                }
+
+                // Generate bin ranges for display, applying rounding only here
+                var binRanges = new List<Tuple<double, double>>();
+                for (int i = 0; i < numBins; i++)
+                {
+                    var start = Math.Round(seriesBinEdges[i], seriesDecimalPlaces);
+                    var end = Math.Round(seriesBinEdges[i + 1], seriesDecimalPlaces);
+                    binRanges.Add(Tuple.Create(start, end));
+                }
+
+                // Find the maximum bin count for normalizing the bars
+                var maxBinCount = seriesBins.Max();
+
+                // Generate the distribution chart for this series
+                var labelWidth = 27; // Adjust as necessary
+                var barMaxLength = 40; // Maximum length of the bar
+
+                var formatStr = "F" + seriesDecimalPlaces; // Format string for decimal places
+
+                for (var i = 0; i < numBins; i++)
+                {
+                    var start = binRanges[i].Item1;
+                    var end = binRanges[i].Item2;
+
+                    // Format the bin range string
+                    var startStr = (start.ToString(formatStr) + seriesUnit).PadLeft(10);
+                    var endStr = (end.ToString(formatStr) + seriesUnit).PadRight(10);
+                    var rangeStr = $"{startStr} - {endStr}";
+                    rangeStr = rangeStr.PadLeft(labelWidth);
+
+                    var count = seriesBins[i];
+                    var barLength = maxBinCount > 0 ? (int)Math.Round((double)count / maxBinCount * barMaxLength) : 0;
+                    var barChar = seriesChars[seriesLabel];
+                    var barColor = seriesColors[seriesLabel];
+                    var bar = new string(barChar, barLength);
+
+                    // Use AnsiConsole to print colored bars with counts
+                    AnsiConsole.MarkupLine(rangeStr + " ├ " + $"[{barColor}]{bar.PadRight(barMaxLength)} ({count})[/]");
+                }
+
+                // Display the legend
+                AnsiConsole.MarkupLine("  [aqua]Legend:[/]");
+                if (dataSeriesDict.TryGetValue(seriesLabel, out var result))
+                {
+                    if (result.IsBimodal)
+                    {
+                        if (seriesColors.TryGetValue(seriesLabel, out var color))
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{seriesLabel}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{seriesLabel}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        }
+                    }
+                    else
+                    {
+                        if (seriesColors.TryGetValue(seriesLabel, out var color))
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{seriesLabel}[/]");
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{seriesLabel}[/]");
+                        }
+                    }
+                }
+
+                // Display the range
+                AnsiConsole.MarkupLine($"  [aqua]Range: {seriesRange.ToString(formatStr)}{seriesUnit}[/]");
+                AnsiConsole.WriteLine();
             }
         }
-
-        // Display the legend
-        AnsiConsole.MarkupLine("  [aqua]Legend:[/]");
-        foreach (var kvp in seriesChars)
+        else
         {
-            if (dataSeriesDict.TryGetValue(kvp.Key, out var result))
+            // Generate bin ranges for display, applying rounding only here
+            var binRanges = new List<Tuple<double, double>>();
+            for (int i = 0; i < numBins; i++)
             {
-                if (result.IsBimodal)
+                var start = Math.Round(binEdges[i], decimalPlaces);
+                var end = Math.Round(binEdges[i + 1], decimalPlaces);
+                binRanges.Add(Tuple.Create(start, end));
+            }
+
+            // Find the maximum bin count across all series for normalizing the bars
+            var maxBinCount = binsPerSeries.Values.SelectMany(k => k).Max();
+
+            // Generate the distribution chart
+            var labelWidth = 27; // Adjust as necessary
+            var barMaxLength = 40; // Maximum length of the bar
+
+            var formatStr = "F" + decimalPlaces; // Format string for decimal places
+
+            for (var i = 0; i < numBins; i++)
+            {
+                var start = binRanges[i].Item1;
+                var end = binRanges[i].Item2;
+
+                // Format the bin range string
+                var startStr = (start.ToString(formatStr) + unit).PadLeft(10);
+                var endStr = (end.ToString(formatStr) + unit).PadRight(10);
+                var rangeStr = $"{startStr} - {endStr}";
+                rangeStr = rangeStr.PadLeft(labelWidth);
+
+                var seriesCount = scaledDataSeriesDict.Keys.Count;
+                var seriesIndex = 0;
+
+                foreach (var seriesLabel in scaledDataSeriesDict.Keys)
                 {
-                    if (seriesColors.TryGetValue(kvp.Key, out var color))
+                    var count = binsPerSeries[seriesLabel][i];
+                    var maxCount = maxBinCount;
+                    var barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * barMaxLength) : 0;
+                    var barChar = seriesChars[seriesLabel];
+                    var barColor = seriesColors[seriesLabel];
+                    var bar = new string(barChar, barLength);
+
+                    var linePrefix = string.Empty.PadLeft(labelWidth + 1);
+
+                    if (seriesCount == 1)
                     {
-                        AnsiConsole.MarkupLine(
-                            $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        linePrefix = rangeStr + " ├ ";
+                    }
+                    else if (seriesIndex == 0)
+                    {
+                        if (seriesCount == 2)
+                        {
+                            linePrefix = rangeStr + " ┌ ";
+                        }
+                        else
+                        {
+                            linePrefix += "┌ ";
+                        }
+                    }
+                    else if (seriesIndex == seriesCount - 1)
+                    {
+                        linePrefix += "└ ";
+                    }
+                    else if (seriesIndex == seriesCount / 2)
+                    {
+                        linePrefix = rangeStr + " ┤ ";
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine(
-                            $"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        linePrefix += "│ ";
                     }
+
+                    // Use AnsiConsole to print colored bars with counts
+                    AnsiConsole.MarkupLine(linePrefix + $"[{barColor}]{bar.PadRight(barMaxLength)} ({count})[/]");
+                    seriesIndex++;
                 }
-                else
+            }
+
+            // Display the legend
+            AnsiConsole.MarkupLine("  [aqua]Legend:[/]");
+            foreach (var kvp in seriesChars)
+            {
+                if (dataSeriesDict.TryGetValue(kvp.Key, out var result))
                 {
-                    if (seriesColors.TryGetValue(kvp.Key, out var color))
+                    if (result.IsBimodal)
                     {
-                        AnsiConsole.MarkupLine($"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]");
+                        if (seriesColors.TryGetValue(kvp.Key, out var color))
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine(
+                                $"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                        }
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]");
+                        if (seriesColors.TryGetValue(kvp.Key, out var color))
+                        {
+                            AnsiConsole.MarkupLine($"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]");
+                        }
+                        else
+                        {
+                            AnsiConsole.MarkupLine($"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]");
+                        }
                     }
                 }
             }
-        }
 
-        // Display the overall range
-        AnsiConsole.MarkupLine($"  [aqua]Range: {range.ToString(formatStr)}{unit}[/]");
-        AnsiConsole.WriteLine();
+            // Display the overall range
+            AnsiConsole.MarkupLine($"  [aqua]Range: {range.ToString(formatStr)}{unit}[/]");
+            AnsiConsole.WriteLine();
+        }
     }
 }
