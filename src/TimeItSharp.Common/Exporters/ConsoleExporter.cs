@@ -230,7 +230,7 @@ public sealed class ConsoleExporter : IExporter
                 var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}" : "0";
                 var rowList = new List<string>
                 {
-                    $"{result.Name}",
+                    $"{result.Name} [[N={result.Count}]]",
                     $"{(result.Status == Status.Passed ? "[aqua]Passed" : "[red]Failed")}[/]",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Mean), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms",
