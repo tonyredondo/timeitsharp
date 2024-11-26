@@ -33,10 +33,11 @@ public sealed class ConsoleExporter : IExporter
         AnsiConsole.MarkupLine("[aqua bold underline]### Results (last 10):[/]");
         var resultsTable = new Table()
             .MarkdownBorder();
-        
+
         // Add columns
-        resultsTable.AddColumns(results.Scenarios.Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
-        
+        resultsTable.AddColumns(results.Scenarios
+            .Select(r => new TableColumn($"[dodgerblue1 bold]{r.Name}[/]").Centered()).ToArray());
+
         // Add rows
         var minDurationCount = Math.Min(results.Scenarios.Select(r => r.Durations.Count).Min(), 10);
         for (var i = minDurationCount; i > 0; i--)
@@ -47,14 +48,14 @@ public sealed class ConsoleExporter : IExporter
                 {
                     return Math.Round(Utils.FromNanosecondsToMilliseconds(r.Durations[^i]), 3) + "ms";
                 }
-                
+
                 return "-";
             }).ToArray());
         }
-        
+
         // Write table
         AnsiConsole.Write(resultsTable);
-        
+
         // ****************************************
         // Outliers table
         var maxOutliersCount = Math.Min(results.Scenarios.Select(r => r.Outliers.Count).Max(), 5);
@@ -127,7 +128,7 @@ public sealed class ConsoleExporter : IExporter
                 columnList.Add($"[dodgerblue1 bold]{additionalMetric.Key}[/]");
             }
         }
-        
+
         // Add columns
         summaryTable.AddColumns(columnList.ToArray());
 
@@ -138,7 +139,9 @@ public sealed class ConsoleExporter : IExporter
             var totalNum = result.MetricsData.Count;
             if (totalNum > 0)
             {
-                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}" : "0";
+                var outliersValue = result.Outliers.Count > 0
+                    ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}"
+                    : "0";
                 var rowList = new List<string>
                 {
                     $"[aqua underline]{result.Name} [[N={result.Count}]][/]",
@@ -147,12 +150,12 @@ public sealed class ConsoleExporter : IExporter
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 3)}ms[/]",
                     $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 3)}ms[/]",
-                    Math.Abs(result.Min - result.Max) > 0.0001 ?
-                        $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms[/]" :
-                        $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
-                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001 ?
-                        $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms[/]" :
-                        $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms[/]",
+                    Math.Abs(result.Min - result.Max) > 0.0001
+                        ? $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms[/]"
+                        : $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
+                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001
+                        ? $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms[/]"
+                        : $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms[/]",
                     $"[aqua]{outliersValue}[/]"
                 };
 
@@ -184,7 +187,7 @@ public sealed class ConsoleExporter : IExporter
 
                         metricsThreshold += 0.1;
                     }
-                    
+
 
                     var mMean = itemResult.Mean();
                     var mMedian = itemResult.Median();
@@ -211,15 +214,17 @@ public sealed class ConsoleExporter : IExporter
                         Math.Round(mStdDev, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mStdErr, 3).ToString(CultureInfo.InvariantCulture),
                         Math.Round(mMedian, 3).ToString(CultureInfo.InvariantCulture),
-                        Math.Abs(mMin - mMax) > 0.0001 ?
-                            $"[[{Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(mMax, 3).ToString(CultureInfo.InvariantCulture)}]]" : 
-                            Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture),
-                        Math.Abs(ci95[0] - ci95[1]) > 0.0001 ?
-                            $"[[{Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(ci95[1], 3).ToString(CultureInfo.InvariantCulture)}]]" : 
-                            Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture),
-                        (metricsOutliers.Count == 0 ? "0" : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 3) + "}"));
+                        Math.Abs(mMin - mMax) > 0.0001
+                            ? $"[[{Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(mMax, 3).ToString(CultureInfo.InvariantCulture)}]]"
+                            : Math.Round(mMin, 3).ToString(CultureInfo.InvariantCulture),
+                        Math.Abs(ci95[0] - ci95[1]) > 0.0001
+                            ? $"[[{Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture)} - {Math.Round(ci95[1], 3).ToString(CultureInfo.InvariantCulture)}]]"
+                            : Math.Round(ci95[0], 3).ToString(CultureInfo.InvariantCulture),
+                        (metricsOutliers.Count == 0
+                            ? "0"
+                            : metricsOutliers.Count + " {" + Math.Round(metricsThreshold, 3) + "}"));
                 }
-                
+
                 if (resultsList.Count - idx > 1)
                 {
                     summaryTable.AddEmptyRow();
@@ -227,7 +232,9 @@ public sealed class ConsoleExporter : IExporter
             }
             else
             {
-                var outliersValue = result.Outliers.Count > 0 ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}" : "0";
+                var outliersValue = result.Outliers.Count > 0
+                    ? $"{result.Outliers.Count} {{{Math.Round(result.OutliersThreshold, 3)}}}"
+                    : "0";
                 var rowList = new List<string>
                 {
                     $"{result.Name} [[N={result.Count}]]",
@@ -236,19 +243,21 @@ public sealed class ConsoleExporter : IExporter
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Stdev), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.StdErr), 3)}ms",
                     $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Median), 3)}ms",
-                    Math.Abs(result.Min - result.Max) > 0.0001 ?
-                        $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms" :
-                        $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
-                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001 ?
-                        $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms" :
-                        $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms",
+                    Math.Abs(result.Min - result.Max) > 0.0001
+                        ? $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms"
+                        : $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
+                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001
+                        ? $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms"
+                        : $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms",
                     $"{outliersValue}"
                 };
 
                 foreach (var additionalMetric in additionalMetrics)
                 {
                     var metricValue = additionalMetric.FirstOrDefault(item => item.ScenarioResult == result);
-                    rowList.Add(metricValue is null ? "-" : Math.Round(metricValue.Value, 3).ToString(CultureInfo.InvariantCulture));
+                    rowList.Add(metricValue is null
+                        ? "-"
+                        : Math.Round(metricValue.Value, 3).ToString(CultureInfo.InvariantCulture));
                 }
 
                 summaryTable.AddRow(rowList.ToArray());
@@ -258,8 +267,8 @@ public sealed class ConsoleExporter : IExporter
         // Write table
         AnsiConsole.Write(summaryTable);
         AnsiConsole.WriteLine();
-        
-        
+
+
         // ******************************
         // Write overhead table
 
@@ -292,7 +301,8 @@ public sealed class ConsoleExporter : IExporter
                     }
                     else
                     {
-                        row.Add($"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 3)}ms)");
+                        row.Add(
+                            $"{value.OverheadPercentage.ToString(CultureInfo.InvariantCulture)}% ({Math.Round(Utils.FromNanosecondsToMilliseconds(value.DeltaValue), 3)}ms)");
                     }
                 }
 
@@ -391,7 +401,7 @@ public sealed class ConsoleExporter : IExporter
         var binSize = range / numBins;
 
         // Determine the number of decimal places based on binSize
-        int decimalPlaces = binSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(binSize)) + 1;
+        var decimalPlaces = binSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(binSize)) + 1;
 
         // Create bin edges without rounding
         var binEdges = new List<double>();
@@ -420,14 +430,13 @@ public sealed class ConsoleExporter : IExporter
                 if (binIndex >= numBins) binIndex = numBins - 1; // Include the maximum in the last bin
                 bins[binIndex]++;
             }
-        } 
+        }
 
-        // Check if distributions are overlapping or not
         // Simplified overlapping detection
         var overlappingBinsThreshold = 4; // Set your desired threshold here
         var overlappingBinsCount = 0;
 
-        for (var i = 0; i < numBins; i++)
+        for (int i = 0; i < numBins; i++)
         {
             var seriesWithCounts = 0;
             foreach (var bins in binsPerSeries.Values)
@@ -435,6 +444,7 @@ public sealed class ConsoleExporter : IExporter
                 if (bins[i] > 0)
                     seriesWithCounts++;
             }
+
             if (seriesWithCounts > 1)
                 overlappingBinsCount++;
         }
@@ -457,7 +467,7 @@ public sealed class ConsoleExporter : IExporter
         // Assign colors to each series
         var seriesColors = new Dictionary<string, string>();
         var availableColors = new[] { "red", "green", "blue", "yellow", "magenta", "cyan", "white" };
-        int colorIndex = 0;
+        var colorIndex = 0;
         foreach (var seriesLabel in scaledDataSeriesDict.Keys)
         {
             seriesColors[seriesLabel] = availableColors[colorIndex % availableColors.Length];
@@ -475,43 +485,10 @@ public sealed class ConsoleExporter : IExporter
                 var seriesMaxData = data.Max();
 
                 // Determine unit and scale for this series based on its data
-                string seriesUnit;
-                double seriesScale;
-                if (seriesMaxData >= 60_000_000_000.0 / scale)
-                {
-                    seriesUnit = "m";
-                    seriesScale = 60_000_000_000.0 / scale;
-                }
-                else if (seriesMaxData >= 1_000_000_000.0 / scale)
-                {
-                    seriesUnit = "s";
-                    seriesScale = 1_000_000_000.0 / scale;
-                }
-                else if (seriesMaxData >= 1_000_000.0 / scale)
-                {
-                    seriesUnit = "ms";
-                    seriesScale = 1_000_000.0 / scale;
-                }
-                else if (seriesMaxData >= 1_000.0 / scale)
-                {
-                    seriesUnit = "μs";
-                    seriesScale = 1_000.0 / scale;
-                }
-                else
-                {
-                    seriesUnit = "ns";
-                    seriesScale = 1.0 / scale;
-                }
+                var seriesUnit = unit;
+                var seriesScale = 1.0d;
 
-                // Re-scale data if necessary
-                if (seriesScale != 1.0)
-                {
-                    data = data.Select(d => d / seriesScale).ToList();
-                    seriesMinData = data.Min();
-                    seriesMaxData = data.Max();
-                }
-
-                // Calculate the range and bin size
+                // Recalculate bin size and edges for this series
                 var seriesRange = seriesMaxData - seriesMinData;
 
                 // Avoid division by zero if all data points are equal
@@ -523,7 +500,7 @@ public sealed class ConsoleExporter : IExporter
                 var seriesBinSize = seriesRange / numBins;
 
                 // Determine the number of decimal places based on binSize
-                int seriesDecimalPlaces = seriesBinSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(seriesBinSize)) + 1;
+                var seriesDecimalPlaces = seriesBinSize >= 1 ? 1 : (int)Math.Ceiling(-Math.Log10(seriesBinSize)) + 1;
 
                 // Create bin edges without rounding
                 var seriesBinEdges = new List<double>();
@@ -586,17 +563,20 @@ public sealed class ConsoleExporter : IExporter
                 AnsiConsole.MarkupLine("  [aqua]Legend:[/]");
                 if (dataSeriesDict.TryGetValue(seriesLabel, out var result))
                 {
+                    // Format the width string
+                    var seriesRangeStr = $"Width: {seriesRange.ToString(formatStr)}{seriesUnit}";
+
                     if (result.IsBimodal)
                     {
                         if (seriesColors.TryGetValue(seriesLabel, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{seriesLabel}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{seriesLabel}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{seriesLabel}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{seriesLabel}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
                         }
                     }
                     else
@@ -604,18 +584,16 @@ public sealed class ConsoleExporter : IExporter
                         if (seriesColors.TryGetValue(seriesLabel, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{seriesLabel}[/]");
+                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{seriesLabel}[/]  {seriesRangeStr}");
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{seriesLabel}[/]");
+                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{seriesLabel}[/]  {seriesRangeStr}");
                         }
                     }
                 }
 
-                // Display the range
-                AnsiConsole.MarkupLine($"  [aqua]Range: {seriesRange.ToString(formatStr)}{seriesUnit}[/]");
                 AnsiConsole.WriteLine();
             }
         }
@@ -656,8 +634,7 @@ public sealed class ConsoleExporter : IExporter
                 foreach (var seriesLabel in scaledDataSeriesDict.Keys)
                 {
                     var count = binsPerSeries[seriesLabel][i];
-                    var maxCount = maxBinCount;
-                    var barLength = maxCount > 0 ? (int)Math.Round((double)count / maxCount * barMaxLength) : 0;
+                    var barLength = maxBinCount > 0 ? (int)Math.Round((double)count / maxBinCount * barMaxLength) : 0;
                     var barChar = seriesChars[seriesLabel];
                     var barColor = seriesColors[seriesLabel];
                     var bar = new string(barChar, barLength);
@@ -704,35 +681,44 @@ public sealed class ConsoleExporter : IExporter
             {
                 if (dataSeriesDict.TryGetValue(kvp.Key, out var result))
                 {
+                    // Get the scaled data for this series
+                    var seriesData = scaledDataSeriesDict[kvp.Key];
+                    var seriesMinData = seriesData.Min();
+                    var seriesMaxData = seriesData.Max();
+                    var seriesRange = seriesMaxData - seriesMinData;
+
+                    // Format the width string
+                    var seriesRangeStr = $"Width: {seriesRange.ToString(formatStr)}{unit}";
+
                     if (result.IsBimodal)
                     {
                         if (seriesColors.TryGetValue(kvp.Key, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                $"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
                         }
                     }
                     else
                     {
                         if (seriesColors.TryGetValue(kvp.Key, out var color))
                         {
-                            AnsiConsole.MarkupLine($"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]");
+                            AnsiConsole.MarkupLine(
+                                $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{kvp.Key}[/]  {seriesRangeStr}");
                         }
                         else
                         {
-                            AnsiConsole.MarkupLine($"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]");
+                            AnsiConsole.MarkupLine(
+                                $"    {kvp.Value} : [dodgerblue1 bold]{kvp.Key}[/]  {seriesRangeStr}");
                         }
                     }
                 }
             }
 
-            // Display the overall range
-            AnsiConsole.MarkupLine($"  [aqua]Range: {range.ToString(formatStr)}{unit}[/]");
             AnsiConsole.WriteLine();
         }
     }
