@@ -71,6 +71,8 @@ public class Config : ProcessData
     [JsonPropertyName("minimumErrorReduction")]
     public double MinimumErrorReduction { get; set; }
     
+    [JsonPropertyName("overheadThreshold")]
+    public double OverheadThreshold { get; set; }
     
     public Config()
     {
@@ -96,6 +98,7 @@ public class Config : ProcessData
         MaximumDurationInMinutes = 45;
         EvaluationInterval = 10;
         MinimumErrorReduction = 0.001;
+        OverheadThreshold = 0;
     }
 
     public static Config LoadConfiguration(string filePath)
@@ -139,7 +142,9 @@ public class Config : ProcessData
         EnableDatadog = EnableDatadog,
         EnableMetrics = EnableMetrics,
         MetricsProcessName = MetricsProcessName,
-        Scenarios = Scenarios.Select(i => i.Clone()).ToList(),
+        Scenarios = Scenarios.Any(s => s.IsBaseline) ? 
+            Scenarios.Select(i => i.Clone()).OrderByDescending(s => s.IsBaseline).ToList() :
+            Scenarios.Select(i => i.Clone()).ToList(),
         JsonExporterFilePath = JsonExporterFilePath,
         Exporters = Exporters.Select(i => i.Clone()).ToList(),
         Assertors = Assertors.Select(i => i.Clone()).ToList(),
@@ -159,5 +164,6 @@ public class Config : ProcessData
         MaximumDurationInMinutes = MaximumDurationInMinutes,
         EvaluationInterval = EvaluationInterval,
         MinimumErrorReduction = MinimumErrorReduction,
+        OverheadThreshold = OverheadThreshold,
     };
 }

@@ -25,7 +25,7 @@ public abstract class Assertor : IAssertor
     {
     }
 
-    public abstract AssertResponse ScenarioAssertion(IReadOnlyList<DataPoint> dataPoints);
+    public abstract AssertResponse ScenarioAssertion(ScenarioResult scenarioResult);
 
     public abstract AssertResponse ExecutionAssertion(in AssertionData data);
 }

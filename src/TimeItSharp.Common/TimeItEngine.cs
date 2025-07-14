@@ -109,6 +109,11 @@ public static class TimeItEngine
         var scenarioWithErrors = 0;
         if (config is { Count: > 0, Scenarios.Count: > 0 })
         {
+            if (config.Scenarios.Any(s => s.IsBaseline))
+            {
+                config.Scenarios = config.Scenarios.OrderByDescending(s => s.IsBaseline).ToList();
+            }
+
             callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
             for(var i = 0; i < config.Scenarios.Count; i++)
             {
