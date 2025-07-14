@@ -49,6 +49,7 @@ jobs:
 
       # Publish any .nupkg artifacts
       - uses: actions/upload-artifact@v4
+        if: matrix.tfm == 'net9.0'
         with:
           name: Nugets
           path: ./**/*.nupkg
