@@ -30,7 +30,19 @@ jobs:
     - name: Build
       run: dotnet build --no-restore -c Release
 
-    - name: Run timeitsharp dotnet tool sample
+    - name: Run timeitsharp dotnet tool sample net6.0
+      run: ./TimeItSharp config-example.json
+      working-directory: src/TimeItSharp/bin/Release/net6.0
+
+    - name: Run timeitsharp dotnet tool sample net7.0
+      run: ./TimeItSharp config-example.json
+      working-directory: src/TimeItSharp/bin/Release/net7.0
+
+    - name: Run timeitsharp dotnet tool sample net8.0
+      run: ./TimeItSharp config-example.json
+      working-directory: src/TimeItSharp/bin/Release/net8.0
+
+    - name: Run timeitsharp dotnet tool sample net9.0
       run: ./TimeItSharp config-example.json
       working-directory: src/TimeItSharp/bin/Release/net9.0
 
