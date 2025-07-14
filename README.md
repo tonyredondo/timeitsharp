@@ -123,6 +123,7 @@ Assertors = DefaultAssertor
   "scenarios": [
     {
       "name": "Callsite",
+      "isBaseline": true,
       "environmentVariables": {
         "DD_TRACE_CALLTARGET_ENABLED": "false",
         "DD_CLR_ENABLE_INLINING": "false"
@@ -164,7 +165,8 @@ Assertors = DefaultAssertor
     "maxDuration": 15,
     "processName": "dotnet-dump",
     "processArguments": "collect --process-id %pid%"
-  }
+  },
+  "overheadThreshold": 0.1
 }
 ```
 
@@ -173,288 +175,199 @@ Assertors = DefaultAssertor
 ```bash
 dotnet timeit config-example.json
 
-TimeItSharp v0.1.20
+TimeItSharp v0.4.0
 Warmup count: 10
-Count: 100
+Max count: 100
+Acceptable relative width: 0,7%
+Confidence level: 95%
+Minimum error reduction: 0,1%
+Maximum duration: 45min
+Overhead threshold: 10%
 Number of Scenarios: 3
 Exporters: ConsoleExporter, JsonExporter, Datadog
 Assertors: DefaultAssertor
 Services: NoopService, DatadogProfiler, Execute
 
 *** onScenarioStart ***
-ExecuteService.OnScenarioStart: ProcessId: 2251, ProcessName: echo, Duration: 00:00:00.0005176, ExitCode: 0
+ExecuteService.OnScenarioStart: ProcessId: 57272, ProcessName: echo, Duration: 00:00:00.0114420, ExitCode: 0
 Scenario: Callsite
+  Cmd: dotnet --version
   Warming up ..........
-    Duration: 1.168s
+    Duration: 1 sec 894 ms
   Run ....................................................................................................
-    Duration: 11.304s
+    Duration: 17 sec 610 ms
 
 *** onScenarioFinish ***
-ExecuteService.OnScenarioFinish: ProcessId: 3688, ProcessName: echo, Duration: 00:00:00.0008148, ExitCode: 0
+ExecuteService.OnScenarioFinish: ProcessId: 57762, ProcessName: echo, Duration: 00:00:00.0029140, ExitCode: 0
 *** onScenarioStart ***
-ExecuteService.OnScenarioStart: ProcessId: 3689, ProcessName: echo, Duration: 00:00:00.0006283, ExitCode: 0
+ExecuteService.OnScenarioStart: ProcessId: 57763, ProcessName: echo, Duration: 00:00:00.0021860, ExitCode: 0
 Scenario: CallTarget
+  Cmd: dotnet --version
   Warming up ..........
-    Duration: 1.125s
+    Duration: 1 sec 783 ms
   Run ....................................................................................................
-    Duration: 11.301s
-  Run for 'DatadogProfiler' .....
-    Duration: 0.571s
+    Duration: 17 sec 575 ms
 
 *** onScenarioFinish ***
-ExecuteService.OnScenarioFinish: ProcessId: 5188, ProcessName: echo, Duration: 00:00:00.0007385, ExitCode: 0
+ExecuteService.OnScenarioFinish: ProcessId: 58246, ProcessName: echo, Duration: 00:00:00.0023170, ExitCode: 0
 *** onScenarioStart ***
-ExecuteService.OnScenarioStart: ProcessId: 5189, ProcessName: echo, Duration: 00:00:00.0006489, ExitCode: 0
+ExecuteService.OnScenarioStart: ProcessId: 58247, ProcessName: echo, Duration: 00:00:00.0061310, ExitCode: 0
 Scenario: CallTarget+Inlining
+  Cmd: dotnet --version
   Warming up ..........
-    Duration: 1.119s
-  Run ....................................................................................................
-    Duration: 11.395s
+    Duration: 1 sec 777 ms
+  Run ......................................................................................
+    Acceptable relative width criteria met. Stopping iterations for this scenario.
+    N: 82
+    Mean: 82,05ms
+    Confidence Interval at 95: [81,764ms, 82,336ms]. Relative width: 0,6971%
+    Duration: 15 sec 141 ms
 
 *** onScenarioFinish ***
-ExecuteService.OnScenarioFinish: ProcessId: 6624, ProcessName: echo, Duration: 00:00:00.0008311, ExitCode: 0
+ExecuteService.OnScenarioFinish: ProcessId: 58713, ProcessName: echo, Duration: 00:00:00.0023110, ExitCode: 0
 *** afterAllScenariosFinishes ***
-ExecuteService.AfterAllScenariosFinishes: ProcessId: 6625, ProcessName: echo, Duration: 00:00:00.0006619, ExitCode: 0
-### Results:
-                                                 
-|  Callsite  | CallTarget | CallTarget+Inlining |
-| :--------: | :--------: | :-----------------: |
-| 109.2346ms | 111.758ms  |     108.3788ms      |
-| 109.457ms  | 107.6328ms |     112.7663ms      |
-| 108.8787ms | 105.9236ms |      111.38ms       |
-|  106.91ms  | 106.0436ms |     106.9646ms      |
-| 111.9347ms | 105.9738ms |     107.9317ms      |
-| 105.5839ms | 106.4764ms |      108.894ms      |
-| 112.3722ms | 109.7447ms |     107.7772ms      |
-| 112.7142ms | 105.9935ms |     108.8228ms      |
-| 107.5852ms | 110.5389ms |     107.8372ms      |
-| 109.3131ms | 109.6994ms |     108.5756ms      |
-| 109.5149ms |  108.77ms  |     106.6446ms      |
-| 107.2906ms | 111.1041ms |     108.6976ms      |
-| 110.8005ms | 112.6504ms |      109.502ms      |
-| 105.3984ms | 107.4712ms |     110.9537ms      |
-| 107.7733ms | 106.5414ms |     107.9076ms      |
-| 107.3503ms | 107.8755ms |     107.9666ms      |
-| 108.1036ms | 107.3688ms |     108.8376ms      |
-| 106.3998ms | 107.5925ms |     106.2671ms      |
-| 108.841ms  | 110.6364ms |     112.7802ms      |
-| 110.7411ms | 106.8128ms |     106.6458ms      |
-| 107.1777ms | 109.6314ms |      106.918ms      |
-| 107.7304ms | 108.6489ms |      109.133ms      |
-| 107.0896ms | 107.9967ms |     105.7922ms      |
-| 111.9551ms | 107.7906ms |     112.2041ms      |
-| 110.7133ms | 107.545ms  |     109.9699ms      |
-| 110.1093ms | 104.9762ms |     108.1229ms      |
-| 107.0203ms | 106.6629ms |     106.8509ms      |
-| 109.6226ms | 106.0384ms |     110.2012ms      |
-| 109.8574ms | 105.7464ms |     108.0679ms      |
-| 112.3784ms | 107.1098ms |     109.7055ms      |
-| 106.1678ms | 110.2196ms |      108.384ms      |
-| 108.4149ms | 107.3171ms |     110.6492ms      |
-| 106.0006ms | 112.157ms  |     106.6742ms      |
-| 109.8474ms | 109.6759ms |     108.8397ms      |
-| 111.2227ms | 111.0033ms |     107.1974ms      |
-| 109.7039ms | 107.2979ms |     111.9186ms      |
-| 108.7286ms | 108.7697ms |      110.902ms      |
-| 107.0425ms | 106.7501ms |     108.1721ms      |
-| 108.6615ms | 106.7527ms |     107.6549ms      |
-| 107.5691ms | 106.7101ms |      108.66ms       |
-| 106.4025ms | 110.6951ms |     109.6942ms      |
-| 106.7171ms | 111.1953ms |     105.9181ms      |
-| 106.848ms  | 108.5743ms |     109.0042ms      |
-| 105.6857ms | 107.706ms  |      111.806ms      |
-| 106.1583ms | 106.4534ms |     106.2859ms      |
-| 109.5718ms | 112.6558ms |     109.2141ms      |
-| 110.9806ms | 106.3897ms |     107.9621ms      |
-| 106.8286ms | 108.9212ms |      112.042ms      |
-| 111.3773ms | 111.8226ms |     110.0811ms      |
-| 109.7497ms | 109.111ms  |     105.8674ms      |
-| 108.6592ms | 107.8792ms |      108.56ms       |
-| 106.9794ms | 108.4423ms |     105.9217ms      |
-| 110.5499ms | 109.8919ms |     107.6504ms      |
-| 106.1873ms | 108.8743ms |     106.0812ms      |
-| 109.1318ms | 111.5101ms |     106.4947ms      |
-| 112.2361ms | 108.2432ms |     109.4954ms      |
-| 106.2841ms | 109.4719ms |     107.7369ms      |
-| 112.9023ms | 110.6768ms |     108.4328ms      |
-| 110.9372ms | 110.0687ms |     108.1484ms      |
-| 109.878ms  | 108.7001ms |     108.7459ms      |
-| 110.3126ms | 107.1713ms |     108.3352ms      |
-| 112.141ms  | 108.1855ms |     109.5345ms      |
-| 109.498ms  | 108.4606ms |     106.9613ms      |
-| 109.4807ms | 108.5445ms |     112.2276ms      |
-| 107.5639ms | 110.0628ms |     106.6939ms      |
-| 109.4453ms | 106.9689ms |     106.5953ms      |
-| 111.7053ms | 106.8701ms |     111.9629ms      |
-| 107.527ms  | 106.2626ms |     112.6658ms      |
-| 108.9292ms | 107.364ms  |     110.1322ms      |
-| 107.7035ms | 107.8079ms |     110.3307ms      |
-| 107.8485ms | 105.9026ms |     108.0104ms      |
-| 112.5987ms | 107.3507ms |     111.2351ms      |
-| 108.1454ms | 106.9578ms |      109.105ms      |
-| 110.6599ms | 105.6008ms |     110.9302ms      |
-| 108.618ms  | 109.6726ms |     108.3211ms      |
-| 112.9511ms | 107.2508ms |     106.2207ms      |
-| 106.3289ms | 110.8919ms |     111.1861ms      |
-| 109.5615ms | 109.9789ms |     109.1289ms      |
-| 108.9674ms | 108.8175ms |     111.7899ms      |
-| 112.2539ms | 108.5782ms |     110.8389ms      |
-| 107.6025ms | 109.138ms  |     109.1483ms      |
-| 106.8067ms | 111.1468ms |     108.5029ms      |
-| 109.701ms  | 110.5281ms |     109.5014ms      |
-| 107.8686ms | 107.0584ms |     111.9322ms      |
-| 108.6323ms | 106.2539ms |     107.7478ms      |
-|     -      | 109.3969ms |     111.1095ms      |
-|     -      | 110.5424ms |     109.3917ms      |
-|     -      | 108.0559ms |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-|     -      |     -      |          -          |
-                                                 
-### Outliers:
-                                                 
-|  Callsite  | CallTarget | CallTarget+Inlining |
-| :--------: | :--------: | :-----------------: |
-| 113.2313ms | 113.8429ms |     126.9193ms      |
-| 114.9186ms | 114.3078ms |     104.7638ms      |
-| 103.9234ms | 104.6651ms |     113.1931ms      |
-| 117.7886ms | 112.9772ms |      113.561ms      |
-| 105.164ms  | 104.6341ms |     105.5102ms      |
-| 113.9996ms | 104.8206ms |     123.9977ms      |
-| 113.3056ms | 116.4127ms |     114.5014ms      |
-| 104.5954ms | 114.234ms  |     105.1209ms      |
-| 114.0536ms | 135.7914ms |     105.2464ms      |
-| 104.7394ms | 103.5618ms |     104.9456ms      |
-| 114.6633ms | 114.8296ms |     104.9361ms      |
-| 104.8725ms | 104.1823ms |     115.2648ms      |
-| 103.767ms  |     -      |     104.3818ms      |
-| 127.6107ms |     -      |          -          |
-| 113.268ms  |     -      |          -          |
-                                                 
+ExecuteService.AfterAllScenariosFinishes: ProcessId: 58714, ProcessName: echo, Duration: 00:00:00.0022520, ExitCode: 0
+### Results (last 10):
+                                               
+| Callsite | CallTarget | CallTarget+Inlining |
+| :------: | :--------: | :-----------------: |
+| 80,743ms |  83,044ms  |      80,732ms       |
+| 81,672ms |  81,522ms  |      82,712ms       |
+| 82,224ms |  80,891ms  |      81,288ms       |
+| 82,71ms  |  80,833ms  |      81,287ms       |
+| 82,256ms |  80,549ms  |       81,53ms       |
+| 83,502ms |  80,168ms  |       80,64ms       |
+| 82,368ms |  80,494ms  |      81,656ms       |
+| 82,076ms |  82,498ms  |      84,044ms       |
+| 81,51ms  |  83,453ms  |      81,702ms       |
+| 85,344ms |  81,94ms   |      81,283ms       |
+                                               
+### Outliers (last 5):
+                                               
+| Callsite | CallTarget | CallTarget+Inlining |
+| :------: | :--------: | :-----------------: |
+| 87,907ms |  87,308ms  |      87,211ms       |
+| 87,434ms |  90,669ms  |      84,566ms       |
+| 90,536ms |  89,403ms  |       88,14ms       |
+| 88,04ms  |  88,565ms  |      84,275ms       |
+| 90,688ms |  88,601ms  |       80,44ms       |
+                                               
 ### Distribution:
 
-                            ┌ ███████                                  (3)
-    104.9762ms - 105.7012ms ├ ▒▒▒▒▒                                    (2)
+                            ┌ ██████████                               (5)
+       79,95ms - 80,53ms    ┤ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                     (10)
                             └                                          (0)
-                            ┌ ███████████████████                      (8)
-    105.7012ms - 106.4262ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                 (10)
-                            └ ░░░░░░░░░░░░░░░░░░░                      (8)
-                            ┌ █████████████████████                    (9)
-    106.4262ms - 107.1512ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒          (13)
-                            └ ░░░░░░░░░░░░░░░░░░░░░░░░                 (10)
-                            ┌ ███████████████████████████████          (13)
-    107.1512ms - 107.8762ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒      (15)
-                            └ ░░░░░░░░░░░░░░░░                         (7)
-                            ┌ ███████                                  (3)
-    107.8762ms - 108.6012ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                 (10)
-                            └ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ (17)
-                            ┌ ████████████████████████████             (12)
-    108.6012ms - 109.3262ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                    (9)
-                            └ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░          (13)
-                            ┌ █████████████████████████████████        (14)
-    109.3261ms - 110.0511ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                    (9)
-                            └ ░░░░░░░░░░░░░░░░░░░                      (8)
-                            ┌ ██████████████                           (6)
-    110.0511ms - 110.7761ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                    (9)
-                            └ ░░░░░░░░░░░░                             (5)
-                            ┌ ████████████                             (5)
-    110.7761ms - 111.5011ms ├ ▒▒▒▒▒▒▒▒▒▒▒▒                             (5)
-                            └ ░░░░░░░░░░░░░░░░░░░                      (8)
-                            ┌ █████████                                (4)
-    111.5011ms - 112.2261ms ├ ▒▒▒▒▒▒▒▒▒                                (4)
-                            └ ░░░░░░░░░░░░░░░░                         (7)
-                            ┌ ███████████████████                      (8)
-    112.2261ms - 112.9511ms ├ ▒▒▒▒▒                                    (2)
-                            └ ░░░░░░░░░                                (4)
+                            ┌ ██████████████                           (7)
+       80,53ms - 81,10ms    ┤ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒           (15)
+                            └ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ (20)
+                            ┌ ████████████████████████████████████     (18)
+       81,10ms - 81,68ms    ┤ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒         (16)
+                            └ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   (19)
+                            ┌ ██████████████████████████████████████   (19)
+       81,68ms - 82,25ms    ┤ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒       (17)
+                            └ ░░░░░░░░░░░░░░                           (7)
+                            ┌ ██████████████████████                   (11)
+       82,25ms - 82,83ms    ┤ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                         (8)
+                            └ ░░░░░░░░░░░░░░░░░░░░░░                   (11)
+                            ┌ ████████████                             (6)
+       82,83ms - 83,40ms    ┤ ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒                         (8)
+                            └ ░░░░░░░░                                 (4)
+                            ┌ ████████████                             (6)
+       83,40ms - 83,98ms    ┤ ▒▒▒▒▒▒                                   (3)
+                            └ ░░░░░░░░░░░░                             (6)
+                            ┌ ████████                                 (4)
+       83,98ms - 84,56ms    ┤ ▒▒▒▒▒▒▒▒                                 (4)
+                            └ ░░░░░░░░                                 (4)
+                            ┌ ████████                                 (4)
+       84,56ms - 85,13ms    ┤ ▒▒▒▒                                     (2)
+                            └                                          (0)
+                            ┌ ██████                                   (3)
+       85,13ms - 85,71ms    ┤ ▒▒▒▒                                     (2)
+                            └                                          (0)
+                            ┌ ██████                                   (3)
+       85,71ms - 86,28ms    ┤ ▒▒                                       (1)
+                            └                                          (0)
   Legend:
-    █ : Callsite
-    ▒ : CallTarget
-    ░ : CallTarget+Inlining
-  Range: 7.9749ms
+    █ : Callsite  Width: 6,14ms
+    ▒ : CallTarget  Width: 5,99ms
+    ░ : CallTarget+Inlining  Width: 3,53ms
 
 ### Summary:
-                                                                                                                                                                                        
-| Name                                        | Status | Mean             | StdDev      | StdErr     | Min        | Median     | Max        | P95        | P90              | Outliers |
-| ------------------------------------------- | ------ | ---------------- | ----------- | ---------- | ---------- | ---------- | ---------- | ---------- | ---------------- | -------- |
-| Callsite                                    | Passed | 108.9426ms       | 2.0188ms    | 0.2189ms   | 105.3984ms | 108.8787ms | 112.9511ms | 112.4665ms | 112.1536ms       | 15 {1.2} |
-|   ├>process.corrected_duration_ms           |        | 73.82112         | 1.414598    | 0.169077   | 71.5705    | 73.76285   | 76.5742    | 76.36403   | 75.76946         | 13 {1.4} |
-|   ├>process.internal_duration_ms            |        | 36.4032          | 0.165846    | 0.020414   | 36.1472    | 36.4544    | 36.6592    | 36.6592    | 36.6592          | 16 {1.2} |
-|   ├>process.startuphook_overhead_ms         |        | 34.720614        | 0.160398    | 0.018773   | 34.5088    | 34.7136    | 35.0208    | 35.0208    | 34.9184          | 15 {1.1} |
-|   ├>process.time_to_end_main_ms             |        | 3.698297         | 0.07774     | 0.009497   | 3.5914     | 3.6742     | 3.8552     | 3.83974    | 3.828047         | 15 {1.2} |
-|   ├>process.time_to_end_ms                  |        | 3.616477         | 0.089045    | 0.010568   | 3.489      | 3.5921     | 3.8028     | 3.77897    | 3.75196          | 10 {1.4} |
-|   ├>process.time_to_main_ms                 |        | 68.324333        | 1.415813    | 0.170444   | 66.0241    | 68.2349    | 71.1033    | 70.91762   | 70.23046         | 13 {1.4} |
-|   ├>process.time_to_start_ms                |        | 33.582616        | 1.311821    | 0.160264   | 31.4907    | 33.3745    | 36.1885    | 35.89104   | 35.43982         | 14 {1.4} |
-|   ├>runtime.dotnet.cpu.percent              |        | 6.601562         | 0.564962    | 0.057661   | 6.25       | 6.25       | 7.5        | 7.5        | 7.5              | 0        |
-|   ├>runtime.dotnet.cpu.system               |        | 320.555556       | 24.739593   | 2.607782   | 300        | 300        | 350        | 350        | 350              | 0        |
-|   ├>runtime.dotnet.cpu.user                 |        | 61.111111        | 20.90344    | 2.203416   | 50         | 50         | 100        | 100        | 100              | 0        |
-|   ├>runtime.dotnet.mem.committed            |        | 143263217.371429 | 6548.085465 | 782.645908 | 143253504  | 143263744  | 143273984  | 143273984  | 143272482.133333 | 12 {1.2} |
-|   ├>runtime.dotnet.threads.contention_count |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.dotnet.threads.contention_time  |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.dotnet.threads.count            |        | 9                | 0           | 0          | 9          | 9          | 9          | 9          | 9                | 0        |
-|   ├>runtime.dotnet.threads.workers_count    |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.process.private_bytes           |        | 143263217.371429 | 6548.085465 | 782.645908 | 143253504  | 143263744  | 143273984  | 143273984  | 143272482.133333 | 12 {1.2} |
-|   └>runtime.process.processor_time          |        | 264.0625         | 22.598469   | 2.306447   | 250        | 250        | 300        | 300        | 300              | 0        |
-| CallTarget                                  | Passed | 108.4489ms       | 1.8471ms    | 0.1969ms   | 104.9762ms | 108.2143ms | 112.6558ms | 111.7741ms | 111.0873ms       | 12 {1.1} |
-|   ├>process.corrected_duration_ms           |        | 73.494025        | 1.161826    | 0.14194    | 71.7469    | 73.402     | 75.6749    | 75.47155   | 75.14616         | 16 {1.3} |
-|   ├>process.internal_duration_ms            |        | 36.372211        | 0.195023    | 0.022371   | 36.0448    | 36.352     | 36.7616    | 36.6592    | 36.6592          | 11 {1.3} |
-|   ├>process.startuphook_overhead_ms         |        | 34.595109        | 0.131201    | 0.015681   | 34.4064    | 34.6112    | 34.816     | 34.816     | 34.7136          | 13 {1.4} |
-|   ├>process.time_to_end_main_ms             |        | 3.695697         | 0.086281    | 0.010387   | 3.5681     | 3.6749     | 3.8596     | 3.85016    | 3.825787         | 17 {1.3} |
-|   ├>process.time_to_end_ms                  |        | 3.596844         | 0.080558    | 0.009561   | 3.4814     | 3.5725     | 3.7643     | 3.74748    | 3.721727         | 15 {1.3} |
-|   ├>process.time_to_main_ms                 |        | 67.849604        | 1.208974    | 0.14661    | 65.9691    | 67.767     | 70.1687    | 69.922225  | 69.70265         | 13 {1.4} |
-|   ├>process.time_to_start_ms                |        | 33.298051        | 1.126381    | 0.137609   | 31.6508    | 33.2609    | 35.3202    | 35.20467   | 35.032587        | 14 {1.3} |
-|   ├>runtime.dotnet.cpu.percent              |        | 6.25             | 0           | 0          | 6.25       | 6.25       | 6.25       | 6.25       | 6.25             | 0        |
-|   ├>runtime.dotnet.cpu.system               |        | 313.297872       | 22.210542   | 2.290842   | 300        | 300        | 350        | 350        | 350              | 0        |
-|   ├>runtime.dotnet.cpu.user                 |        | 50               | 0           | 0          | 50         | 50         | 50         | 50         | 50               | 12 {0.5} |
-|   ├>runtime.dotnet.mem.committed            |        | 143288868.056338 | 7560.245241 | 897.236038 | 143278080  | 143290368  | 143302656  | 143302656  | 143300744.533333 | 15 {1}   |
-|   ├>runtime.dotnet.threads.contention_count |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.dotnet.threads.contention_time  |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.dotnet.threads.count            |        | 9                | 0           | 0          | 9          | 9          | 9          | 9          | 9                | 0        |
-|   ├>runtime.dotnet.threads.workers_count    |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.process.private_bytes           |        | 143288868.056338 | 7560.245241 | 897.236038 | 143278080  | 143290368  | 143302656  | 143302656  | 143300744.533333 | 15 {1}   |
-|   └>runtime.process.processor_time          |        | 250              | 0           | 0          | 250        | 250        | 250        | 250        | 250              | 0        |
-| CallTarget+Inlining                         | Passed | 108.9221ms       | 1.8819ms    | 0.2017ms   | 105.7922ms | 108.6976ms | 112.7802ms | 112.2111ms | 111.911ms        | 13 {1.1} |
-|   ├>process.corrected_duration_ms           |        | 73.933967        | 1.256155    | 0.150139   | 71.5745    | 73.9554    | 76.4983    | 76.298555  | 75.799317        | 15 {1.5} |
-|   ├>process.internal_duration_ms            |        | 36.436591        | 0.131367    | 0.015815   | 36.2496    | 36.4544    | 36.6592    | 36.6592    | 36.6592          | 16 {1.1} |
-|   ├>process.startuphook_overhead_ms         |        | 34.709273        | 0.137859    | 0.016361   | 34.5088    | 34.7136    | 35.0208    | 35.0208    | 34.9184          | 17 {1.3} |
-|   ├>process.time_to_end_main_ms             |        | 3.73053          | 0.077076    | 0.009212   | 3.602      | 3.72955    | 3.871      | 3.861505   | 3.847877         | 14 {1.4} |
-|   ├>process.time_to_end_ms                  |        | 3.639668         | 0.07234     | 0.008773   | 3.5239     | 3.6374     | 3.7697     | 3.7608     | 3.749183         | 13 {1.4} |
-|   ├>process.time_to_main_ms                 |        | 68.126586        | 1.235002    | 0.148677   | 65.9615    | 68.2915    | 70.9775    | 70.2568    | 69.71754         | 14 {1.5} |
-|   ├>process.time_to_start_ms                |        | 33.494927        | 1.129705    | 0.138015   | 31.5109    | 33.7005    | 35.8348    | 35.16279   | 34.84454         | 15 {1.4} |
-|   ├>runtime.dotnet.cpu.percent              |        | 6.581633         | 0.554707    | 0.056034   | 6.25       | 6.25       | 7.5        | 7.5        | 7.5              | 0        |
-|   ├>runtime.dotnet.cpu.system               |        | 318.085106       | 24.153479   | 2.491241   | 300        | 300        | 350        | 350        | 350              | 0        |
-|   ├>runtime.dotnet.cpu.user                 |        | 50               | 0           | 0          | 50         | 50         | 50         | 50         | 50               | 14 {0.5} |
-|   ├>runtime.dotnet.mem.committed            |        | 143315867.042254 | 8313.890764 | 986.677307 | 143298560  | 143314944  | 143327232  | 143327232  | 143327232        | 12 {1.2} |
-|   ├>runtime.dotnet.threads.contention_count |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.dotnet.threads.contention_time  |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.dotnet.threads.count            |        | 9                | 0           | 0          | 9          | 9          | 9          | 9          | 9                | 0        |
-|   ├>runtime.dotnet.threads.workers_count    |        | 0                | 0           | 0          | 0          | 0          | 0          | 0          | 0                | 0        |
-|   ├>runtime.process.private_bytes           |        | 143315867.042254 | 8313.890764 | 986.677307 | 143298560  | 143314944  | 143327232  | 143327232  | 143327232        | 12 {1.2} |
-|   └>runtime.process.processor_time          |        | 263.265306       | 22.1883     | 2.241357   | 250        | 250        | 300        | 300        | 300              | 0        |
-                                                                                                                                                                                        
+                                                                                                                                                                       
+| Name                                        | Status | Mean     | StdDev  | StdErr  | Median   | C. Interval 100%     | C. Interval 95%      | Outliers | Overhead% |
+| ------------------------------------------- | ------ | -------- | ------- | ------- | -------- | -------------------- | -------------------- | -------- | --------- |
+| Callsite [N=100]                            | Passed | 82,47ms  | 1,468ms | 0,158ms | 82,132ms | [80,146 - 86,284] ms | [82,156 - 82,785] ms | 14 {1,2} | 0         |
+|   ├>process.corrected_duration_ms           |        | 62.548   | 0.668   | 0.08    | 62.488   | [61.389 - 64.027]    | [62.387 - 62.708]    | 17 {1,2} |           |
+|   ├>process.internal_duration_ms            |        | 31.943   | 0.356   | 0.042   | 31.846   | [31.437 - 32.768]    | [31.859 - 32.027]    | 11 {1,3} |           |
+|   ├>process.startuphook_overhead_ms         |        | 19.63    | 0.228   | 0.027   | 19.558   | [19.251 - 20.173]    | [19.575 - 19.684]    | 13 {1,2} |           |
+|   ├>process.time_to_end_main_ms             |        | 1.672    | 0.097   | 0.012   | 1.646    | [1.552 - 1.888]      | [1.649 - 1.695]      | 13 {1,2} |           |
+|   ├>process.time_to_end_ms                  |        | 1.625    | 0.086   | 0.01    | 1.597    | [1.51 - 1.812]       | [1.604 - 1.646]      | 16 {1,2} |           |
+|   ├>process.time_to_main_ms                 |        | 48.572   | 0.588   | 0.07    | 48.523   | [47.605 - 49.766]    | [48.432 - 48.712]    | 14 {1,3} |           |
+|   ├>process.time_to_start_ms                |        | 28.86    | 0.346   | 0.042   | 28.847   | [28.241 - 29.591]    | [28.777 - 28.943]    | 14 {1,4} |           |
+|   ├>runtime.dotnet.cpu.percent              |        | 1.438    | 0.022   | 0.002   | 1.45     | [1.4 - 1.45]         | [1.433 - 1.443]      | 13 {1,6} |           |
+|   ├>runtime.dotnet.cpu.system               |        | 214.504  | 2.241   | 0.27    | 214.61   | [210.67 - 220.345]   | [213.966 - 215.043]  | 15 {1,3} |           |
+|   ├>runtime.dotnet.cpu.user                 |        | 43.752   | 1.186   | 0.143   | 43.685   | [41.745 - 46.065]    | [43.467 - 44.037]    | 13 {1,4} |           |
+|   ├>runtime.dotnet.mem.committed            |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.contention_count |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.contention_time  |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.count            |        | 13.5     | 0       | 0       | 13.5     | 13.5                 | 13.5                 | 0        |           |
+|   ├>runtime.dotnet.threads.workers_count    |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.process.private_bytes           |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   └>runtime.process.processor_time          |        | 170.794  | 1.839   | 0.223   | 170.202  | [168.41 - 175.15]    | [170.349 - 171.24]   | 15 {1,1} |           |
+|                                             |        |          |         |         |          |                      |                      |          |           |
+| CallTarget [N=100]                          | Passed | 81,959ms | 1,328ms | 0,143ms | 81,799ms | [79,95 - 85,938] ms  | [81,674 - 82,244] ms | 14 {0,8} | -0,62     |
+|   ├>process.corrected_duration_ms           |        | 62.074   | 0.669   | 0.079   | 62.006   | [61.038 - 63.369]    | [61.916 - 62.232]    | 13 {1,3} |           |
+|   ├>process.internal_duration_ms            |        | 31.74    | 0.286   | 0.034   | 31.744   | [31.334 - 32.358]    | [31.671 - 31.808]    | 14 {1,1} |           |
+|   ├>process.startuphook_overhead_ms         |        | 19.476   | 0.202   | 0.023   | 19.456   | [19.149 - 19.968]    | [19.43 - 19.523]     | 9 {1,3}  |           |
+|   ├>process.time_to_end_main_ms             |        | 1.606    | 0.077   | 0.009   | 1.595    | [1.5 - 1.798]        | [1.589 - 1.624]      | 14 {1,2} |           |
+|   ├>process.time_to_end_ms                  |        | 1.556    | 0.064   | 0.007   | 1.551    | [1.456 - 1.726]      | [1.541 - 1.571]      | 16 {1,3} |           |
+|   ├>process.time_to_main_ms                 |        | 48.287   | 0.492   | 0.06    | 48.202   | [47.569 - 49.378]    | [48.168 - 48.407]    | 15 {1,2} |           |
+|   ├>process.time_to_start_ms                |        | 28.736   | 0.353   | 0.043   | 28.629   | [28.216 - 29.533]    | [28.651 - 28.821]    | 15 {1,2} |           |
+|   ├>runtime.dotnet.cpu.percent              |        | 1.432    | 0.024   | 0.003   | 1.45     | [1.4 - 1.45]         | [1.426 - 1.437]      | 0        |           |
+|   ├>runtime.dotnet.cpu.system               |        | 213.236  | 1.684   | 0.204   | 213.312  | [210.22 - 216.59]    | [212.828 - 213.643]  | 14 {1,2} |           |
+|   ├>runtime.dotnet.cpu.user                 |        | 43.828   | 0.963   | 0.117   | 43.85    | [42.2 - 45.595]      | [43.595 - 44.061]    | 14 {1,3} |           |
+|   ├>runtime.dotnet.mem.committed            |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.contention_count |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.contention_time  |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.count            |        | 13.5     | 0       | 0       | 13.5     | 13.5                 | 13.5                 | 0        |           |
+|   ├>runtime.dotnet.threads.workers_count    |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.process.private_bytes           |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   └>runtime.process.processor_time          |        | 169.708  | 0.652   | 0.081   | 169.645  | [168.515 - 171.07]   | [169.546 - 169.869]  | 16 {1,1} |           |
+|                                             |        |          |         |         |          |                      |                      |          |           |
+| CallTarget+Inlining [N=86]                  | Passed | 81,885ms | 1,036ms | 0,123ms | 81,469ms | [80,58 - 84,112] ms  | [81,64 - 82,131] ms  | 15 {1}   | -0,71     |
+|   ├>process.corrected_duration_ms           |        | 62.113   | 0.636   | 0.083   | 61.988   | [61.226 - 63.45]     | [61.945 - 62.28]     | 13 {1,3} |           |
+|   ├>process.internal_duration_ms            |        | 31.702   | 0.272   | 0.035   | 31.642   | [31.334 - 32.256]    | [31.632 - 31.773]    | 10 {1,2} |           |
+|   ├>process.startuphook_overhead_ms         |        | 19.602   | 0.223   | 0.029   | 19.661   | [19.251 - 19.968]    | [19.545 - 19.659]    | 10 {1,4} |           |
+|   ├>process.time_to_end_main_ms             |        | 1.649    | 0.088   | 0.011   | 1.646    | [1.519 - 1.816]      | [1.628 - 1.671]      | 14 {1,3} |           |
+|   ├>process.time_to_end_ms                  |        | 1.603    | 0.073   | 0.009   | 1.577    | [1.503 - 1.736]      | [1.584 - 1.622]      | 12 {1,3} |           |
+|   ├>process.time_to_main_ms                 |        | 48.141   | 0.403   | 0.052   | 48.082   | [47.563 - 48.937]    | [48.036 - 48.246]    | 13 {1,3} |           |
+|   ├>process.time_to_start_ms                |        | 28.714   | 0.286   | 0.036   | 28.682   | [28.278 - 29.299]    | [28.641 - 28.787]    | 12 {1,4} |           |
+|   ├>runtime.dotnet.cpu.percent              |        | 1.435    | 0.023   | 0.003   | 1.45     | [1.4 - 1.45]         | [1.43 - 1.44]        | 0        |           |
+|   ├>runtime.dotnet.cpu.system               |        | 213.373  | 1.659   | 0.222   | 212.89   | [211.095 - 217.195]  | [212.929 - 213.818]  | 13 {1,2} |           |
+|   ├>runtime.dotnet.cpu.user                 |        | 43.294   | 0.753   | 0.098   | 43.215   | [41.92 - 44.865]     | [43.098 - 43.491]    | 12 {1,5} |           |
+|   ├>runtime.dotnet.mem.committed            |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.contention_count |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.contention_time  |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.dotnet.threads.count            |        | 13.5     | 0       | 0       | 13.5     | 13.5                 | 13.5                 | 0        |           |
+|   ├>runtime.dotnet.threads.workers_count    |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   ├>runtime.process.private_bytes           |        | 0        | 0       | 0       | 0        | 0                    | 0                    | 0        |           |
+|   └>runtime.process.processor_time          |        | 169.958  | 1.423   | 0.189   | 169.49   | [168.215 - 173.645]  | [169.581 - 170.336]  | 13 {1,2} |           |
+                                                                                                                                                                       
 
 ### Overheads:
-                                                                     
-|                     | Callsite | CallTarget | CallTarget+Inlining |
-| ------------------- | -------- | ---------- | ------------------- |
-| Callsite            | --       | -0.5%      | --                  |
-| CallTarget          | 0.5%     | --         | 0.4%                |
-| CallTarget+Inlining | --       | -0.4%      | --                  |
-                                                                     
+                                                                                 
+|                     | Callsite       | CallTarget       | CallTarget+Inlining |
+| ------------------- | -------------- | ---------------- | ------------------- |
+| Callsite            | --             | -0.6% (-0,511ms) | -0.7% (-0,585ms)    |
+| CallTarget          | 0.6% (0,511ms) | --               | -0.1% (-0,074ms)    |
+| CallTarget+Inlining | 0.7% (0,585ms) | 0.1% (0,074ms)   | --                  |
+                                                                                 
 
-The json file '/home/runner/work/timeitsharp/timeitsharp/src/TimeItSharp/bin/Release/net8.0/jsonexporter_2050655867.json' was exported.
+The json file '/Users/tony.redondo/repos/github/tonyredondo/timeitsharp/src/TimeItSharp/bin/Release/net9.0/jsonexporter_991684479.json' was exported.
 The Datadog exported ran successfully.
-The Datadog profiler was successfully attached to the .NET processes.
+The Datadog profiler could not be attached to the .NET processes.
 *** onFinish ***
-ExecuteService.OnFinish: ProcessId: 6632, ProcessName: echo, Duration: 00:00:00.0007947, ExitCode: 0
+ExecuteService.OnFinish: ProcessId: 58728, ProcessName: echo, Duration: 00:00:00.0022280, ExitCode: 0
 ```
 
 ## Output is markdown compatible
