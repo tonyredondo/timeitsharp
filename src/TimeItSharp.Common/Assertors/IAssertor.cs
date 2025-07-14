@@ -8,7 +8,7 @@ public interface IAssertor : INamedExtension
 
     void Initialize(InitOptions options);
 
-    AssertResponse ScenarioAssertion(IReadOnlyList<DataPoint> dataPoints);
+    AssertResponse ScenarioAssertion(ScenarioResult scenarioResult);
     
     AssertResponse ExecutionAssertion(in AssertionData data);
 }

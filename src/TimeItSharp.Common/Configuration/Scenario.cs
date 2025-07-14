@@ -8,6 +8,9 @@ public class Scenario : ProcessData
     [JsonPropertyName("name")]
     public string Name { get; set; }
     
+    [JsonPropertyName("isBaseline")]
+    public bool IsBaseline { get; set; }
+    
     public IService? ParentService { get; set; }
 
     public Scenario()
@@ -15,9 +18,10 @@ public class Scenario : ProcessData
         Name = string.Empty;
     }
 
-    public Scenario(string name, ProcessData? processData = null)
+    public Scenario(string name, bool isBaseline, ProcessData? processData = null)
     {
         Name = name;
+        IsBaseline = isBaseline;
         ParentService = null;
         if (processData is not null)
         {
@@ -31,9 +35,10 @@ public class Scenario : ProcessData
         }
     }
 
-    internal override Scenario Clone() => new Scenario
+    internal override Scenario Clone() => new()
     {
         Name = Name,
+        IsBaseline = IsBaseline,
         ParentService = ParentService,
         ProcessName = ProcessName,
         ProcessArguments = ProcessArguments,

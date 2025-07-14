@@ -12,33 +12,44 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # Matrix only controls which TFM-specific sample we invoke
+    strategy:
+      fail-fast: false
+      matrix:
+        tfm: [ net6.0, net7.0, net8.0, net9.0 ]
+
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - name: Setup .NET 6.0, 7.0, 8.0, 9.0
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: |
-          6.0.x
-          7.0.x
-          8.0.x
-          9.0.x
+      # Install every SDK once per job (outside matrix vars)
+      - name: Setup .NET SDKs 6/7/8/9
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: |
+            6.0.x
+            7.0.x
+            8.0.x
+            9.0.x
 
-    - name: Restore dependencies
-      run: dotnet restore
+      # Restore & build all target frameworks
+      - name: Restore dependencies
+        run: dotnet restore
+      - name: Build (Release)
+        run: dotnet build --no-restore -c Release
 
-    - name: Build
-      run: dotnet build --no-restore -c Release
+      # Run TimeItSharp tool sample
+      - name: Run TimeItSharp sample (${{ matrix.tfm }})
+        run: ./TimeItSharp config-example.json
+        working-directory: src/TimeItSharp/bin/Release/${{ matrix.tfm }}
 
-    - name: Run timeitsharp dotnet tool sample
-      run: ./TimeItSharp config-example.json
-      working-directory: src/TimeItSharp/bin/Release/net9.0
+      # Run the engine sample
+      - name: Run TimeItSharp engine sample (${{ matrix.tfm }})
+        run: ./TimeItSharp.FluentConfiguration.Sample
+        working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Release/${{ matrix.tfm }}
 
-    - name: Run timeitsharp engine sample
-      run: ./TimeItSharp.FluentConfiguration.Sample
-      working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Release/net9.0
-
-    - uses: actions/upload-artifact@v3
-      with:
-        name: Nugets
-        path: ./**/*.nupkg
+      # Publish any .nupkg artifacts
+      - uses: actions/upload-artifact@v4
+        if: matrix.tfm == 'net9.0'
+        with:
+          name: Nugets
+          path: ./**/*.nupkg

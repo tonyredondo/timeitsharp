@@ -486,7 +486,7 @@ public sealed class ConsoleExporter : IExporter
 
                 // Determine unit and scale for this series based on its data
                 var seriesUnit = unit;
-                var seriesScale = 1.0d;
+                // var seriesScale = 1.0d;
 
                 // Recalculate bin size and edges for this series
                 var seriesRange = seriesMaxData - seriesMinData;

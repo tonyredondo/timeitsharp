@@ -32,6 +32,7 @@ internal static class ProcessHelpers
         out long privateMemorySize)
     {
         var process = CurrentProcess;
+        process.Refresh();
         userProcessorTime = process.UserProcessorTime;
         systemCpuTime = process.PrivilegedProcessorTime;
         threadCount = process.Threads.Count;

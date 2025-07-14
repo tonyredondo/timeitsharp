@@ -64,6 +64,7 @@
   "scenarios": [
     {
       "name": "Callsite",
+      "isBaseline": true,
       "environmentVariables": {
         "DD_TRACE_CALLTARGET_ENABLED": "false",
         "DD_CLR_ENABLE_INLINING": "false"
@@ -105,5 +106,6 @@
     "maxDuration": 15,
     "processName": "dotnet-dump",
     "processArguments": "collect --process-id %pid%"
-  }
+  },
+  "overheadThreshold": 0.1
 }

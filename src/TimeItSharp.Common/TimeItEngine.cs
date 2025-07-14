@@ -98,6 +98,11 @@ public static class TimeItEngine
         AnsiConsole.MarkupLine("[bold aqua]Confidence level:[/] {0}%", Math.Round(config.ConfidenceLevel * 100, 2));
         AnsiConsole.MarkupLine("[bold aqua]Minimum error reduction:[/] {0}%", Math.Round(config.MinimumErrorReduction * 100, 2));
         AnsiConsole.MarkupLine("[bold aqua]Maximum duration:[/] {0}min", config.MaximumDurationInMinutes);
+        if (config.OverheadThreshold > 0)
+        {
+            AnsiConsole.MarkupLine("[bold aqua]Overhead threshold:[/] {0}%", Math.Round(config.OverheadThreshold * 100, 2));
+        }
+
         AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
         AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
         AnsiConsole.MarkupLine("[bold aqua]Assertors:[/] {0}", string.Join(", ", assertors.Select(e => e.Name)));
@@ -109,6 +114,11 @@ public static class TimeItEngine
         var scenarioWithErrors = 0;
         if (config is { Count: > 0, Scenarios.Count: > 0 })
         {
+            if (config.Scenarios.Any(s => s.IsBaseline))
+            {
+                config.Scenarios = config.Scenarios.OrderByDescending(s => s.IsBaseline).ToList();
+            }
+
             callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
             for(var i = 0; i < config.Scenarios.Count; i++)
             {

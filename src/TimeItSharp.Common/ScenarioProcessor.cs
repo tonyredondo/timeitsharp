@@ -378,50 +378,58 @@ internal sealed class ScenarioProcessor
             metricsStats[key + ".outliers_threshold"] = metricsThreshold;
         }
 
-        var assertResponse = ScenarioAssertion(dataPoints);
-        var scenarioResult = new ScenarioResult
-        {
-            Scenario = scenario,
-            Count = dataPoints.Count,
-            WarmUpCount = _configuration.WarmUpCount,
-            Data = dataPoints,
-            Durations = newDurations,
-            Outliers = outliers,
-            Mean = mean,
-            Median = median,
-            Max = max,
-            Min = min,
-            Stdev = stdev,
-            StdErr = stderr,
-            P99 = p99,
-            P95 = p95,
-            P90 = p90,
-            Ci99 = ci99,
-            Ci95 = ci95,
-            Ci90 = ci90,
-            IsBimodal = isBimodal,
-            PeakCount = peakCount,
-            Metrics = metricsStats,
-            MetricsData = metricsData,
-            Start = start,
-            End = start + watch.Elapsed,
-            Duration = watch.Elapsed,
-            Error = assertResponse.Message,
-            Name = scenario.Name,
-            ProcessName = scenario.ProcessName,
-            ProcessArguments = scenario.ProcessArguments,
-            EnvironmentVariables = scenario.EnvironmentVariables,
-            PathValidations = scenario.PathValidations,
-            WorkingDirectory = scenario.WorkingDirectory,
-            Timeout = scenario.Timeout,
-            Tags = scenario.Tags,
-            Status = assertResponse.Status,
-            OutliersThreshold = threshold,
-            LastStandardOutput = lastStandardOutput,
-        };
-
+        var firstResult = CreateScenarioResult(new AssertResponse(Status.Passed));
+        var assertResponse = ScenarioAssertion(firstResult);
+        var scenarioResult = CreateScenarioResult(assertResponse);
+        scenarioResult.AdditionalMetrics = firstResult.AdditionalMetrics;
+        scenarioResult.Tags = firstResult.Tags;
+        scenarioResult.Metrics = firstResult.Metrics;
         _callbacksTriggers.ScenarioFinish(scenarioResult);
         return scenarioResult;
+        
+        ScenarioResult CreateScenarioResult(AssertResponse response)
+        {
+            return new ScenarioResult
+            {
+                Scenario = scenario,
+                Count = dataPoints.Count,
+                WarmUpCount = _configuration.WarmUpCount,
+                Data = dataPoints,
+                Durations = newDurations,
+                Outliers = outliers,
+                Mean = mean,
+                Median = median,
+                Max = max,
+                Min = min,
+                Stdev = stdev,
+                StdErr = stderr,
+                P99 = p99,
+                P95 = p95,
+                P90 = p90,
+                Ci99 = ci99,
+                Ci95 = ci95,
+                Ci90 = ci90,
+                IsBimodal = isBimodal,
+                PeakCount = peakCount,
+                Metrics = metricsStats,
+                MetricsData = metricsData,
+                Start = start,
+                End = start + watch.Elapsed,
+                Duration = watch.Elapsed,
+                Error = response.Message,
+                Name = scenario.Name,
+                ProcessName = scenario.ProcessName,
+                ProcessArguments = scenario.ProcessArguments,
+                EnvironmentVariables = scenario.EnvironmentVariables,
+                PathValidations = scenario.PathValidations,
+                WorkingDirectory = scenario.WorkingDirectory,
+                Timeout = scenario.Timeout,
+                Tags = scenario.Tags,
+                Status = response.Status,
+                OutliersThreshold = threshold,
+                LastStandardOutput = lastStandardOutput,
+            };
+        }
     }
 
     private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, Stopwatch stopwatch, CancellationToken cancellationToken)
@@ -1004,7 +1012,7 @@ internal sealed class ScenarioProcessor
         }
     }
 
-    private AssertResponse ScenarioAssertion(IReadOnlyList<DataPoint> dataPoints)
+    private AssertResponse ScenarioAssertion(ScenarioResult scenarioResult)
     {
         if (_assertors is null || _assertors.Count == 0)
         {
@@ -1021,7 +1029,7 @@ internal sealed class ScenarioProcessor
                 continue;
             }
 
-            var result = assertor.ScenarioAssertion(dataPoints);
+            var result = assertor.ScenarioAssertion(scenarioResult);
             shouldContinue = shouldContinue && result.ShouldContinue;
             if (result.Status == Status.Failed)
             {
