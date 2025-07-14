@@ -65,8 +65,10 @@ public sealed class DefaultAssertor : Assertor
 
                 if (scenarioResult.Status == Status.Passed && overhead > overheadThreshold)
                 {
+                    currentMean = Utils.FromNanosecondsToMilliseconds(currentMean);
+                    baselineMean = Utils.FromNanosecondsToMilliseconds(baselineMean);
                     errorReason =
-                        $"Overhead threshold exceeded: {overhead:P2} (current: {currentMean}, baseline: {baselineMean})";
+                        $"Overhead threshold exceeded: {overhead:P2} (current: {currentMean}ms, baseline: {baselineMean}ms)";
                     status = Status.Failed;
                 }
             }
