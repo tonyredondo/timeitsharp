@@ -46,7 +46,7 @@ public sealed class DefaultAssertor : Assertor
         // Check for overhead failures
         if (scenarioResult.Scenario is { } currentScenario && Options.Configuration.OverheadThreshold > 0.0d)
         {
-            var overheadThreshold = Math.Min(1.0d, Options.Configuration.OverheadThreshold);
+            var overheadThreshold = Options.Configuration.OverheadThreshold;
             if (currentScenario.IsBaseline)
             {
                 _baseLineScenarioResult = scenarioResult;
