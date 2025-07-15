@@ -1,30 +1,29 @@
-using System.Diagnostics;
 using TimeItSharp;
 using TimeItSharp.RuntimeMetrics;
 
 public sealed class StartupHook
 {
     private static RuntimeMetricsWriter? _metricsWriter;
-    private static FileStorage? _fileStatsd;
+    private static BinaryFileStorage? _fileStatsd;
 
     public static void Initialize()
     {
         var startDate = Clock.UtcNow;
         var metricsPath = Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable);
-        if (string.IsNullOrEmpty(metricsPath))
+        if (metricsPath == null || metricsPath.Length == 0)
         {
             return;
         }
 
         bool enableMetrics;
         var processName = Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName);
-        if (string.IsNullOrEmpty(processName))
+        if (processName == null || processName.Length == 0)
         {
             enableMetrics = true;
         }
         else
         {
-            var currentProcessName = Process.GetCurrentProcess().ProcessName;
+            var currentProcessName = ProcessHelpers.ProcessName;
             if (processName.IndexOf(';') == -1)
             {
                 enableMetrics = string.Equals(currentProcessName, processName, StringComparison.OrdinalIgnoreCase);
@@ -38,7 +37,7 @@ public sealed class StartupHook
 
         if (enableMetrics)
         {
-            _fileStatsd = new FileStorage(metricsPath);
+            _fileStatsd = new BinaryFileStorage(metricsPath);
             _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
             _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(100));
             _metricsWriter.PushEvents();

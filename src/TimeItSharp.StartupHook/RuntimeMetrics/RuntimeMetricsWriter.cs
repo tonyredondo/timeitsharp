@@ -7,7 +7,7 @@ namespace TimeItSharp.RuntimeMetrics;
 internal sealed class RuntimeMetricsWriter : IDisposable
 {
     private readonly TimeSpan _delay;
-    private readonly FileStorage _storage;
+    private readonly BinaryFileStorage _storage;
     private readonly Timer _timer;
     private readonly RuntimeEventListener _listener;
     private readonly bool _enableProcessMetrics;
@@ -17,7 +17,7 @@ internal sealed class RuntimeMetricsWriter : IDisposable
     private TimeSpan _previousTotalCpu;
     private int _exceptionCounts;
 
-    internal RuntimeMetricsWriter(FileStorage storage, TimeSpan delay)
+    internal RuntimeMetricsWriter(BinaryFileStorage storage, TimeSpan delay)
     {
         _delay = delay;
         _storage = storage;

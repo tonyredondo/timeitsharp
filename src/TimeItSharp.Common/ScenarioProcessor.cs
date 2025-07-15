@@ -4,11 +4,8 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using CliWrap;
 using CliWrap.Buffered;
-using DatadogTestLogger.Vendors.Datadog.Trace;
 using MathNet.Numerics.Distributions;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
@@ -16,6 +13,7 @@ using TimeItSharp.Common.Assertors;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
 using TimeItSharp.Common.Services;
+using TimeItSharp.RuntimeMetrics;
 using Status = TimeItSharp.Common.Results.Status;
 
 namespace TimeItSharp.Common;
@@ -794,21 +792,29 @@ internal sealed class ScenarioProcessor
             var metrics = new Dictionary<string, double>();
             var metricsCount = new Dictionary<string, int>();
 
-            Span<byte> bytesBuffer = stackalloc byte[1024];
-            foreach (var metricJsonItem in File.ReadLines(metricsFilePath))
+            await using (var file = File.Open(metricsFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var reader = new BinaryReader(file))
             {
-                try
+                while (file.Position < file.Length)
                 {
-                    var bytesCount = Encoding.UTF8.GetBytes(metricJsonItem, bytesBuffer);
-                    var metricsJsonItemBytes = bytesBuffer.Slice(0, bytesCount);
-                    var jsonReader = new Utf8JsonReader(metricsJsonItemBytes);
-                    if (JsonDocument.TryParseValue(ref jsonReader, out var jsonMetricsItem))
+                    // Read magic number
+                    if (reader.ReadInt32() != 7248)
                     {
-                        var jsonRoot = jsonMetricsItem.RootElement;
-                        var type = jsonRoot.GetProperty("type").GetString();
-                        var name = jsonRoot.GetProperty("name").GetString();
-                        var value = jsonRoot.GetProperty("value").GetDouble();
+                        continue;
+                    }
 
+                    // Read metric type
+                    var type = (BinaryFileStorage.MetricType)reader.ReadByte();
+                    // Read name length
+                    var nameLength = reader.ReadInt32();
+                    // Read name
+                    var nameBytes = reader.ReadBytes(nameLength);
+                    var name = Encoding.UTF8.GetString(nameBytes);
+                    // Read value
+                    var value = reader.ReadDouble();
+
+                    try
+                    {
                         if (name is not null)
                         {
                             static void EnsureMainDuration(Dictionary<string, double> values,
@@ -816,7 +822,7 @@ internal sealed class ScenarioProcessor
                             {
                                 if (mainStartDate is not null && mainEndDate is not null)
                                 {
-                                    values[Constants.ProcessInternalDurationMetricName] =
+                                    values[Constants.ProcessInternalDurationMetricNameString] =
                                         (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
                                 }
                             }
@@ -838,26 +844,26 @@ internal sealed class ScenarioProcessor
                                     var internalDuration = (endDate.Value - startDate.Value).TotalMilliseconds;
                                     var overheadDuration = internalDuration - mainDuration;
                                     var globalDuration = (point.End - point.Start).TotalMilliseconds;
-                                    values[Constants.ProcessStartupHookOverheadMetricName] = overheadDuration;
-                                    values[Constants.ProcessCorrectedDurationMetricName] =
+                                    values[Constants.ProcessStartupHookOverheadMetricNameString] = overheadDuration;
+                                    values[Constants.ProcessCorrectedDurationMetricNameString] =
                                         globalDuration - overheadDuration;
                                 }
                             }
 
-                            if (name == Constants.ProcessStartTimeUtcMetricName)
+                            if (name == Constants.ProcessStartTimeUtcMetricNameString)
                             {
                                 inProcStartDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToStartMetricName] =
+                                metrics[Constants.ProcessTimeToStartMetricNameString] =
                                     (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
                                 EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
                                     inProcMainEndDate, inProcEndDate);
                                 continue;
                             }
 
-                            if (name == Constants.MainMethodStartTimeUtcMetricName)
+                            if (name == Constants.MainMethodStartTimeUtcMetricNameString)
                             {
                                 inProcMainStartDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToMainMetricName] =
+                                metrics[Constants.ProcessTimeToMainMetricNameString] =
                                     (inProcMainStartDate.Value - dataPoint.Start).TotalMilliseconds;
                                 EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
                                 EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
@@ -865,10 +871,10 @@ internal sealed class ScenarioProcessor
                                 continue;
                             }
 
-                            if (name == Constants.MainMethodEndTimeUtcMetricName)
+                            if (name == Constants.MainMethodEndTimeUtcMetricNameString)
                             {
                                 inProcMainEndDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToMainEndMetricName] =
+                                metrics[Constants.ProcessTimeToMainEndMetricNameString] =
                                     (dataPoint.End - inProcMainEndDate.Value).TotalMilliseconds;
                                 EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
                                 EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
@@ -876,21 +882,21 @@ internal sealed class ScenarioProcessor
                                 continue;
                             }
 
-                            if (name == Constants.ProcessEndTimeUtcMetricName)
+                            if (name == Constants.ProcessEndTimeUtcMetricNameString)
                             {
                                 inProcEndDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToEndMetricName] =
+                                metrics[Constants.ProcessTimeToEndMetricNameString] =
                                     (dataPoint.End - inProcEndDate.Value).TotalMilliseconds;
                                 EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
                                     inProcMainEndDate, inProcEndDate);
                                 continue;
                             }
 
-                            if (type == "counter")
+                            if (type == BinaryFileStorage.MetricType.Counter)
                             {
                                 metrics[name] = value;
                             }
-                            else if (type is "gauge" or "timer")
+                            else if (type is BinaryFileStorage.MetricType.Gauge or BinaryFileStorage.MetricType.Timer)
                             {
                                 ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
                                 oldValue += value;
@@ -899,17 +905,17 @@ internal sealed class ScenarioProcessor
                                     ref CollectionsMarshal.GetValueRefOrAddDefault(metricsCount, name, out _);
                                 count++;
                             }
-                            else if (type == "increment")
+                            else if (type == BinaryFileStorage.MetricType.Increment)
                             {
                                 ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
                                 oldValue += value;
                             }
                         }
                     }
-                }
-                catch
-                {
-                    // Error reading metric item, we just skip that item
+                    catch
+                    {
+                        // Error reading metric item, we just skip that item
+                    }
                 }
             }
 

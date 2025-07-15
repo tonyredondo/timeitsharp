@@ -10,6 +10,11 @@ internal static class ProcessHelpers
     private static readonly Process CurrentProcess = Process.GetCurrentProcess();
 
     /// <summary>
+    /// Get the process name
+    /// </summary>
+    public static string ProcessName => CurrentProcess.ProcessName;
+    
+    /// <summary>
     /// Wrapper around <see cref="Process.GetCurrentProcess"/> and its property accesses
     ///
     /// On .NET Framework the <see cref="Process"/> class is guarded by a

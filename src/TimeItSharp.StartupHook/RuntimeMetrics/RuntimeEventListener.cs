@@ -18,17 +18,20 @@ internal sealed class RuntimeEventListener : EventListener
     private const int EventContentionStop = 91;
     private const int EventGcGlobalHeapHistory = 205;
 
-    private readonly FileStorage _storage;
-    private readonly Timing _contentionTime = new();
-    private readonly string _delayInSeconds;
+    private readonly BinaryFileStorage _storage;
+    private readonly ReadOnlyDictionary<string, string> _eventCounterIntervalSecDictionary;
 
+    private double _contentionTime;
     private long _contentionCount;
     private DateTime? _gcStart;
 
-    public RuntimeEventListener(FileStorage storage, TimeSpan delay)
+    public RuntimeEventListener(BinaryFileStorage storage, TimeSpan delay)
     {
         _storage = storage;
-        _delayInSeconds = ((int)delay.TotalSeconds).ToString();
+        _eventCounterIntervalSecDictionary = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
+        {
+            ["EventCounterIntervalSec"] = ((int)delay.TotalSeconds).ToString()
+        });
         EventSourceCreated += (_, e) => EnableEventSource(e.EventSource);
     }
 
@@ -36,7 +39,7 @@ internal sealed class RuntimeEventListener : EventListener
     {
         // Can't use a Timing because Dogstatsd doesn't support local aggregation
         // It means that the aggregations in the UI would be wrong
-        _storage.Gauge(MetricsNames.ContentionTime, _contentionTime.Clear());
+        _storage.Gauge(MetricsNames.ContentionTime, Interlocked.Exchange(ref _contentionTime, 0));
         _storage.Counter(MetricsNames.ContentionCount, Interlocked.Exchange(ref _contentionCount, 0));
         _storage.Gauge(MetricsNames.ThreadPoolWorkersCount, ThreadPool.ThreadCount);
     }
@@ -84,7 +87,7 @@ internal sealed class RuntimeEventListener : EventListener
                 {
                     var durationInNanoseconds = (double)eventData.Payload[2];
 
-                    _contentionTime.Time(durationInNanoseconds / 1_000_000);
+                    IncrementTiming(ref _contentionTime, durationInNanoseconds / 1_000_000);
                     Interlocked.Increment(ref _contentionCount);
                 }
                 else if (eventData.EventId == EventGcGlobalHeapHistory)
@@ -132,10 +135,7 @@ internal sealed class RuntimeEventListener : EventListener
         }
         else if (eventSource.Name is AspNetCoreHostingEventSourceName or AspNetCoreKestrelEventSourceName)
         {
-            EnableEvents(eventSource, EventLevel.Critical, EventKeywords.All, new Dictionary<string, string>
-            {
-                ["EventCounterIntervalSec"] = _delayInSeconds
-            });
+            EnableEvents(eventSource, EventLevel.Critical, EventKeywords.All, _eventCounterIntervalSecDictionary);
         }
     }
 
@@ -167,7 +167,7 @@ internal sealed class RuntimeEventListener : EventListener
         }
     }
 
-    private static bool TryGetMetricsMapping(string name, out string statName)
+    private static bool TryGetMetricsMapping(string name, out ReadOnlySpan<byte> statName)
     {
         switch (name)
         {
@@ -196,5 +196,16 @@ internal sealed class RuntimeEventListener : EventListener
                 statName = null;
                 return false;
         }
+    }
+
+    private static void IncrementTiming(ref double cumulatedTiming, double elapsedMilliseconds)
+    {
+        double oldValue;
+
+        do
+        {
+            oldValue = cumulatedTiming;
+        }
+        while (Math.Abs(Interlocked.CompareExchange(ref cumulatedTiming, oldValue + elapsedMilliseconds, oldValue) - oldValue) > 0.01);
     }
 }
