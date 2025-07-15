@@ -10,14 +10,14 @@ public sealed class StartupHook
     {
         var startDate = Clock.UtcNow;
         var metricsPath = Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable);
-        if (string.IsNullOrEmpty(metricsPath))
+        if (metricsPath == null || metricsPath.Length == 0)
         {
             return;
         }
 
         bool enableMetrics;
         var processName = Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName);
-        if (string.IsNullOrEmpty(processName))
+        if (processName == null || processName.Length == 0)
         {
             enableMetrics = true;
         }
