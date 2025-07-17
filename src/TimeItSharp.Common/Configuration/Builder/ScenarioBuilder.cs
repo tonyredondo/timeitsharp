@@ -46,6 +46,16 @@ public sealed class ScenarioBuilder
         _scenario.Name = name;
         return this;
     }
+
+    /// <summary>
+    /// Sets the scenario as a baseline scenario.
+    /// </summary>
+    /// <returns>Scenario builder instance</returns>
+    public ScenarioBuilder AsBaseline()
+    {
+        _scenario.IsBaseline = true;
+        return this;
+    }
     
     #region ProcessData
 

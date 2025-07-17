@@ -39,9 +39,13 @@ internal sealed class RuntimeEventListener : EventListener
     {
         // Can't use a Timing because Dogstatsd doesn't support local aggregation
         // It means that the aggregations in the UI would be wrong
-        _storage.Gauge(MetricsNames.ContentionTime, Interlocked.Exchange(ref _contentionTime, 0));
-        _storage.Counter(MetricsNames.ContentionCount, Interlocked.Exchange(ref _contentionCount, 0));
-        _storage.Gauge(MetricsNames.ThreadPoolWorkersCount, ThreadPool.ThreadCount);
+        var mp1 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge, MetricsNames.ContentionTime,
+            Interlocked.Exchange(ref _contentionTime, 0));
+        var mp2 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Counter,
+            MetricsNames.ContentionCount, Interlocked.Exchange(ref _contentionCount, 0));
+        var mp3 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+            MetricsNames.ThreadPoolWorkersCount, ThreadPool.ThreadCount);
+        _storage.WritePayload(in mp1, in mp2, in mp3);
     }
 
     protected override void OnEventWritten(EventWrittenEventArgs eventData)
@@ -69,7 +73,9 @@ internal sealed class RuntimeEventListener : EventListener
             {
                 if (_gcStart is { } start)
                 {
-                    _storage.Timer(MetricsNames.GcPauseTime, (eventData.TimeStamp - start).TotalMilliseconds);
+                    var mp = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Timer,
+                        MetricsNames.GcPauseTime, (eventData.TimeStamp - start).TotalMilliseconds);
+                    _storage.WritePayload(in mp);
                 }
             }
             else
@@ -77,16 +83,19 @@ internal sealed class RuntimeEventListener : EventListener
                 if (eventData.EventId == EventGcHeapStats)
                 {
                     var stats = HeapStats.FromPayload(eventData.Payload);
-
-                    _storage.Gauge(MetricsNames.Gen0HeapSize, stats.Gen0Size);
-                    _storage.Gauge(MetricsNames.Gen1HeapSize, stats.Gen1Size);
-                    _storage.Gauge(MetricsNames.Gen2HeapSize, stats.Gen2Size);
-                    _storage.Gauge(MetricsNames.LohSize, stats.LohSize);
+                    var mp1 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                        MetricsNames.Gen0HeapSize, stats.Gen0Size);
+                    var mp2 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                        MetricsNames.Gen1HeapSize, stats.Gen1Size);
+                    var mp3 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                        MetricsNames.Gen2HeapSize, stats.Gen2Size);
+                    var mp4 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                        MetricsNames.LohSize, stats.LohSize);
+                    _storage.WritePayload(in mp1, in mp2, in mp3, in mp4);
                 }
                 else if (eventData.EventId == EventContentionStop)
                 {
                     var durationInNanoseconds = (double)eventData.Payload[2];
-
                     IncrementTiming(ref _contentionTime, durationInNanoseconds / 1_000_000);
                     Interlocked.Increment(ref _contentionCount);
                 }
@@ -96,23 +105,33 @@ internal sealed class RuntimeEventListener : EventListener
 
                     if (heapHistory.MemoryLoad is { } memoryLoad)
                     {
-                        _storage.Gauge(MetricsNames.GcMemoryLoad, memoryLoad);
+                        var mp = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                            MetricsNames.GcMemoryLoad, memoryLoad);
+                        _storage.WritePayload(in mp);
                     }
 
                     if (heapHistory.Generation == 0)
                     {
-                        _storage.Increment(MetricsNames.Gen0CollectionsCount, 1);
+                        var mp = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Increment,
+                            MetricsNames.Gen0CollectionsCount, 1);
+                        _storage.WritePayload(in mp);
                     }
                     else if (heapHistory.Generation == 1)
                     {
-                        _storage.Increment(MetricsNames.Gen1CollectionsCount, 1);
+                        var mp = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Increment,
+                            MetricsNames.Gen1CollectionsCount, 1);
+                        _storage.WritePayload(in mp);
                     }
                     else if (heapHistory.Generation == 2)
                     {
-                        _storage.Increment(MetricsNames.Gen2CollectionsCount, 1);
+                        var mp = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Increment,
+                            MetricsNames.Gen2CollectionsCount, 1);
+                        _storage.WritePayload(in mp);
                         if (heapHistory.Compacting)
                         {
-                            _storage.Increment(MetricsNames.Gen2CompactingCollectionsCount, 1);
+                            var mp2 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Increment,
+                                MetricsNames.Gen2CompactingCollectionsCount, 1);
+                            _storage.WritePayload(in mp2);
                         }
                     }
                 }
@@ -162,7 +181,9 @@ internal sealed class RuntimeEventListener : EventListener
             if (eventPayload.TryGetValue("Mean", out var rawValue) ||
                 eventPayload.TryGetValue("Increment", out rawValue))
             {
-                _storage.Gauge(statName, (double)rawValue);
+                var mp = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge, statName,
+                    (double)rawValue);
+                _storage.WritePayload(in mp);
             }
         }
     }
