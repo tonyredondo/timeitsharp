@@ -4,24 +4,19 @@ using TimeItSharp.RuntimeMetrics;
 public sealed class StartupHook
 {
     private static RuntimeMetricsWriter? _metricsWriter;
-    private static BinaryFileStorage? _fileStatsd;
+    private static DateTime _startTime;
+    private static DateTime _mainMethodStartTime;
 
     public static void Initialize()
     {
-        var startDate = Clock.UtcNow;
-        var metricsPath = Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable);
-        if (metricsPath == null || metricsPath.Length == 0)
+        _startTime = Clock.UtcNow;
+        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is not { Length: > 0 } metricsPath)
         {
             return;
         }
 
-        bool enableMetrics;
-        var processName = Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName);
-        if (processName == null || processName.Length == 0)
-        {
-            enableMetrics = true;
-        }
-        else
+        var enableMetrics = true;
+        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName) is { Length: > 0 } processName)
         {
             var currentProcessName = ProcessHelpers.ProcessName;
             if (processName.IndexOf(';') == -1)
@@ -35,25 +30,54 @@ public sealed class StartupHook
             }
         }
 
-        if (enableMetrics)
+        if (!enableMetrics)
         {
-            _fileStatsd = new BinaryFileStorage(metricsPath);
-            _fileStatsd.Gauge(Constants.ProcessStartTimeUtcMetricName, startDate.ToBinary());
-            _metricsWriter = new RuntimeMetricsWriter(_fileStatsd, TimeSpan.FromMilliseconds(100));
-            _metricsWriter.PushEvents();
-            AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
-            _fileStatsd.Gauge(Constants.MainMethodStartTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            return;
         }
+
+        var frequencyInMs = 200;
+        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsFrequency) is { Length: > 0 } frequency)
+        {
+            if (frequency == "100")
+            {
+                frequencyInMs = 100;
+            }
+            else if (frequency == "300")
+            {
+                frequencyInMs = 300;
+            }
+            else
+            {
+                frequencyInMs = int.Parse(frequency);
+            }
+        }
+        
+        _metricsWriter = new RuntimeMetricsWriter(new BinaryFileStorage(metricsPath), TimeSpan.FromMilliseconds(frequencyInMs));
+        _metricsWriter.PushEvents();
+        AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
+        _mainMethodStartTime = Clock.UtcNow;
     }
 
     private static void CurrentDomainOnProcessExit(object? sender, EventArgs e)
     {
-        if (_fileStatsd is { } fileStatsd)
+        if (_metricsWriter is null)
         {
-            fileStatsd.Gauge(Constants.MainMethodEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
-            _metricsWriter?.PushEvents();
-            fileStatsd.Gauge(Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
-            fileStatsd.Dispose();
+            return;
         }
+
+        var mp1 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+            Constants.ProcessStartTimeUtcMetricName, _startTime.ToBinary());
+        var mp2 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+            Constants.MainMethodStartTimeUtcMetricName, _mainMethodStartTime.ToBinary());
+        var mp3 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+            Constants.MainMethodEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+        _metricsWriter.Storage.WritePayload(in mp1, in mp2, in mp3);
+
+        _metricsWriter.PushEvents();
+
+        var mp4 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+            Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+        _metricsWriter.Storage.WritePayload(in mp4);
+        _metricsWriter.Storage.Dispose();
     }
 }

@@ -5,6 +5,7 @@ internal static class Constants
     public const string StartupHookEnvironmentVariable = "DOTNET_STARTUP_HOOKS";
     public const string TimeItMetricsTemporalPathEnvironmentVariable = "TIMEIT_METRICS_TEMPORAL_PATH";
     public const string TimeItMetricsProcessName = "TIMEIT_METRICS_PROCESS_NAME";
+    public const string TimeItMetricsFrequency = "TIMEIT_METRICS_FREQUENCY";
     
     public const string ProcessTimeToStartMetricNameString = "process.time_to_start_ms";
     public const string ProcessTimeToMainMetricNameString = "process.time_to_main_ms"; 
