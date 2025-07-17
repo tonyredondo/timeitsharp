@@ -132,6 +132,12 @@ internal sealed class ScenarioProcessor
                     scenario.EnvironmentVariables[Constants.TimeItMetricsProcessName] =
                         _configuration.MetricsProcessName;
                 }
+
+                if (_configuration.MetricsFrequencyInMs != 200 && _configuration.MetricsFrequencyInMs > 0)
+                {
+                    scenario.EnvironmentVariables[Constants.TimeItMetricsFrequency] =
+                        _configuration.MetricsFrequencyInMs.ToString();
+                }
             }
             else
             {
@@ -722,7 +728,7 @@ internal sealed class ScenarioProcessor
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
                 dataPoint.Error = ex.Message;
             }
-            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+            catch (Exception ex) when (ex is OperationCanceledException)
             {
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;

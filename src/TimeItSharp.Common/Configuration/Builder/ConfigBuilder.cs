@@ -145,6 +145,17 @@ public sealed class ConfigBuilder
         _configuration.MetricsProcessName = processName;
         return this;
     }
+
+    /// <summary>
+    /// Sets the frequency in milliseconds to collect runtime metrics
+    /// </summary>
+    /// <param name="frequencyInMs">Frequency in Milliseconds</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithMetricsFrequency(int frequencyInMs)
+    {
+        _configuration.MetricsFrequencyInMs = frequencyInMs;
+        return this;
+    }
     
     /// <summary>
     /// Sets the name of the configuration
@@ -255,6 +266,17 @@ public sealed class ConfigBuilder
     public ConfigBuilder WithMinimumErrorReduction(double minimumErrorReduction)
     {
         _configuration.MinimumErrorReduction = minimumErrorReduction;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the overhead threshold to fail an scenario if the overhead is greater than this value.
+    /// </summary>
+    /// <param name="overheadThreshold">Overhead threshold</param>
+    /// <returns>Configuration builder instance</returns>
+    public ConfigBuilder WithOverheadThreshold(double overheadThreshold)
+    {
+        _configuration.OverheadThreshold = overheadThreshold;
         return this;
     }
 

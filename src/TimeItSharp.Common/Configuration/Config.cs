@@ -31,6 +31,9 @@ public class Config : ProcessData
     
     [JsonPropertyName("metricsProcessName")]
     public string MetricsProcessName { get; set; }
+    
+    [JsonPropertyName("metricsFrequencyInMs")]
+    public int MetricsFrequencyInMs { get; set; }
 
     [JsonPropertyName("scenarios")]
     public List<Scenario> Scenarios { get; set; }
@@ -85,6 +88,7 @@ public class Config : ProcessData
         EnableDatadog = false;
         EnableMetrics = true;
         MetricsProcessName = string.Empty;
+        MetricsFrequencyInMs = 200;
         Scenarios = new();
         JsonExporterFilePath = string.Empty;
         Exporters = new();
@@ -142,6 +146,7 @@ public class Config : ProcessData
         EnableDatadog = EnableDatadog,
         EnableMetrics = EnableMetrics,
         MetricsProcessName = MetricsProcessName,
+        MetricsFrequencyInMs = MetricsFrequencyInMs,
         Scenarios = Scenarios.Any(s => s.IsBaseline) ? 
             Scenarios.Select(i => i.Clone()).OrderByDescending(s => s.IsBaseline).ToList() :
             Scenarios.Select(i => i.Clone()).ToList(),

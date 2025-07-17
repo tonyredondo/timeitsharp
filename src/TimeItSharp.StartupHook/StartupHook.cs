@@ -42,6 +42,10 @@ public sealed class StartupHook
             {
                 frequencyInMs = 100;
             }
+            else if (frequency == "200")
+            {
+                frequencyInMs = 200;
+            }
             else if (frequency == "300")
             {
                 frequencyInMs = 300;
