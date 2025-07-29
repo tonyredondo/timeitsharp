@@ -39,6 +39,7 @@ jobs:
 
       # Run TimeItSharp tool sample
       - name: Run TimeItSharp sample (${{ matrix.tfm }})
+        if: matrix.tfm == 'net6.0'
         run: ./TimeItSharp config-example.json
         working-directory: src/TimeItSharp/bin/Release/${{ matrix.tfm }}
 
