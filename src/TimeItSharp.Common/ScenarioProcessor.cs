@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using CliWrap;
 using CliWrap.Buffered;
 using MathNet.Numerics.Distributions;
@@ -71,13 +72,14 @@ internal sealed class ScenarioProcessor
 
         foreach (var item in scenario.EnvironmentVariables)
         {
-            scenario.EnvironmentVariables[item.Key] = _templateVariables.Expand(item.Value);
+            scenario.EnvironmentVariables[_templateVariables.Expand(item.Key)] = _templateVariables.Expand(item.Value);
         }
 
         foreach (var item in _configuration.EnvironmentVariables)
         {
+            var key = _templateVariables.Expand(item.Key);
             var value = _templateVariables.Expand(item.Value);
-            scenario.EnvironmentVariables.TryAdd(item.Key, value);
+            scenario.EnvironmentVariables.TryAdd(key, value);
         }
 
         foreach (var (tagName, tagValue) in _configuration.Tags)
@@ -85,7 +87,26 @@ internal sealed class ScenarioProcessor
             var key = _templateVariables.Expand(tagName);
             if (tagValue is string strTagValue)
             {
-                scenario.Tags.TryAdd(key, strTagValue);
+                scenario.Tags.TryAdd(key, _templateVariables.Expand(strTagValue));
+            }
+            else if (tagValue is JsonElement jsonTagValue)
+            {
+                if (jsonTagValue.ValueKind == JsonValueKind.String)
+                {
+                    scenario.Tags.TryAdd(key, _templateVariables.Expand(jsonTagValue.GetString() ?? jsonTagValue.GetRawText()));
+                }
+                else if (jsonTagValue.ValueKind == JsonValueKind.Number)
+                {
+                    scenario.Tags.TryAdd(key, jsonTagValue.GetDouble());
+                }
+                else if (jsonTagValue.ValueKind == JsonValueKind.True || jsonTagValue.ValueKind == JsonValueKind.False)
+                {
+                    scenario.Tags.TryAdd(key, jsonTagValue.GetBoolean());
+                }
+                else
+                {
+                    scenario.Tags.TryAdd(key, tagValue);
+                }
             }
             else
             {

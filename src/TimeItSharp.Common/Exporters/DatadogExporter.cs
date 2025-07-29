@@ -160,7 +160,7 @@ public sealed class DatadogExporter : IExporter
                     }
                     else
                     {
-                        test.SetTag(key, tag.Value?.ToString());
+                        test.SetTag(key, _options.TemplateVariables.Expand(tag.Value?.ToString() ?? string.Empty));
                     }
                 }
                 
