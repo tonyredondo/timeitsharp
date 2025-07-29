@@ -96,7 +96,7 @@
     "DD_INTEGRATIONS": "/integrations.json"
   },
   "tags": {
-    "runtime.architecture" : "x86",
+    "runtime.architecture" : "$(arch)",
     "runtime.name" : ".NET Framework",
     "runtime.version" : "4.6.1",
     "benchmark.job.runtime.name" : ".NET Framework 4.6.1",

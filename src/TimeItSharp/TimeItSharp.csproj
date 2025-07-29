@@ -2,12 +2,14 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
+        <TargetFrameworks>net6.0</TargetFrameworks>
         <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
         <Description>Command execution time meter</Description>
         <Copyright>Tony Redondo @ 2023</Copyright>
         <PackageTags>timeit, timeitsharp, benchmark, performance</PackageTags>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>dotnet-timeit</ToolCommandName>
+        <RollForward>LatestMajor</RollForward>
         <PackageId>TimeItSharp</PackageId>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageLicenseFile>LICENSE</PackageLicenseFile>
@@ -15,6 +17,7 @@
         <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
         <NoWarn>NETSDK1138</NoWarn>
         <PackageOutputPath>..\..\artifacts</PackageOutputPath>
+        <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
     </PropertyGroup>
 
     <ItemGroup>
