@@ -323,6 +323,7 @@ internal sealed class ScenarioProcessor
         }
 
         // Get outliers
+        var previousDurations = durations;
         var newDurations = new List<double>();
         var outliers = new List<double>();
         var threshold = 0.4d;
@@ -337,10 +338,18 @@ internal sealed class ScenarioProcessor
             if (outliersPercent < 20 && !isBimodal)
             {
                 // outliers must be not more than 20% of the data
+                // but also we need to ensure that we have some data left, if not we use previous result
+                if (newDurations.Count == 0)
+                {
+                    newDurations = previousDurations;
+                    outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
+                    isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, 11);
+                }
                 break;
             }
 
             threshold += 0.1;
+            previousDurations = newDurations;
         }
 
         var mean = newDurations.Mean();
@@ -361,6 +370,7 @@ internal sealed class ScenarioProcessor
         foreach (var key in metricsData.Keys)
         {
             var originalMetricsValue = metricsData[key];
+            var previousMetricsValue = originalMetricsValue;
             var metricsValue = new List<double>();
             var metricsOutliers = new List<double>();
             var metricsThreshold = 0.4d;
@@ -372,10 +382,17 @@ internal sealed class ScenarioProcessor
                 if (outliersPercent < 20)
                 {
                     // outliers must be not more than 20% of the data
+                    // but also we need to ensure that we have some data left, if not we use previous result
+                    if (metricsValue.Count == 0)
+                    {
+                        metricsValue = previousMetricsValue;
+                        metricsOutliers = originalMetricsValue.Where(d => !metricsValue.Contains(d)).ToList();
+                    }
                     break;
                 }
 
                 metricsThreshold += 0.1;
+                previousMetricsValue = metricsValue;
             }
             
             metricsData[key] = metricsValue;
