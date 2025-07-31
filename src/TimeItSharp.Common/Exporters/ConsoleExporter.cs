@@ -171,6 +171,7 @@ public sealed class ConsoleExporter : IExporter
                 for (var i = 0; i < totalNum; i++)
                 {
                     var item = orderedMetricsData[i];
+                    var previousResult = item.Value;
                     var itemResult = new List<double>();
                     var metricsOutliers = new List<double>();
                     var metricsThreshold = 0.5d;
@@ -182,10 +183,17 @@ public sealed class ConsoleExporter : IExporter
                         if (outliersPercent < 20)
                         {
                             // outliers must be not more than 20% of the data
+                            // but also we need to ensure that we have some data left, if not we use previous result
+                            if (itemResult.Count == 0)
+                            {
+                                itemResult = previousResult;
+                                metricsOutliers = item.Value.Where(d => !itemResult.Contains(d)).ToList();
+                            }
                             break;
                         }
 
                         metricsThreshold += 0.1;
+                        previousResult = itemResult;
                     }
 
 
@@ -193,8 +201,8 @@ public sealed class ConsoleExporter : IExporter
                     var mMedian = itemResult.Median();
                     var mStdDev = itemResult.StandardDeviation();
                     var mStdErr = mStdDev / Math.Sqrt(itemResult.Count);
-                    var mMin = itemResult.Min();
-                    var mMax = itemResult.Max();
+                    var mMin = itemResult.Any() ? itemResult.Min() : 0;
+                    var mMax = itemResult.Any() ? itemResult.Max() : 0;
                     var ci95 = Utils.CalculateConfidenceInterval(mMean, mStdErr, itemResult.Count, 0.95);
 
                     string name;

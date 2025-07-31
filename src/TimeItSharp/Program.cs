@@ -108,83 +108,94 @@ root.SetHandler(async (context) =>
     }
 
     var exitCode = 0;
-    if (isConfigFile)
+
+    try
     {
-        var config = Config.LoadConfiguration(argumentValue);
-        config.WarmUpCount = warmupValue ?? config.WarmUpCount;
-        config.Count = countValue ?? config.Count;
-        var configBuilder = new ConfigBuilder(config);
-        if (jsonExporterValue)
+        if (isConfigFile)
         {
-            configBuilder.WithExporter<JsonExporter>();
-        }
+            var config = Config.LoadConfiguration(argumentValue);
+            config.WarmUpCount = warmupValue ?? config.WarmUpCount;
+            config.Count = countValue ?? config.Count;
+            var configBuilder = new ConfigBuilder(config);
+            if (jsonExporterValue)
+            {
+                configBuilder.WithExporter<JsonExporter>();
+            }
 
-        if (datadogExporterValue)
+            if (datadogExporterValue)
+            {
+                configBuilder.WithExporter<DatadogExporter>();
+            }
+
+            exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariablesValue))
+                .ConfigureAwait(false);
+        }
+        else
         {
-            configBuilder.WithExporter<DatadogExporter>();
-        }
+            var commandLineArray = argumentValue.Split(' ', StringSplitOptions.None);
+            var processName = commandLineArray[0];
+            var processArgs = string.Empty;
+            if (commandLineArray.Length > 1)
+            {
+                processArgs = string.Join(' ', commandLineArray.Skip(1));
+            }
 
-        exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariablesValue)).ConfigureAwait(false);
+            var finalCount = countValue ?? 10;
+            var configBuilder = ConfigBuilder.Create()
+                .WithName(argumentValue)
+                .WithProcessName(processName)
+                .WithProcessArguments(processArgs)
+                .WithMetrics(metricsValue)
+                .WithWarmupCount(warmupValue ?? 1)
+                .WithCount(finalCount)
+                .WithExporter<ConsoleExporter>()
+                .WithTimeout(t => t.WithMaxDuration((int)TimeSpan.FromMinutes(30).TotalSeconds))
+                .WithScenario(s => s.WithName("Default"));
+
+            if (showStdOutForFistRunValue)
+            {
+                configBuilder = configBuilder.ShowStdOutForFirstRun();
+            }
+
+            if (processFailedExecutionsValue)
+            {
+                configBuilder = configBuilder.ProcessFailedDataPoints();
+            }
+
+            if (debugModeValue)
+            {
+                configBuilder = configBuilder.WithDebugMode();
+            }
+
+            var timeitOption = new TimeItOptions(templateVariablesValue);
+
+            if (jsonExporterValue)
+            {
+                configBuilder.WithExporter<JsonExporter>();
+            }
+
+            if (datadogExporterValue)
+            {
+                configBuilder.WithExporter<DatadogExporter>();
+            }
+
+            if (datadogProfilerValue)
+            {
+                configBuilder.WithService<DatadogProfilerService>();
+                timeitOption = timeitOption.AddServiceState<DatadogProfilerService>(
+                    new DatadogProfilerConfiguration().WithExtraRun(finalCount * 40 / 100));
+            }
+
+            exitCode = await TimeItEngine.RunAsync(configBuilder, timeitOption).ConfigureAwait(false);
+        }
     }
-    else
+    catch (Exception ex)
     {
-        var commandLineArray = argumentValue.Split(' ', StringSplitOptions.None);
-        var processName = commandLineArray[0];
-        var processArgs = string.Empty;
-        if (commandLineArray.Length > 1)
-        {
-            processArgs = string.Join(' ', commandLineArray.Skip(1));
-        }
-
-        var finalCount = countValue ?? 10;
-        var configBuilder = ConfigBuilder.Create()
-            .WithName(argumentValue)
-            .WithProcessName(processName)
-            .WithProcessArguments(processArgs)
-            .WithMetrics(metricsValue)
-            .WithWarmupCount(warmupValue ?? 1)
-            .WithCount(finalCount)
-            .WithExporter<ConsoleExporter>()
-            .WithTimeout(t => t.WithMaxDuration((int)TimeSpan.FromMinutes(30).TotalSeconds))
-            .WithScenario(s => s.WithName("Default"));
-
-        if (showStdOutForFistRunValue)
-        {
-            configBuilder = configBuilder.ShowStdOutForFirstRun();
-        }
-
-        if (processFailedExecutionsValue)
-        {
-            configBuilder = configBuilder.ProcessFailedDataPoints();
-        }
-
-        if (debugModeValue)
-        {
-            configBuilder = configBuilder.WithDebugMode();
-        }
-
-        var timeitOption = new TimeItOptions(templateVariablesValue);
-
-        if (jsonExporterValue)
-        {
-            configBuilder.WithExporter<JsonExporter>();
-        }
-
-        if (datadogExporterValue)
-        {
-            configBuilder.WithExporter<DatadogExporter>();
-        }
-
-        if (datadogProfilerValue)
-        {
-            configBuilder.WithService<DatadogProfilerService>();
-            timeitOption = timeitOption.AddServiceState<DatadogProfilerService>(
-                new DatadogProfilerConfiguration().WithExtraRun(finalCount * 40 / 100));
-        }
-
-        exitCode = await TimeItEngine.RunAsync(configBuilder, timeitOption).ConfigureAwait(false);
+        AnsiConsole.MarkupLine("[red]An error occurred while running TimeItSharp:[/]");
+        AnsiConsole.WriteException(ex);
+        exitCode = 1;
     }
-    
+
     if (exitCode != 0)
     {
         Environment.Exit(exitCode);
