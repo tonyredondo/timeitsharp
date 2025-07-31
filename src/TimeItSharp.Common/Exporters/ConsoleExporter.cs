@@ -197,7 +197,7 @@ public sealed class ConsoleExporter : IExporter
                     }
 
 
-                    var mMean =  itemResult.Mean();
+                    var mMean = itemResult.Mean();
                     var mMedian = itemResult.Median();
                     var mStdDev = itemResult.StandardDeviation();
                     var mStdErr = mStdDev / Math.Sqrt(itemResult.Count);
