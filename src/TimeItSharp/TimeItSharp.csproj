@@ -41,6 +41,13 @@
 
     <ItemGroup>
       <ProjectReference Include="..\TimeItSharp.Common\TimeItSharp.Common.csproj" />
+
+        <ProjectReference Include="..\TimeItSharp.StartupHook\TimeItSharp.StartupHook.csproj">
+            <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+            <OutputItemType>Content</OutputItemType>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        </ProjectReference>
     </ItemGroup>
 
 </Project>
