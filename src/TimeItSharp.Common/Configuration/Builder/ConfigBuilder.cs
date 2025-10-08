@@ -388,7 +388,7 @@ public sealed class ConfigBuilder
         {
             FilePath = exporterTypeLocation,
             Type = exporterType.FullName,
-            InMemoryType = exporterType,
+            InMemoryType = AssemblyLoadInfo.PreserveType(exporterType),
         });
 
         if (exporterType == typeof(DatadogExporter))
@@ -537,7 +537,7 @@ public sealed class ConfigBuilder
         {
             FilePath = assertorTypeLocation,
             Type = assertorType.FullName,
-            InMemoryType = assertorType,
+            InMemoryType = AssemblyLoadInfo.PreserveType(assertorType),
         });
 
         return this;
@@ -681,7 +681,7 @@ public sealed class ConfigBuilder
         {
             FilePath = serviceTypeLocation,
             Type = serviceType.FullName,
-            InMemoryType = serviceType,
+            InMemoryType = AssemblyLoadInfo.PreserveType(serviceType),
         });
 
         return this;
