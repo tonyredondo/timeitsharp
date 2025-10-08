@@ -839,23 +839,37 @@ internal sealed class ScenarioProcessor
             await using (var file = File.Open(metricsFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
             using (var reader = new BinaryReader(file))
             {
-                while (file.Position < file.Length)
+                while (file.Position + 4 < file.Length)
                 {
-                    // Read magic number
-                    if (reader.ReadInt32() != 7248)
-                    {
-                        continue;
-                    }
+                    BinaryFileStorage.MetricType type;
+                    int nameLength;
+                    byte[] nameBytes;
+                    string name;
+                    double value;
 
-                    // Read metric type
-                    var type = (BinaryFileStorage.MetricType)reader.ReadByte();
-                    // Read name length
-                    var nameLength = reader.ReadInt32();
-                    // Read name
-                    var nameBytes = reader.ReadBytes(nameLength);
-                    var name = Encoding.UTF8.GetString(nameBytes);
-                    // Read value
-                    var value = reader.ReadDouble();
+                    try
+                    {
+                        // Read magic number
+                        if (reader.ReadInt32() != 7248)
+                        {
+                            continue;
+                        }
+
+                        // Read metric type
+                        type = (BinaryFileStorage.MetricType)reader.ReadByte();
+                        // Read name length
+                        nameLength = reader.ReadInt32();
+                        // Read name
+                        nameBytes = reader.ReadBytes(nameLength);
+                        name = Encoding.UTF8.GetString(nameBytes);
+                        // Read value
+                        value = reader.ReadDouble();
+                    }
+                    catch (EndOfStreamException)
+                    {
+                        // We reached the end of the stream, corrupted data, just break
+                        break;
+                    }
 
                     try
                     {
