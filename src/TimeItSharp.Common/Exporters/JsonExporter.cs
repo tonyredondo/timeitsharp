@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Spectre.Console;
 using TimeItSharp.Common.Results;
@@ -55,7 +56,7 @@ public sealed class JsonExporter : IExporter
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine("[red]Error exporting to json:[/]");
-#if AOT
+#if NATIVE_AOT
             AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
             AnsiConsole.WriteLine(ex.ToString());
 #else

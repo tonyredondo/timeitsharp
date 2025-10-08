@@ -10,12 +10,17 @@
     <NoWarn>NETSDK1138,0436,IL3000</NoWarn>
     <InternalsAssemblyUseEmptyMethodBodies>false</InternalsAssemblyUseEmptyMethodBodies>
     <PackageOutputPath>..\..\artifacts</PackageOutputPath>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
   </PropertyGroup>
 
-  <PropertyGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">
     <IsTrimmable>true</IsTrimmable>
     <IsAotCompatible>true</IsAotCompatible>
-      <DefineConstants>$(DefineConstants);AOT</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(AOT)' == 'true' and $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">
+      <PublishAot>true</PublishAot>
+      <PublishSelfContained>true</PublishSelfContained>
+      <DefineConstants>$(DefineConstants);NATIVE_AOT</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

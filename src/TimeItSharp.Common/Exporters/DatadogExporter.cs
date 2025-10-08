@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using DatadogTestLogger.Vendors.Datadog.Trace;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci.Logging.DirectSubmission;
@@ -200,7 +201,7 @@ public sealed class DatadogExporter : IExporter
         {
             errors = true;
             AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
-#if AOT
+#if NATIVE_AOT
             AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
             AnsiConsole.WriteLine(ex.ToString());
 #else
