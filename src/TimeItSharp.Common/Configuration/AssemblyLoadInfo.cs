@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -18,6 +19,7 @@ public class AssemblyLoadInfo
     public Dictionary<string, JsonElement?>? Options { get; set; }
     
     [JsonIgnore]
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     public Type? InMemoryType { get; set; }
     
     internal AssemblyLoadInfo Clone() => new()

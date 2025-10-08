@@ -61,9 +61,17 @@ public static class TimeItEngine
         config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
 
         // Exporters
-        var exportersInfo = GetFromAssemblyLoadInfoList(
+        var exportersInfo = GetFromAssemblyLoadInfoList<IExporter>(
             config.Exporters,
-            () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() });
+            () =>
+            {
+                if (config.EnableDatadog)
+                {
+                    return [new ConsoleExporter(), new JsonExporter(), new DatadogExporter()];
+                }
+
+                return [new ConsoleExporter(), new JsonExporter()];
+            });
         var exporters = exportersInfo.Select(i => i.Instance).ToList();
     
         // Assertors
@@ -186,6 +194,13 @@ public static class TimeItEngine
     }
 
     [RequiresUnreferencedCode("Calls System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String)")]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(ConsoleExporter))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(JsonExporter))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(DatadogExporter))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(DefaultAssertor))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(DatadogProfilerService))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(ExecuteService))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(NoopService))]
     private static List<(T Instance, AssemblyLoadInfo? LoadInfo)> GetFromAssemblyLoadInfoList<T>(
         IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
         Func<List<T>>? defaultListFunc = null)
@@ -241,6 +256,70 @@ public static class TimeItEngine
             }
             else if (!string.IsNullOrEmpty(assemblyLoadInfo.Name))
             {
+                if (typeof(T) == typeof(IExporter))
+                {
+                    bool LookForExporters<EType>(string name) where EType : IExporter, new()
+                    {
+                        if (assemblyLoadInfo.Name == name)
+                        {
+                            resultList.Add(((T)(object)new EType(), assemblyLoadInfo));
+                            return true;
+                        }
+
+                        return false;
+                    }
+                    
+                    if (LookForExporters<ConsoleExporter>(nameof(ConsoleExporter)) ||
+                        LookForExporters<JsonExporter>(nameof(JsonExporter)) ||
+                        LookForExporters<DatadogExporter>(nameof(DatadogExporter)) ||
+                        LookForExporters<DatadogExporter>("Datadog"))
+                    {
+                        goto found_and_added;
+                    }
+                }
+                
+                if (typeof(T) == typeof(IAssertor))
+                {
+                    bool LookForAssertors<AType>(string name) where AType : IAssertor, new()
+                    {
+                        if (assemblyLoadInfo.Name == name)
+                        {
+                            resultList.Add(((T)(object)new AType(), assemblyLoadInfo));
+                            return true;
+                        }
+
+                        return false;
+                    }
+                    
+                    if (LookForAssertors<DefaultAssertor>("DefaultAssertor"))
+                    {
+                        goto found_and_added;
+                    }
+                }
+                
+                if (typeof(T) == typeof(IService))
+                {
+                    bool LookForServices<SType>(string name) where SType : IService, new()
+                    {
+                        if (assemblyLoadInfo.Name == name)
+                        {
+                            resultList.Add(((T)(object)new SType(), assemblyLoadInfo));
+                            return true;
+                        }
+
+                        return false;
+                    }
+                    
+                    if (LookForServices<DatadogProfilerService>(nameof(DatadogProfilerService)) ||
+                        LookForServices<DatadogProfilerService>("DatadogProfiler") ||
+                        LookForServices<ExecuteService>(nameof(ExecuteService)) ||
+                        LookForServices<ExecuteService>("Execute") ||
+                        LookForServices<NoopService>(nameof(NoopService)))
+                    {
+                        goto found_and_added;
+                    }
+                }
+                
                 foreach (var assembly in loadContext.Assemblies)
                 {
                     foreach (var typeInfo in assembly.DefinedTypes)

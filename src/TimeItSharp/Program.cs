@@ -192,7 +192,12 @@ root.SetHandler(async (context) =>
     catch (Exception ex)
     {
         AnsiConsole.MarkupLine("[red]An error occurred while running TimeItSharp:[/]");
+#if AOT
+        AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
+        AnsiConsole.WriteLine(ex.ToString());
+#else
         AnsiConsole.WriteException(ex);
+#endif
         exitCode = 1;
     }
 

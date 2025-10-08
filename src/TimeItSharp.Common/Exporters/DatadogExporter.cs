@@ -200,7 +200,12 @@ public sealed class DatadogExporter : IExporter
         {
             errors = true;
             AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
+#if AOT
+            AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
+            AnsiConsole.WriteLine(ex.ToString());
+#else
             AnsiConsole.WriteException(ex);
+#endif
         }
         finally
         {

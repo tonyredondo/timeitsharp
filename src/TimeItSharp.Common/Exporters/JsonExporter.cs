@@ -55,7 +55,12 @@ public sealed class JsonExporter : IExporter
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine("[red]Error exporting to json:[/]");
+#if AOT
+            AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
+            AnsiConsole.WriteLine(ex.ToString());
+#else
             AnsiConsole.WriteException(ex);
+#endif
         }
     }
 }

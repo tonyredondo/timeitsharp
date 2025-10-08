@@ -307,7 +307,12 @@ internal static class Utils
         }
         catch (Exception ex)
         {
+#if AOT
+            AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
+            AnsiConsole.WriteLine(ex.ToString());
+#else
             AnsiConsole.WriteException(ex);
+#endif
             return [mean, mean];
         }
     }

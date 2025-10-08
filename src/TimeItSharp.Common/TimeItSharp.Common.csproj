@@ -15,6 +15,7 @@
   <PropertyGroup>
     <IsTrimmable>true</IsTrimmable>
     <IsAotCompatible>true</IsAotCompatible>
+      <DefineConstants>$(DefineConstants);AOT</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
