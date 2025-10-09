@@ -3,6 +3,7 @@ using TimeItSharp.Common;
 using System.CommandLine;
 using System.CommandLine.Binding;
 using System.CommandLine.Invocation;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
@@ -192,7 +193,12 @@ root.SetHandler(async (context) =>
     catch (Exception ex)
     {
         AnsiConsole.MarkupLine("[red]An error occurred while running TimeItSharp:[/]");
+#if NATIVE_AOT
+        AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
+        AnsiConsole.WriteLine(ex.ToString());
+#else
         AnsiConsole.WriteException(ex);
+#endif
         exitCode = 1;
     }
 

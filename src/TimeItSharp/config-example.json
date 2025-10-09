@@ -1,5 +1,5 @@
 ﻿{
-  "enableDatadog": true,
+  "enableDatadog": false,
   "enableMetrics": true,
   "warmUpCount": 10,
   "count": 100,

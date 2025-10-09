@@ -276,12 +276,19 @@ public sealed class DatadogProfilerService : IService
         {
             // try to locate it from the environment variable
             yield return EnvironmentHelpers.GetEnvironmentVariable("DD_DOTNET_TRACER_HOME");
-        
+
+#if NATIVE_AOT
+            // try to locate it in the default path using relative path from the benchmark assembly.
+            yield return Path.Combine(
+                System.AppContext.BaseDirectory,
+                "datadog");
+#else
             // try to locate it in the default path using relative path from the benchmark assembly.
             yield return Path.Combine(
                 Path.GetDirectoryName(typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser).Assembly.Location) ?? string.Empty,
                 "datadog");
-        
+#endif
+
             // try to locate it in the default path using relative path from the benchmark assembly.
             yield return Path.Combine(
                 Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory) ?? string.Empty,

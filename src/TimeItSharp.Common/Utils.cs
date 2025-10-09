@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Runtime.CompilerServices;
+using System.Text;
 using MathNet.Numerics.Distributions;
 using Spectre.Console;
 using TimeItSharp.Common.Results;
@@ -307,7 +308,12 @@ internal static class Utils
         }
         catch (Exception ex)
         {
+#if NATIVE_AOT
+            AnsiConsole.MarkupLine("[red]{0}[/]", ex.Message);
+            AnsiConsole.WriteLine(ex.ToString());
+#else
             AnsiConsole.WriteException(ex);
+#endif
             return [mean, mean];
         }
     }

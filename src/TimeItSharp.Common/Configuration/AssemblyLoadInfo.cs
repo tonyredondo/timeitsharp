@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -20,12 +21,18 @@ public class AssemblyLoadInfo
     [JsonIgnore]
     public Type? InMemoryType { get; set; }
     
-    internal AssemblyLoadInfo Clone() => new()
+    internal AssemblyLoadInfo Clone()
     {
-        FilePath = FilePath,
-        Type = Type,
-        Name = Name,
-        Options = Options,
-        InMemoryType = InMemoryType,
-    };
+        return new AssemblyLoadInfo
+        {
+            FilePath = FilePath,
+            Type = Type,
+            Name = Name,
+            Options = Options,
+            InMemoryType = InMemoryType,
+        };
+    }
+
+    internal static Type? PreserveType(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type? type) => type;
 }
