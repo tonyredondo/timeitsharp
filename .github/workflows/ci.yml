@@ -92,6 +92,7 @@ jobs:
         if: matrix.rid == 'linux-arm64'
         run: |
           sudo apt-get install -y binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          sudo ln -sf /usr/bin/aarch64-linux-gnu-objcopy /usr/local/bin/objcopy
 
       - name: Restore solution
         run: dotnet restore
