@@ -91,7 +91,7 @@ jobs:
       - name: Install cross toolchain for linux-arm64
         if: matrix.rid == 'linux-arm64'
         run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+          sudo apt-get install -y binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu libc6-dev-arm64-cross
 
       - name: Restore solution
         run: dotnet restore
