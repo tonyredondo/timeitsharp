@@ -21,10 +21,14 @@
     </PropertyGroup>
     
     <PropertyGroup Condition="'$(AOT)' == 'true' and $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">
+        <ToolCommandName>dotnet-timeitnative</ToolCommandName>
+        <PackageId>TimeItSharpNative</PackageId>
         <IsAotCompatible>true</IsAotCompatible>
         <PublishAot>true</PublishAot>
         <OptimizationPreference>Size</OptimizationPreference>
         <PublishSelfContained>true</PublishSelfContained>
+        <StripSymbols>true</StripSymbols>
+        <OptimizationPreference>Size</OptimizationPreference>
         <DefineConstants>$(DefineConstants);NATIVE_AOT</DefineConstants>
     </PropertyGroup>
 
