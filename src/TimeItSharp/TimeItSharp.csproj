@@ -2,8 +2,8 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFrameworks>net6.0</TargetFrameworks>
-        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <TargetFrameworks>net6.0;net10.0</TargetFrameworks>
+        <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
         <Description>Command execution time meter</Description>
         <Copyright>Tony Redondo @ 2023</Copyright>
         <PackageTags>timeit, timeitsharp, benchmark, performance</PackageTags>
@@ -19,6 +19,18 @@
         <PackageOutputPath>..\..\artifacts</PackageOutputPath>
         <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
     </PropertyGroup>
+    
+    <PropertyGroup Condition="'$(AOT)' == 'true' and $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))">
+        <ToolCommandName>dotnet-timeitnative</ToolCommandName>
+        <PackageId>TimeItSharpNative</PackageId>
+        <IsAotCompatible>true</IsAotCompatible>
+        <PublishAot>true</PublishAot>
+        <OptimizationPreference>Size</OptimizationPreference>
+        <PublishSelfContained>true</PublishSelfContained>
+        <StripSymbols>true</StripSymbols>
+        <OptimizationPreference>Size</OptimizationPreference>
+        <DefineConstants>$(DefineConstants);NATIVE_AOT</DefineConstants>
+    </PropertyGroup>
 
     <ItemGroup>
         <None Update="config-example.json">
@@ -30,11 +42,18 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Condition="!$(RuntimeIdentifier.StartsWith('osx'))" Include="PublishAotCompressed" Version="1.0.5" />
         <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\TimeItSharp.Common\TimeItSharp.Common.csproj" />
+      <ProjectReference Include="..\TimeItSharp.StartupHook\TimeItSharp.StartupHook.csproj" Condition="'$(PublishAot)' == 'true'">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+        <OutputItemType>Content</OutputItemType>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ProjectReference>
     </ItemGroup>
 
 </Project>

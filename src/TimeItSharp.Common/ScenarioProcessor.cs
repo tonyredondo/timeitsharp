@@ -132,6 +132,14 @@ internal sealed class ScenarioProcessor
         if (_configuration.EnableMetrics)
         {
             var startupHookAssemblyLocation = typeof(StartupHook).Assembly.Location;
+            if (string.IsNullOrWhiteSpace(startupHookAssemblyLocation))
+            {
+                startupHookAssemblyLocation = Path.Combine(AppContext.BaseDirectory, "TimeItSharp.StartupHook.dll");
+                if (!File.Exists(startupHookAssemblyLocation))
+                {
+                    startupHookAssemblyLocation = string.Empty;
+                }
+            }
 
             // Add the .NET startup hook to collect metrics
             if (startupHookAssemblyLocation is { Length: > 0 } startupHookLocation)

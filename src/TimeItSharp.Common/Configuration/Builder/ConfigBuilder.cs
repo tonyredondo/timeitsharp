@@ -354,7 +354,7 @@ public sealed class ConfigBuilder
     /// </summary>
     /// <typeparam name="T">Type of exporter</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithExporter<T>()
+    public ConfigBuilder WithExporter<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
         where T : IExporter
     {
         return WithExporter(typeof(T));
@@ -366,7 +366,7 @@ public sealed class ConfigBuilder
     /// <param name="exporterType">Type of exporter</param>
     /// <returns>Configuration builder instance</returns>
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
-    public ConfigBuilder WithExporter(Type exporterType)
+    public ConfigBuilder WithExporter([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type exporterType)
     {
         var exporterTypeLocation = exporterType.Assembly.Location;
         if (string.IsNullOrEmpty(exporterTypeLocation))
@@ -388,7 +388,7 @@ public sealed class ConfigBuilder
         {
             FilePath = exporterTypeLocation,
             Type = exporterType.FullName,
-            InMemoryType = exporterType,
+            InMemoryType = AssemblyLoadInfo.PreserveType(exporterType),
         });
 
         if (exporterType == typeof(DatadogExporter))
@@ -405,7 +405,7 @@ public sealed class ConfigBuilder
     /// <typeparam name="T1">Type of exporter</typeparam>
     /// <typeparam name="T2">Type of exporter</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithExporters<T1, T2>()
+    public ConfigBuilder WithExporters<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T1, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T2>()
         where T1 : IExporter
         where T2 : IExporter
     {
@@ -419,7 +419,7 @@ public sealed class ConfigBuilder
     /// <typeparam name="T2">Type of exporter</typeparam>
     /// <typeparam name="T3">Type of exporter</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithExporters<T1, T2, T3>()
+    public ConfigBuilder WithExporters<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T1, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T2, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T3>()
         where T1 : IExporter
         where T2 : IExporter
         where T3 : IExporter
@@ -503,7 +503,7 @@ public sealed class ConfigBuilder
     /// </summary>
     /// <typeparam name="T">Type of assertor</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithAssertor<T>()
+    public ConfigBuilder WithAssertor<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
         where T : IAssertor
     {
         return WithAssertor(typeof(T));
@@ -515,7 +515,7 @@ public sealed class ConfigBuilder
     /// <param name="assertorType">Type of assertor</param>
     /// <returns>Configuration builder instance</returns>
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
-    public ConfigBuilder WithAssertor(Type assertorType)
+    public ConfigBuilder WithAssertor([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type assertorType)
     {
         var assertorTypeLocation = assertorType.Assembly.Location;
         if (string.IsNullOrEmpty(assertorTypeLocation))
@@ -537,7 +537,7 @@ public sealed class ConfigBuilder
         {
             FilePath = assertorTypeLocation,
             Type = assertorType.FullName,
-            InMemoryType = assertorType,
+            InMemoryType = AssemblyLoadInfo.PreserveType(assertorType),
         });
 
         return this;
@@ -549,7 +549,7 @@ public sealed class ConfigBuilder
     /// <typeparam name="T1">Type of assertor</typeparam>
     /// <typeparam name="T2">Type of assertor</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithAssertors<T1, T2>()
+    public ConfigBuilder WithAssertors<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T1, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T2>()
         where T1 : IAssertor
         where T2 : IAssertor
     {
@@ -563,7 +563,7 @@ public sealed class ConfigBuilder
     /// <typeparam name="T2">Type of assertor</typeparam>
     /// <typeparam name="T3">Type of assertor</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithAssertors<T1, T2, T3>()
+    public ConfigBuilder WithAssertors<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T1, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T2, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T3>()
         where T1 : IAssertor
         where T2 : IAssertor
         where T3 : IAssertor
@@ -647,7 +647,7 @@ public sealed class ConfigBuilder
     /// </summary>
     /// <typeparam name="T">Type of service</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithService<T>()
+    public ConfigBuilder WithService<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>()
         where T : IService
     {
         return WithService(typeof(T));
@@ -659,7 +659,7 @@ public sealed class ConfigBuilder
     /// <param name="serviceType">Type of service</param>
     /// <returns>Configuration builder instance</returns>
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
-    public ConfigBuilder WithService(Type serviceType)
+    public ConfigBuilder WithService([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] Type serviceType)
     {
         var serviceTypeLocation = serviceType.Assembly.Location;
         if (string.IsNullOrEmpty(serviceTypeLocation))
@@ -681,7 +681,7 @@ public sealed class ConfigBuilder
         {
             FilePath = serviceTypeLocation,
             Type = serviceType.FullName,
-            InMemoryType = serviceType,
+            InMemoryType = AssemblyLoadInfo.PreserveType(serviceType),
         });
 
         return this;
@@ -693,7 +693,7 @@ public sealed class ConfigBuilder
     /// <typeparam name="T1">Type of service</typeparam>
     /// <typeparam name="T2">Type of service</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithServices<T1, T2>()
+    public ConfigBuilder WithServices<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T1, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T2>()
         where T1 : IService
         where T2 : IService
     {
@@ -707,7 +707,7 @@ public sealed class ConfigBuilder
     /// <typeparam name="T2">Type of service</typeparam>
     /// <typeparam name="T3">Type of service</typeparam>
     /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithServices<T1, T2, T3>()
+    public ConfigBuilder WithServices<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T1, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T2, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T3>()
         where T1 : IService
         where T2 : IService
         where T3 : IService
