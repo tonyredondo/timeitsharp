@@ -67,6 +67,33 @@ public sealed class DatadogExporter : IExporter
                     test = testSuite.InternalCreateTest(scenarioResult.Name, scenarioResult.Start);
                 }
 
+                // Source file
+                var filePath = _options.Configuration.FilePath;
+                if (!string.IsNullOrEmpty(filePath))
+                {
+                    filePath = Path.IsPathFullyQualified(filePath) ? filePath : Path.GetFullPath(filePath);
+                    string? relativePath = null;
+                    try
+                    {
+                        relativePath = CIEnvironmentValues.Instance.MakeRelativePathFromSourceRoot(filePath, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
+                        AnsiConsole.WriteException(ex);
+                    }
+
+                    if (relativePath is not null)
+                    {
+                        test.SetTag("test.source.file", relativePath);
+                        if (CIEnvironmentValues.Instance.CodeOwners is { } codeOwners &&
+                            codeOwners.Match("/" + relativePath) is { } entry)
+                        {
+                            test.SetTag("test.codeowners", entry.GetOwnersString());
+                        }
+                    }
+                }
+
                 // Set benchmark metadata
                 test.SetBenchmarkMetadata(new BenchmarkHostInfo
                 {
