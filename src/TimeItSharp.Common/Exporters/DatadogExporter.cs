@@ -219,6 +219,7 @@ public sealed class DatadogExporter : IExporter
                 }
                 
                 // Close test
+                test.SetTag("test.final_status", scenarioResult.Status == Status.Passed ? "pass" : "fail");
                 test.Close(scenarioResult.Status == Status.Passed ? TestStatus.Pass : TestStatus.Fail,
                     scenarioResult.Duration);
             }
