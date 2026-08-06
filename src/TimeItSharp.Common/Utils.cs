@@ -20,8 +20,8 @@ internal static class Utils
         // Use MathNet's StandardDeviation function to calculate the standard deviation
         var stdDev = MathNet.Numerics.Statistics.Statistics.StandardDeviation(data);
     
-        // Check for NaN and return 0.0 if true
-        if (double.IsNaN(stdDev))
+        // Check for non-finite results and return 0.0 if the input is corrupt or too small.
+        if (!double.IsFinite(stdDev))
         {
             return 0.0;
         }
@@ -101,12 +101,19 @@ internal static class Utils
             return false;
         }
 
-        // Initialize variables to find the range of the data.
+        // Initialize variables to find the range of finite data points.
         double min = double.MaxValue, max = double.MinValue;
+        var finiteCount = 0;
 
-        // Find the minimum and maximum values in the data.
+        // Find the minimum and maximum values in the data while ignoring corrupt samples.
         foreach (var item in data)
         {
+            if (!double.IsFinite(item))
+            {
+                continue;
+            }
+
+            finiteCount++;
             if (item < min)
             {
                 min = item;
@@ -118,6 +125,13 @@ internal static class Utils
             }
         }
 
+        // Constant or insufficient finite samples have no meaningful distribution.
+        peakCount = 0;
+        if (finiteCount < 3 || max <= min)
+        {
+            return false;
+        }
+
         // Create and initialize a histogram with 'binCount' bins.
         var histogram = new int[binCount];
         var binWidth = (max - min) / binCount;
@@ -125,6 +139,11 @@ internal static class Utils
         // Populate the histogram based on where each data point falls.
         foreach (var item in data)
         {
+            if (!double.IsFinite(item))
+            {
+                continue;
+            }
+
             var binIndex = (int)((item - min) / binWidth);
             // Handle edge case where item equals the maximum value.
             if (binIndex == binCount)
@@ -134,9 +153,6 @@ internal static class Utils
 
             histogram[binIndex]++;
         }
-
-        // Initialize variable to count the number of peaks in the histogram.
-        peakCount = 0;
 
         // Count the peaks in the histogram.
         // A peak is defined as a bin count greater than its neighbors.
@@ -152,6 +168,23 @@ internal static class Utils
         return peakCount >= 2;
     }
 
+    internal static bool IsSensitiveEnvironmentVariable(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        var normalizedName = name.Replace("_", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .ToUpperInvariant();
+        return normalizedName.Contains("PASSWORD", StringComparison.Ordinal) ||
+               normalizedName.Contains("SECRET", StringComparison.Ordinal) ||
+               normalizedName.Contains("TOKEN", StringComparison.Ordinal) ||
+               normalizedName.Contains("APIKEY", StringComparison.Ordinal) ||
+               normalizedName.Contains("PRIVATEKEY", StringComparison.Ordinal) ||
+               normalizedName.Contains("AUTH", StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// Calculates the interquartile range (IQR) of a sorted dataset.
     /// </summary>
@@ -160,6 +193,11 @@ internal static class Utils
     public static double CalculateIQR(double[] sortedData)
     {
         var n = sortedData.Length;
+        if (n < 2)
+        {
+            return 0;
+        }
+
         double Q1, Q3;
 
         if (n % 2 == 0)
@@ -207,13 +245,17 @@ internal static class Utils
                 var secondItem = results[j];
                 var secondMean = secondItem.Mean;
 
-                // Calculate the overhead percentage of secondMean over firstMean
-                var overheadPercentage = ((secondMean * 100) / firstMean) - 100;
-                overheadPercentage = Math.Round(overheadPercentage, 1);
+                // A zero baseline has no meaningful relative overhead.
+                var overheadPercentage = firstMean == 0
+                    ? 0
+                    : ((secondMean * 100) / firstMean) - 100;
+                overheadPercentage = double.IsFinite(overheadPercentage)
+                    ? Math.Round(overheadPercentage, 1)
+                    : 0;
 
                 // Calculate the delta value
                 var deltaValue = secondMean - firstMean;
-                deltaValue = Math.Round(deltaValue, 1);
+                deltaValue = double.IsFinite(deltaValue) ? Math.Round(deltaValue, 1) : 0;
 
                 // Store the results in the table using the constructor
                 tableData[i][j] = new OverheadResult(overheadPercentage, deltaValue);
@@ -307,7 +349,7 @@ internal static class Utils
         }
         catch (Exception ex)
         {
-            AnsiConsole.WriteException(ex);
+            AnsiConsole.WriteLine(ex.ToString());
             return [mean, mean];
         }
     }

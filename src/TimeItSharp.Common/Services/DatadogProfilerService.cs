@@ -237,8 +237,8 @@ public sealed class DatadogProfilerService : IService
         environment["DD_INTERNAL_PROFILING_WALLTIME_THREADS_THRESHOLD"] = "64";
         environment["DD_INTERNAL_PROFILING_CODEHOTSPOTS_THREADS_THRESHOLD"] = "64";
         environment["DD_INTERNAL_PROFILING_CPUTIME_THREADS_THRESHOLD"] = "128";
-        environment["DD_INTERNAL_PROFILING_TIMESTAMPS_AS_LABEL_ENABLED "] = "1";
-        environment["DD_PROFILING_FRAMES_NATIVE_ENABLED "] = "1";
+        environment["DD_INTERNAL_PROFILING_TIMESTAMPS_AS_LABEL_ENABLED"] = "1";
+        environment["DD_PROFILING_FRAMES_NATIVE_ENABLED"] = "1";
 
         // Tags
         var tagsList = new List<string>();
@@ -282,10 +282,8 @@ public sealed class DatadogProfilerService : IService
                 Path.GetDirectoryName(typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser).Assembly.Location) ?? string.Empty,
                 "datadog");
         
-            // try to locate it in the default path using relative path from the benchmark assembly.
-            yield return Path.Combine(
-                Path.GetDirectoryName(AppDomain.CurrentDomain.BaseDirectory) ?? string.Empty,
-                "datadog");
+            // try to locate it in the default path relative to the application base directory.
+            yield return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "datadog");
         
             // try to locate it in the default path using relative path from the current directory.
             yield return Path.Combine(
@@ -331,8 +329,9 @@ public sealed class DatadogProfilerService : IService
             }
 
             if (!File.Exists(profiler64Path) ||
-                (profiler32Path is not null && !File.Exists(profiler64Path)) ||
-                !File.Exists(loaderConfig))
+                (profiler32Path is not null && !File.Exists(profiler32Path)) ||
+                !File.Exists(loaderConfig) ||
+                (ldPreload is not null && !File.Exists(ldPreload)))
             {
                 return false;
             }

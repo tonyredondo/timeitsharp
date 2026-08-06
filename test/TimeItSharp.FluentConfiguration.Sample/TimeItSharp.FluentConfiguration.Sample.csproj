@@ -2,6 +2,7 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
         <TargetFrameworks>net6.0;net7.0;net8.0;net9.0;net10.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -10,6 +11,9 @@
     <PropertyGroup>
         <PublishTrimmed>true</PublishTrimmed>
         <PublishSingleFile>true</PublishSingleFile>
+        <!-- This sample deliberately exercises reflection-based loading and vendored tracing
+             under trimming; the relevant dependency warnings are expected for this smoke test. -->
+        <NoWarn>$(NoWarn);IL2026;IL2104</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <TrimmerRootAssembly Include="TimeItSharp.StartupHook"/>

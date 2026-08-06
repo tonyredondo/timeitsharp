@@ -13,15 +13,13 @@ public sealed class DatadogExporter : IExporter
 {
     private string? _configName;
     private InitOptions _options;
-    private readonly TestSession _testSession;
+    private TestSession? _testSession;
     private readonly DateTime _startDate;
     private TestModule? _testModule;
     private FieldInfo? _scopeField = typeof(Test).GetField("_scope", BindingFlags.Instance | BindingFlags.NonPublic);
 
     public DatadogExporter()
     {
-        Environment.SetEnvironmentVariable("DD_CIVISIBILITY_LOGS_ENABLED", "true");
-        _testSession = TestSession.InternalGetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
         _startDate = DateTime.UtcNow;
     }
     
@@ -35,6 +33,13 @@ public sealed class DatadogExporter : IExporter
     public void Initialize(InitOptions options)
     {
         _options = options;
+        if (!Enabled)
+        {
+            return;
+        }
+
+        Environment.SetEnvironmentVariable("DD_CIVISIBILITY_LOGS_ENABLED", "true");
+        _testSession ??= TestSession.InternalGetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
         _configName = options.Configuration?.Name;
         if (string.IsNullOrEmpty(_configName))
         {
@@ -47,12 +52,33 @@ public sealed class DatadogExporter : IExporter
     /// <inheritdoc />
     public void Export(TimeitResult results)
     {
+        var testSession = _testSession;
+        if (!Enabled || testSession is null)
+        {
+            return;
+        }
+
+        if (results.Scenarios.Count == 0)
+        {
+            try
+            {
+                _testModule?.Close();
+            }
+            finally
+            {
+                testSession.Close(TestStatus.Fail);
+            }
+
+            return;
+        }
+
         var errors = false;
-        var minStartDate = results.Scenarios.Select(r => r.Start).Min();
-        _testModule ??= _testSession.InternalCreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
-        var testSuite = _testModule.InternalGetOrCreateSuite(_configName is not null ? $"{_configName}.scenarios" : "scenarios", minStartDate);
+        TestSuite? testSuite = null;
         try
         {
+            var minStartDate = results.Scenarios.Select(r => r.Start).Min();
+            _testModule ??= testSession.InternalCreateModule(_configName ?? "config_file", "time-it", typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)", minStartDate);
+            testSuite = _testModule.InternalGetOrCreateSuite(_configName is not null ? $"{_configName}.scenarios" : "scenarios", minStartDate);
             for (var i = 0; i < results.Scenarios.Count; i++)
             {
                 var scenarioResult = results.Scenarios[i];
@@ -80,7 +106,7 @@ public sealed class DatadogExporter : IExporter
                     catch (Exception ex)
                     {
                         AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
-                        AnsiConsole.WriteException(ex);
+                        AnsiConsole.WriteLine(ex.ToString());
                     }
 
                     if (relativePath is not null)
@@ -106,11 +132,14 @@ public sealed class DatadogExporter : IExporter
                     RuntimeName = FrameworkDescription.Instance.Name,
                 });
 
-                // Add duration benchmark data
-                test.AddBenchmarkData(
-                    BenchmarkMeasureType.Duration,
-                    "Duration of a run",
-                    BenchmarkDiscreteStats.GetFrom(scenarioResult.Durations.ToArray()));
+                // Add duration benchmark data only when samples were collected.
+                if (scenarioResult.Durations.Count > 0)
+                {
+                    test.AddBenchmarkData(
+                        BenchmarkMeasureType.Duration,
+                        "Duration of a run",
+                        BenchmarkDiscreteStats.GetFrom(scenarioResult.Durations.ToArray()));
+                }
 
                 // Report benchmark duration data
                 test.SetTag("benchmark.duration.bimodal", scenarioResult.IsBimodal ? "true": "false");
@@ -119,7 +148,8 @@ public sealed class DatadogExporter : IExporter
                 test.SetTag("benchmark.duration.outliers_count", scenarioResult.Outliers?.Count ?? 0);
 
                 // Add metrics
-                if (scenarioResult.MetricsData.TryGetValue("process.time_to_start_ms", out var timeToStart))
+                if (scenarioResult.MetricsData.TryGetValue("process.time_to_start_ms", out var timeToStart) &&
+                    timeToStart.Count > 0)
                 {
                     var timeToStartArray = timeToStart.Select(v => v * 1000000).ToArray();
                     test.AddBenchmarkData(
@@ -128,7 +158,8 @@ public sealed class DatadogExporter : IExporter
                         BenchmarkDiscreteStats.GetFrom(timeToStartArray));
                 }
 
-                if (scenarioResult.MetricsData.TryGetValue("process.internal_duration_ms", out var internalDuration))
+                if (scenarioResult.MetricsData.TryGetValue("process.internal_duration_ms", out var internalDuration) &&
+                    internalDuration.Count > 0)
                 {
                     var internalDurationArray = internalDuration.Select(v => v * 1000000).ToArray();
                     test.AddBenchmarkData(
@@ -170,6 +201,11 @@ public sealed class DatadogExporter : IExporter
                 test.SetTag("test.working_directory", scenarioResult.WorkingDirectory);
                 foreach (var envVar in scenarioResult.EnvironmentVariables)
                 {
+                    if (Utils.IsSensitiveEnvironmentVariable(envVar.Key))
+                    {
+                        continue;
+                    }
+
                     test.SetTag($"test.environment_variables.{envVar.Key}", envVar.Value);
                 }
 
@@ -194,17 +230,18 @@ public sealed class DatadogExporter : IExporter
                 // Add overheads
                 if (results.Overheads is not null)
                 {
-                    for (var j = 0; j < results.Overheads.Length; j++)
+                    var overheadCount = Math.Min(results.Overheads.Length, results.Scenarios.Count);
+                    for (var j = 0; j < overheadCount; j++)
                     {
-                        if (i == j)
+                        if (i == j || i >= results.Overheads[j].Length)
                         {
                             continue;
                         }
 
-                        var overheads = results.Overheads[j];
+                        var overhead = results.Overheads[j][i];
                         var name = results.Scenarios[j].Name;
-                        test.SetTag($"test.overhead_over.{name}", Math.Round(overheads[i].OverheadPercentage, 2));
-                        test.SetTag($"test.overhead_over.{name}.delta", Math.Round(overheads[i].DeltaValue, 2));
+                        test.SetTag($"test.overhead_over.{name}", Math.Round(overhead.OverheadPercentage, 2));
+                        test.SetTag($"test.overhead_over.{name}.delta", Math.Round(overhead.DeltaValue, 2));
                     }
                 }
 
@@ -228,18 +265,26 @@ public sealed class DatadogExporter : IExporter
         {
             errors = true;
             AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
-            AnsiConsole.WriteException(ex);
+            AnsiConsole.WriteLine(ex.ToString());
         }
         finally
         {
-            testSuite.Close();
-            _testModule.Close();
-            _testSession.Close(TestStatus.Pass);
+            testSuite?.Close();
+            _testModule?.Close();
+            var sessionStatus = errors || results.Scenarios.Any(s => s.Status == Status.Failed)
+                ? TestStatus.Fail
+                : TestStatus.Pass;
+            testSession.Close(sessionStatus);
         }
 
-        if (!errors)
+        if (!errors && results.Scenarios.All(s => s.Status == Status.Passed))
         {
-            AnsiConsole.MarkupLine($"[lime]The Datadog exported ran successfully.[/]");
+            AnsiConsole.MarkupLine("[lime]The Datadog export ran successfully.[/]");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine("[yellow]The Datadog export completed with errors.[/]");
         }
     }
+
 }

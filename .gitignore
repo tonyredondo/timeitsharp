@@ -3,4 +3,5 @@ obj/
 .idea/
 .DS_Store
 *.nupkg
+jsonexporter_*.json
 *.DotSettings.user

@@ -27,9 +27,7 @@ internal sealed class ScenarioProcessor
     private readonly IReadOnlyList<IService> _services;
     private readonly TimeItCallbacks.CallbacksTriggers _callbacksTriggers;
 
-    private static readonly IDictionary EnvironmentVariables = Environment.GetEnvironmentVariables();
-
-    private double _remainingTimeInMinutes;
+    private TimeSpan _remainingDuration;
     
     public ScenarioProcessor(
         Config configuration,
@@ -43,7 +41,9 @@ internal sealed class ScenarioProcessor
         _assertors = assertors;
         _services = services;
         _callbacksTriggers = callbacksTriggers;
-        _remainingTimeInMinutes = configuration.MaximumDurationInMinutes;
+        _remainingDuration = configuration.MaximumDurationInMinutes > 0
+            ? TimeSpan.FromMinutes(configuration.MaximumDurationInMinutes)
+            : TimeSpan.Zero;
     }
 
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
@@ -70,9 +70,17 @@ internal sealed class ScenarioProcessor
 
         scenario.WorkingDirectory = _templateVariables.Expand(scenario.WorkingDirectory ?? string.Empty);
 
-        foreach (var item in scenario.EnvironmentVariables)
+        var expandedScenarioEnvironmentVariables = scenario.EnvironmentVariables
+            .Select(item => new
+            {
+                Key = _templateVariables.Expand(item.Key),
+                Value = _templateVariables.Expand(item.Value),
+            })
+            .ToList();
+        scenario.EnvironmentVariables.Clear();
+        foreach (var item in expandedScenarioEnvironmentVariables)
         {
-            scenario.EnvironmentVariables[_templateVariables.Expand(item.Key)] = _templateVariables.Expand(item.Value);
+            scenario.EnvironmentVariables[item.Key] = item.Value;
         }
 
         foreach (var item in _configuration.EnvironmentVariables)
@@ -188,6 +196,7 @@ internal sealed class ScenarioProcessor
 
     public void CleanScenario(Scenario scenario)
     {
+        scenario.ParentService = null;
     }
 
     public async Task<ScenarioResult?> ProcessScenarioAsync(int index, Scenario scenario, CancellationToken cancellationToken)
@@ -211,26 +220,7 @@ internal sealed class ScenarioProcessor
 
             if (!string.IsNullOrEmpty(validationErrors))
             {
-                return new ScenarioResult
-                {
-                    Count = _configuration.Count,
-                    WarmUpCount = _configuration.WarmUpCount,
-                    Data = [],
-                    Durations = [],
-                    Outliers = [],
-                    Metrics = [],
-                    MetricsData = [],
-                    Error = validationErrors,
-                    Name = scenario.Name,
-                    ProcessName = scenario.ProcessName,
-                    ProcessArguments = scenario.ProcessArguments,
-                    EnvironmentVariables = scenario.EnvironmentVariables,
-                    PathValidations = scenario.PathValidations,
-                    WorkingDirectory = scenario.WorkingDirectory,
-                    Timeout = scenario.Timeout,
-                    Tags = scenario.Tags,
-                    Status = Status.Failed,
-                };
+                return CreateFailedScenarioResult(scenario, validationErrors);
             }
         }
 
@@ -278,6 +268,7 @@ internal sealed class ScenarioProcessor
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
             {
+                scenario.ParentService = null;
                 return null;
             }
 
@@ -285,6 +276,8 @@ internal sealed class ScenarioProcessor
         }
         
         scenario.ParentService = null;
+        var scenarioEnd = DateTime.UtcNow;
+        var scenarioDuration = scenarioEnd - start;
 
         AnsiConsole.WriteLine();
 
@@ -320,6 +313,14 @@ internal sealed class ScenarioProcessor
                     metricsItem.Add(kv.Value);
                 }
             }
+        }
+
+        if (durations.Count == 0)
+        {
+            return CreateFailedScenarioResult(
+                scenario,
+                "No valid data points were collected for this scenario.",
+                dataPoints);
         }
 
         // Get outliers
@@ -456,8 +457,8 @@ internal sealed class ScenarioProcessor
                 Metrics = metricsStats,
                 MetricsData = metricsData,
                 Start = start,
-                End = start + watch.Elapsed,
-                Duration = watch.Elapsed,
+                End = scenarioEnd,
+                Duration = scenarioDuration,
                 Error = response.Message,
                 Name = scenario.Name,
                 ProcessName = scenario.ProcessName,
@@ -523,7 +524,7 @@ internal sealed class ScenarioProcessor
                     }
 
                     var durations = Utils.RemoveOutliers(dataPoints.Select(GetDuration), threshold: 1.5).ToList();
-                    if (durations.Count >= minIterations || stopwatch.Elapsed.TotalMinutes >= _remainingTimeInMinutes)
+                    if (durations.Count >= minIterations || stopwatch.Elapsed >= _remainingDuration)
                     {
                         var mean = durations.Average();
                         var stdev = durations.StandardDeviation();
@@ -536,10 +537,16 @@ internal sealed class ScenarioProcessor
                         var marginOfError = tCritical * stderr;
                         var confidenceIntervalLower = mean - marginOfError;
                         var confidenceIntervalUpper = mean + marginOfError;
-                        var relativeWidth = (confidenceIntervalUpper - confidenceIntervalLower) / mean;
+                        var relativeWidth = mean == 0
+                            ? (confidenceIntervalUpper == confidenceIntervalLower ? 0 : double.PositiveInfinity)
+                            : (confidenceIntervalUpper - confidenceIntervalLower) / mean;
+                        if (!double.IsFinite(relativeWidth))
+                        {
+                            relativeWidth = double.PositiveInfinity;
+                        }
 
                         // Check if the maximum duration is reached
-                        if (stopwatch.Elapsed.TotalMinutes >= _remainingTimeInMinutes)
+                        if (stopwatch.Elapsed >= _remainingDuration)
                         {
                             AnsiConsole.WriteLine();
                             AnsiConsole.MarkupLine(
@@ -617,7 +624,11 @@ internal sealed class ScenarioProcessor
 
         if (phase == TimeItPhase.Run)
         {
-            _remainingTimeInMinutes -= (int)stopwatch.Elapsed.TotalMinutes;
+            _remainingDuration -= stopwatch.Elapsed;
+            if (_remainingDuration < TimeSpan.Zero)
+            {
+                _remainingDuration = TimeSpan.Zero;
+            }
         }
 
         return dataPoints;
@@ -634,7 +645,7 @@ internal sealed class ScenarioProcessor
         var timeoutCmdArguments = scenario.Timeout.ProcessArguments ?? string.Empty;
 
         var cmdEnvironmentVariables = new Dictionary<string, string?>();
-        foreach (DictionaryEntry osEnv in EnvironmentVariables)
+        foreach (DictionaryEntry osEnv in Environment.GetEnvironmentVariables())
         {
             if (osEnv.Key?.ToString() is { Length: > 0 } keyString)
             {
@@ -652,14 +663,30 @@ internal sealed class ScenarioProcessor
             cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = Path.GetTempFileName();
         }
 
-        // add working directory as a path to resolve binary
+        // Make binaries in the working directory available only to this command.
         if (!string.IsNullOrWhiteSpace(workingDirectory))
         {
-            var currentPath = Environment.GetEnvironmentVariable("PATH");
-            if (currentPath != null && !currentPath.Contains(workingDirectory))
+            var pathKey = cmdEnvironmentVariables.Keys.FirstOrDefault(
+                key => string.Equals(key, "PATH", StringComparison.OrdinalIgnoreCase)) ?? "PATH";
+            var currentPath = cmdEnvironmentVariables.TryGetValue(pathKey, out var path)
+                ? path
+                : Environment.GetEnvironmentVariable("PATH");
+            var pathEntries = currentPath?.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                ?? Array.Empty<string>();
+            if (!pathEntries.Any(entry => string.Equals(entry, workingDirectory, StringComparison.OrdinalIgnoreCase)))
             {
-                var pathWithWorkingDir = workingDirectory + Path.PathSeparator + currentPath;
-                Environment.SetEnvironmentVariable("PATH", pathWithWorkingDir);
+                cmdEnvironmentVariables[pathKey] = string.IsNullOrEmpty(currentPath)
+                    ? workingDirectory
+                    : workingDirectory + Path.PathSeparator + currentPath;
+            }
+
+            if (!Path.IsPathRooted(cmdString))
+            {
+                var commandInWorkingDirectory = Path.Combine(workingDirectory, cmdString);
+                if (File.Exists(commandInWorkingDirectory))
+                {
+                    cmdString = commandInWorkingDirectory;
+                }
             }
         }
 
@@ -738,6 +765,13 @@ internal sealed class ScenarioProcessor
                 dataPoint.Error = "Execution cancelled.";
             }
             
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = ex.Message;
+            }
+
             ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
         }
         else
@@ -771,6 +805,12 @@ internal sealed class ScenarioProcessor
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
                 dataPoint.Error = "Execution cancelled.";
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = ex.Message;
             }
 
             if (cmdTask is not null)
@@ -820,6 +860,12 @@ internal sealed class ScenarioProcessor
                         dataPoint.Error = "Process timeout.";
                     }
                 }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    dataPoint.End = DateTime.UtcNow;
+                    dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                    dataPoint.Error = ex.Message;
+                }
             }
 
             ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
@@ -836,144 +882,173 @@ internal sealed class ScenarioProcessor
             var metrics = new Dictionary<string, double>();
             var metricsCount = new Dictionary<string, int>();
 
-            await using (var file = File.Open(metricsFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            using (var reader = new BinaryReader(file))
+            try
             {
-                while (file.Position + 4 < file.Length)
+                await using (var file = File.Open(metricsFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var reader = new BinaryReader(file))
                 {
-                    BinaryFileStorage.MetricType type;
-                    int nameLength;
-                    byte[] nameBytes;
-                    string name;
-                    double value;
-
-                    try
+                    while (file.Position + 4 <= file.Length)
                     {
-                        // Read magic number
-                        if (reader.ReadInt32() != 7248)
+                        BinaryFileStorage.MetricType type;
+                        int nameLength;
+                        byte[] nameBytes;
+                        string name;
+                        double value;
+
+                        try
                         {
-                            continue;
+                            // Read magic number
+                            if (reader.ReadInt32() != 7248)
+                            {
+                                continue;
+                            }
+
+                            // Read metric type
+                            type = (BinaryFileStorage.MetricType)reader.ReadByte();
+                            // Read name length
+                            nameLength = reader.ReadInt32();
+                            if (nameLength < 0 || nameLength > file.Length - file.Position - sizeof(double))
+                            {
+                                break;
+                            }
+
+                            // Read name
+                            nameBytes = reader.ReadBytes(nameLength);
+                            if (nameBytes.Length != nameLength || file.Position + sizeof(double) > file.Length)
+                            {
+                                break;
+                            }
+
+                            name = Encoding.UTF8.GetString(nameBytes);
+                            // Read value
+                            value = reader.ReadDouble();
+                        }
+                        catch (EndOfStreamException)
+                        {
+                            // We reached the end of the stream, corrupted data, just break
+                            break;
                         }
 
-                        // Read metric type
-                        type = (BinaryFileStorage.MetricType)reader.ReadByte();
-                        // Read name length
-                        nameLength = reader.ReadInt32();
-                        // Read name
-                        nameBytes = reader.ReadBytes(nameLength);
-                        name = Encoding.UTF8.GetString(nameBytes);
-                        // Read value
-                        value = reader.ReadDouble();
-                    }
-                    catch (EndOfStreamException)
-                    {
-                        // We reached the end of the stream, corrupted data, just break
-                        break;
-                    }
-
-                    try
-                    {
-                        if (name is not null)
+                        try
                         {
-                            static void EnsureMainDuration(Dictionary<string, double> values,
-                                DateTime? mainStartDate, DateTime? mainEndDate)
+                            if (name is not null)
                             {
-                                if (mainStartDate is not null && mainEndDate is not null)
+                                static void EnsureMainDuration(Dictionary<string, double> values,
+                                    DateTime? mainStartDate, DateTime? mainEndDate)
                                 {
-                                    values[Constants.ProcessInternalDurationMetricNameString] =
-                                        (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
+                                    if (mainStartDate is not null && mainEndDate is not null)
+                                    {
+                                        values[Constants.ProcessInternalDurationMetricNameString] =
+                                            (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
+                                    }
                                 }
-                            }
 
-                            static void EnsureStartupHookOverhead(
-                                DataPoint point,
-                                Dictionary<string, double> values,
-                                DateTime? startDate,
-                                DateTime? mainStartDate,
-                                DateTime? mainEndDate,
-                                DateTime? endDate)
-                            {
-                                if (startDate is not null &&
-                                    mainStartDate is not null &&
-                                    mainEndDate is not null &&
-                                    endDate is not null)
+                                static void EnsureStartupHookOverhead(
+                                    DataPoint point,
+                                    Dictionary<string, double> values,
+                                    DateTime? startDate,
+                                    DateTime? mainStartDate,
+                                    DateTime? mainEndDate,
+                                    DateTime? endDate)
                                 {
-                                    var mainDuration = (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
-                                    var internalDuration = (endDate.Value - startDate.Value).TotalMilliseconds;
-                                    var overheadDuration = internalDuration - mainDuration;
-                                    var globalDuration = (point.End - point.Start).TotalMilliseconds;
-                                    values[Constants.ProcessStartupHookOverheadMetricNameString] = overheadDuration;
-                                    values[Constants.ProcessCorrectedDurationMetricNameString] =
-                                        globalDuration - overheadDuration;
+                                    if (startDate is not null &&
+                                        mainStartDate is not null &&
+                                        mainEndDate is not null &&
+                                        endDate is not null)
+                                    {
+                                        var mainDuration = (mainEndDate.Value - mainStartDate.Value).TotalMilliseconds;
+                                        var internalDuration = (endDate.Value - startDate.Value).TotalMilliseconds;
+                                        var overheadDuration = internalDuration - mainDuration;
+                                        var globalDuration = (point.End - point.Start).TotalMilliseconds;
+                                        values[Constants.ProcessStartupHookOverheadMetricNameString] = overheadDuration;
+                                        values[Constants.ProcessCorrectedDurationMetricNameString] =
+                                            globalDuration - overheadDuration;
+                                    }
                                 }
-                            }
 
-                            if (name == Constants.ProcessStartTimeUtcMetricNameString)
-                            {
-                                inProcStartDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToStartMetricNameString] =
-                                    (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
-                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
-                                    inProcMainEndDate, inProcEndDate);
-                                continue;
-                            }
+                                if (name == Constants.ProcessStartTimeUtcMetricNameString)
+                                {
+                                    inProcStartDate = DateTime.FromBinary((long)value);
+                                    metrics[Constants.ProcessTimeToStartMetricNameString] =
+                                        (inProcStartDate.Value - dataPoint.Start).TotalMilliseconds;
+                                    EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                        inProcMainEndDate, inProcEndDate);
+                                    continue;
+                                }
 
-                            if (name == Constants.MainMethodStartTimeUtcMetricNameString)
-                            {
-                                inProcMainStartDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToMainMetricNameString] =
-                                    (inProcMainStartDate.Value - dataPoint.Start).TotalMilliseconds;
-                                EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
-                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
-                                    inProcMainEndDate, inProcEndDate);
-                                continue;
-                            }
+                                if (name == Constants.MainMethodStartTimeUtcMetricNameString)
+                                {
+                                    inProcMainStartDate = DateTime.FromBinary((long)value);
+                                    metrics[Constants.ProcessTimeToMainMetricNameString] =
+                                        (inProcMainStartDate.Value - dataPoint.Start).TotalMilliseconds;
+                                    EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
+                                    EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                        inProcMainEndDate, inProcEndDate);
+                                    continue;
+                                }
 
-                            if (name == Constants.MainMethodEndTimeUtcMetricNameString)
-                            {
-                                inProcMainEndDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToMainEndMetricNameString] =
-                                    (dataPoint.End - inProcMainEndDate.Value).TotalMilliseconds;
-                                EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
-                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
-                                    inProcMainEndDate, inProcEndDate);
-                                continue;
-                            }
+                                if (name == Constants.MainMethodEndTimeUtcMetricNameString)
+                                {
+                                    inProcMainEndDate = DateTime.FromBinary((long)value);
+                                    metrics[Constants.ProcessTimeToMainEndMetricNameString] =
+                                        (dataPoint.End - inProcMainEndDate.Value).TotalMilliseconds;
+                                    EnsureMainDuration(metrics, inProcMainStartDate, inProcMainEndDate);
+                                    EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                        inProcMainEndDate, inProcEndDate);
+                                    continue;
+                                }
 
-                            if (name == Constants.ProcessEndTimeUtcMetricNameString)
-                            {
-                                inProcEndDate = DateTime.FromBinary((long)value);
-                                metrics[Constants.ProcessTimeToEndMetricNameString] =
-                                    (dataPoint.End - inProcEndDate.Value).TotalMilliseconds;
-                                EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
-                                    inProcMainEndDate, inProcEndDate);
-                                continue;
-                            }
+                                if (name == Constants.ProcessEndTimeUtcMetricNameString)
+                                {
+                                    inProcEndDate = DateTime.FromBinary((long)value);
+                                    metrics[Constants.ProcessTimeToEndMetricNameString] =
+                                        (dataPoint.End - inProcEndDate.Value).TotalMilliseconds;
+                                    EnsureStartupHookOverhead(dataPoint, metrics, inProcStartDate, inProcMainStartDate,
+                                        inProcMainEndDate, inProcEndDate);
+                                    continue;
+                                }
 
-                            if (type == BinaryFileStorage.MetricType.Counter)
-                            {
-                                metrics[name] = value;
-                            }
-                            else if (type is BinaryFileStorage.MetricType.Gauge or BinaryFileStorage.MetricType.Timer)
-                            {
-                                ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
-                                oldValue += value;
+                                if (type == BinaryFileStorage.MetricType.Counter)
+                                {
+                                    metrics[name] = value;
+                                }
+                                else if (type is BinaryFileStorage.MetricType.Gauge or BinaryFileStorage.MetricType.Timer)
+                                {
+                                    ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
+                                    oldValue += value;
 
-                                ref var count =
-                                    ref CollectionsMarshal.GetValueRefOrAddDefault(metricsCount, name, out _);
-                                count++;
-                            }
-                            else if (type == BinaryFileStorage.MetricType.Increment)
-                            {
-                                ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
-                                oldValue += value;
+                                    ref var count =
+                                        ref CollectionsMarshal.GetValueRefOrAddDefault(metricsCount, name, out _);
+                                    count++;
+                                }
+                                else if (type == BinaryFileStorage.MetricType.Increment)
+                                {
+                                    ref var oldValue = ref CollectionsMarshal.GetValueRefOrAddDefault(metrics, name, out _);
+                                    oldValue += value;
+                                }
                             }
                         }
+                        catch
+                        {
+                            // Error reading metric item, we just skip that item
+                        }
                     }
-                    catch
-                    {
-                        // Error reading metric item, we just skip that item
-                    }
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Metrics are supplementary; an unavailable or partially written file must not
+                // make the process execution fail.
+            }
+            finally
+            {
+                try
+                {
+                    File.Delete(metricsFilePath);
+                }
+                catch
+                {
+                    // Do nothing
                 }
             }
 
@@ -983,15 +1058,6 @@ internal sealed class ScenarioProcessor
             }
 
             dataPoint.Metrics = metrics;
-
-            try
-            {
-                File.Delete(metricsFilePath);
-            }
-            catch
-            {
-                // Do nothing
-            }
         }
 
         _callbacksTriggers.ExecutionEnd(dataPoint, phase);
@@ -1007,6 +1073,53 @@ internal sealed class ScenarioProcessor
         }
         
         return dataPoint;
+    }
+
+    private ScenarioResult CreateFailedScenarioResult(
+        Scenario scenario,
+        string error,
+        IReadOnlyList<DataPoint>? dataPoints = null)
+    {
+        var now = DateTime.UtcNow;
+        var result = new ScenarioResult
+        {
+            Scenario = scenario,
+            Count = dataPoints?.Count ?? _configuration.Count,
+            WarmUpCount = _configuration.WarmUpCount,
+            Data = dataPoints?.ToList() ?? [],
+            Durations = [],
+            Outliers = [],
+            Mean = 0,
+            Median = 0,
+            Max = 0,
+            Min = 0,
+            Stdev = 0,
+            StdErr = 0,
+            P99 = 0,
+            P95 = 0,
+            P90 = 0,
+            Ci99 = [0, 0],
+            Ci95 = [0, 0],
+            Ci90 = [0, 0],
+            Metrics = [],
+            MetricsData = [],
+            Error = error,
+            Name = scenario.Name,
+            ProcessName = scenario.ProcessName,
+            ProcessArguments = scenario.ProcessArguments,
+            EnvironmentVariables = new Dictionary<string, string>(scenario.EnvironmentVariables),
+            PathValidations = new List<string>(scenario.PathValidations),
+            WorkingDirectory = scenario.WorkingDirectory,
+            Timeout = scenario.Timeout.Clone(),
+            Tags = new Dictionary<string, object>(scenario.Tags),
+            Status = Status.Failed,
+            OutliersThreshold = 0,
+            Start = now,
+            End = now,
+            Duration = TimeSpan.Zero,
+        };
+        _callbacksTriggers.ScenarioFinish(result);
+        return result;
     }
 
     private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, BufferedCommandResult? cmdResult)

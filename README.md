@@ -11,40 +11,39 @@ dotnet tool install --global TimeItSharp
 
 ### Usage
 ```bash
-dotnet timeit [configuration file.json]
+dotnet timeit [configuration.json]
+dotnet timeit "[command] [arguments]"
 ```
 
-or
+The command form accepts a quoted executable/argument string, including paths containing
+spaces. Configuration files are validated before any process is started; malformed counts,
+statistics, scenarios, and extension entries are reported together.
 
 ```bash
-dotnet timeit -- "[command]"
+dotnet timeit config.json --count 100 --warmup 10 --metrics false
+# For command mode, put options before the optional '--' separator:
+dotnet timeit --count 100 --warmup 10 -- "[command] [arguments]"
+# Values are split at the first '=' so additional '=' characters are preserved.
+dotnet timeit config.json --variable "TOKEN=a=b=c"
 ```
 
-```bash
-❯ dotnet timeit --help
-TimeItSharp v0.1.20
-Description:
-
-Usage:
-  TimeItSharp <configuration file or process name> [options]
-
-Arguments:
-  <configuration file or process name>  The JSON configuration file or process name
-
-Options:
-  --variable <variable>        Variables used to instantiate the configuration file [default: TimeItSharp.Common.TemplateVariables]
-  --count <count>              Number of iterations to run
-  --warmup <warmup>            Number of iterations to warm up
-  --metrics                    Enable Metrics from startup hook [default: True]
-  --json-exporter              Enable JSON exporter [default: False]
-  --datadog-exporter           Enable Datadog exporter [default: False]
-  --datadog-profiler           Enable Datadog profiler [default: False]
-  --first-run-stdout           Show the StdOut and StdErr for the first run [default: False]
-  --process-failed-executions  Include failed executions in the final results [default: False]
-  --debug                      Run timeit in debug mode [default: False]
-  --version                    Show version information
-  -?, -h, --help               Show help and usage information
+#### CLI options
+```text
+  --variable <key=value>         Variables used to expand configuration values
+  --count <count>                Number of iterations to run
+  --warmup <warmup>              Number of iterations to warm up
+  --metrics <true|false>         Enable metrics from the startup hook (default: true)
+  --json-exporter                Enable JSON exporter
+  --datadog-exporter             Enable Datadog exporter
+  --datadog-profiler             Enable Datadog profiler
+  --first-run-stdout             Show stdout/stderr for the first run
+  --process-failed-executions    Include failed executions in final results
+  --debug                        Run TimeItSharp in debug mode
 ```
+
+CLI options also override matching values in a JSON configuration when explicitly supplied.
+Environment variables and exported Datadog metadata redact names containing passwords,
+secrets, tokens, API keys, private keys, or authentication values.
 
 
 #### Default Configuration when running a command
@@ -175,7 +174,7 @@ Assertors = DefaultAssertor
 ```bash
 dotnet timeit config-example.json
 
-TimeItSharp v0.4.0
+TimeItSharp v0.4.8
 Warmup count: 10
 Max count: 100
 Acceptable relative width: 0,7%

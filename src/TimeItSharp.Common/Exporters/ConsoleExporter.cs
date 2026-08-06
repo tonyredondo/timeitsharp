@@ -28,6 +28,12 @@ public sealed class ConsoleExporter : IExporter
             return;
         }
 
+        if (results.Scenarios.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No scenario results available.[/]");
+            return;
+        }
+
         // ****************************************
         // Results table
         AnsiConsole.MarkupLine("[aqua bold underline]### Results (last 10):[/]");
@@ -94,7 +100,7 @@ public sealed class ConsoleExporter : IExporter
         {
             AnsiConsole.MarkupLine("[aqua bold underline]### Distribution:[/]");
             AnsiConsole.WriteLine();
-            GenerateDistributionChart(results.Scenarios.ToDictionary(k => k.Name, v => v), 11);
+            GenerateDistributionChart(CreateDistributionSeries(results.Scenarios), 11);
         }
 
         // ****************************************
@@ -342,17 +348,46 @@ public sealed class ConsoleExporter : IExporter
         }
     }
 
+    private static Dictionary<string, ScenarioResult> CreateDistributionSeries(
+        IReadOnlyList<ScenarioResult> scenarios)
+    {
+        var result = new Dictionary<string, ScenarioResult>(StringComparer.Ordinal);
+        for (var index = 0; index < scenarios.Count; index++)
+        {
+            var name = string.IsNullOrWhiteSpace(scenarios[index].Name)
+                ? $"Scenario {index + 1}"
+                : scenarios[index].Name;
+            var key = name;
+            var suffix = 2;
+            while (!result.TryAdd(key, scenarios[index]))
+            {
+                key = $"{name} ({suffix++})";
+            }
+        }
+
+        return result;
+    }
+
     static void GenerateDistributionChart(Dictionary<string, ScenarioResult> dataSeriesDict, int numBins)
     {
         // Check if the data series dictionary is null or empty
-        if (dataSeriesDict == null || dataSeriesDict.Count == 0)
+        if (dataSeriesDict == null || dataSeriesDict.Count == 0 || numBins <= 0)
         {
             Console.WriteLine("No data available to generate the distribution chart.");
             return;
         }
 
         // Combine all durations from all series to find the overall minimum and maximum
-        var allDataNanoseconds = dataSeriesDict.Values.SelectMany(series => series.Durations).ToList();
+        var allDataNanoseconds = dataSeriesDict.Values
+            .SelectMany(series => series.Durations)
+            .Where(double.IsFinite)
+            .ToList();
+
+        if (allDataNanoseconds.Count == 0)
+        {
+            AnsiConsole.MarkupLine("[yellow]No duration data available for the distribution chart.[/]");
+            return;
+        }
 
         // Determine the appropriate unit based on the maximum value
         var maxNanoSeconds = allDataNanoseconds.Max();
@@ -388,7 +423,10 @@ public sealed class ConsoleExporter : IExporter
         var scaledDataSeriesDict = new Dictionary<string, List<double>>();
         foreach (var kvp in dataSeriesDict)
         {
-            var scaledData = kvp.Value.Durations.Select(ns => ns / scale).ToList();
+            var scaledData = kvp.Value.Durations
+                .Where(double.IsFinite)
+                .Select(ns => ns / scale)
+                .ToList();
             scaledDataSeriesDict[kvp.Key] = scaledData;
         }
 

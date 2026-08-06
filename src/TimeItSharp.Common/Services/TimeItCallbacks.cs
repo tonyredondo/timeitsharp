@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using CliWrap;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
@@ -40,61 +41,125 @@ public sealed class TimeItCallbacks
         }
 
         public void BeforeAllScenariosStarts(IReadOnlyList<Scenario> scenarios)
-            => _callbacks.BeforeAllScenariosStarts?.Invoke(scenarios);
+            => InvokeAll(_callbacks.BeforeAllScenariosStarts, callback => callback(scenarios));
 
         public void ScenarioStart(ScenarioStartArg scenarioStartArg)
-            => _callbacks.OnScenarioStart?.Invoke(scenarioStartArg);
+            => InvokeAll(_callbacks.OnScenarioStart, callback => callback(scenarioStartArg));
 
         public void ExecutionStart(DataPoint dataPoint, TimeItPhase phase, ref Command command)
         {
-            if (dataPoint.Scenario?.ParentService is { } parentService)
-            {
-                if (_callbacks.OnExecutionStart is { } onExecutionStartEvent)
-                {
-                    foreach (var @delegate in onExecutionStartEvent.GetInvocationList())
-                    {
-                        if (@delegate.Target == parentService)
-                        {
-                            ((OnExecutionStartDelegate)@delegate).Invoke(dataPoint, phase, ref command);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                _callbacks.OnExecutionStart?.Invoke(dataPoint, phase, ref command);
-            }
+            InvokeExecutionStartCallbacks(
+                _callbacks.OnExecutionStart,
+                dataPoint,
+                phase,
+                ref command,
+                dataPoint.Scenario?.ParentService);
         }
 
         public void ExecutionEnd(DataPoint dataPoint, TimeItPhase phase)
         {
             if (dataPoint.Scenario?.ParentService is { } parentService)
             {
-                if (_callbacks.OnExecutionEnd is { } onExecutionEndEvent)
+                Exception? firstException = null;
+                if (_callbacks.OnExecutionEnd is { } callbacks)
                 {
-                    foreach (var @delegate in onExecutionEndEvent.GetInvocationList())
+                    foreach (var callback in callbacks.GetInvocationList())
                     {
-                        if (@delegate.Target == parentService)
+                        if (callback.Target != parentService)
                         {
-                            ((OnExecutionEndDelegate)@delegate).Invoke(dataPoint, phase);
+                            continue;
+                        }
+
+                        try
+                        {
+                            ((OnExecutionEndDelegate)callback).Invoke(dataPoint, phase);
+                        }
+                        catch (Exception ex)
+                        {
+                            firstException ??= ex;
                         }
                     }
                 }
+
+                Rethrow(firstException);
             }
             else
             {
-                _callbacks.OnExecutionEnd?.Invoke(dataPoint, phase);
+                InvokeAll(_callbacks.OnExecutionEnd, callback => callback(dataPoint, phase));
             }
         }
 
         public void ScenarioFinish(ScenarioResult scenarioResults)
-            => _callbacks.OnScenarioFinish?.Invoke(scenarioResults);
+            => InvokeAll(_callbacks.OnScenarioFinish, callback => callback(scenarioResults));
 
         public void AfterAllScenariosFinishes(IReadOnlyList<ScenarioResult> scenariosResults)
-            => _callbacks.AfterAllScenariosFinishes?.Invoke(scenariosResults);
+            => InvokeAll(_callbacks.AfterAllScenariosFinishes, callback => callback(scenariosResults));
 
         public void Finish()
-            => _callbacks.OnFinish?.Invoke();
+            => InvokeAll(_callbacks.OnFinish, callback => callback());
+
+        private static void InvokeExecutionStartCallbacks(
+            OnExecutionStartDelegate? callbacks,
+            DataPoint dataPoint,
+            TimeItPhase phase,
+            ref Command command,
+            IService? parentService)
+        {
+            Exception? firstException = null;
+            if (callbacks is not null)
+            {
+                foreach (var callback in callbacks.GetInvocationList())
+                {
+                    if (parentService is not null && callback.Target != parentService)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        ((OnExecutionStartDelegate)callback).Invoke(dataPoint, phase, ref command);
+                    }
+                    catch (Exception ex)
+                    {
+                        firstException ??= ex;
+                    }
+                }
+            }
+
+            Rethrow(firstException);
+        }
+
+        private static void InvokeAll<TDelegate>(TDelegate? callbacks, Action<TDelegate> invoke)
+            where TDelegate : Delegate
+        {
+            if (callbacks is null)
+            {
+                return;
+            }
+
+            Exception? firstException = null;
+            foreach (var callback in callbacks.GetInvocationList())
+            {
+                try
+                {
+                    invoke((TDelegate)callback);
+                }
+                catch (Exception ex)
+                {
+                    firstException ??= ex;
+                }
+            }
+
+            Rethrow(firstException);
+        }
+
+        private static void Rethrow(Exception? exception)
+        {
+            if (exception is not null)
+            {
+                ExceptionDispatchInfo.Capture(exception).Throw();
+            }
+        }
     }
 
     public sealed class ScenarioStartArg
