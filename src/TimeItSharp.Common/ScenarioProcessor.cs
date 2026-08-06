@@ -27,6 +27,10 @@ internal sealed class ScenarioProcessor
     private readonly IReadOnlyList<IService> _services;
     private readonly TimeItCallbacks.CallbacksTriggers _callbacksTriggers;
 
+    // Capture the host environment once. Per-scenario variables are copied into a fresh
+    // dictionary below, so command-specific PATH changes never mutate this snapshot or the host.
+    private static readonly IDictionary EnvironmentVariables = Environment.GetEnvironmentVariables();
+
     private TimeSpan _remainingDuration;
     
     public ScenarioProcessor(
@@ -49,7 +53,7 @@ internal sealed class ScenarioProcessor
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public void PrepareScenario(Scenario scenario)
     {
-        if (string.IsNullOrEmpty(scenario.ProcessName))
+        if (string.IsNullOrWhiteSpace(scenario.ProcessName))
         {
             scenario.ProcessName = _configuration.ProcessName;
         }
@@ -63,7 +67,7 @@ internal sealed class ScenarioProcessor
 
         scenario.ProcessArguments = _templateVariables.Expand(scenario.ProcessArguments ?? string.Empty);
 
-        if (string.IsNullOrEmpty(scenario.WorkingDirectory))
+        if (string.IsNullOrWhiteSpace(scenario.WorkingDirectory))
         {
             scenario.WorkingDirectory = _configuration.WorkingDirectory;
         }
@@ -179,7 +183,7 @@ internal sealed class ScenarioProcessor
             scenario.Timeout.MaxDuration = _configuration.Timeout.MaxDuration;
         }
 
-        if (string.IsNullOrEmpty(scenario.Timeout.ProcessName))
+        if (string.IsNullOrWhiteSpace(scenario.Timeout.ProcessName))
         {
             scenario.Timeout.ProcessName = _configuration.Timeout.ProcessName;
         }
@@ -244,6 +248,7 @@ internal sealed class ScenarioProcessor
 
         AnsiConsole.Markup("  [green3]Run[/]");
         var start = DateTime.UtcNow;
+        var scenarioStopwatch = Stopwatch.StartNew();
         watch.Restart();
         var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, TimeItPhase.Run, true,
             stopwatch: watch,
@@ -276,8 +281,9 @@ internal sealed class ScenarioProcessor
         }
         
         scenario.ParentService = null;
-        var scenarioEnd = DateTime.UtcNow;
-        var scenarioDuration = scenarioEnd - start;
+        scenarioStopwatch.Stop();
+        var scenarioDuration = scenarioStopwatch.Elapsed;
+        var scenarioEnd = start + scenarioDuration;
 
         AnsiConsole.WriteLine();
 
@@ -304,6 +310,11 @@ internal sealed class ScenarioProcessor
 #endif
                 foreach (var kv in item.Metrics)
                 {
+                    if (!double.IsFinite(kv.Value))
+                    {
+                        continue;
+                    }
+
                     if (!metricsData.TryGetValue(kv.Key, out var metricsItem))
                     {
                         metricsItem = new List<double>();
@@ -645,7 +656,7 @@ internal sealed class ScenarioProcessor
         var timeoutCmdArguments = scenario.Timeout.ProcessArguments ?? string.Empty;
 
         var cmdEnvironmentVariables = new Dictionary<string, string?>();
-        foreach (DictionaryEntry osEnv in Environment.GetEnvironmentVariables())
+        foreach (DictionaryEntry osEnv in EnvironmentVariables)
         {
             if (osEnv.Key?.ToString() is { Length: > 0 } keyString)
             {
@@ -660,7 +671,8 @@ internal sealed class ScenarioProcessor
 
         if (cmdEnvironmentVariables.ContainsKey(Constants.StartupHookEnvironmentVariable))
         {
-            cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = Path.GetTempFileName();
+            var metricsPath = Path.GetTempFileName();
+            cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = metricsPath;
         }
 
         // Make binaries in the working directory available only to this command.
@@ -873,7 +885,10 @@ internal sealed class ScenarioProcessor
 
         // Write metrics
         if (cmdEnvironmentVariables.TryGetValue(Constants.TimeItMetricsTemporalPathEnvironmentVariable,
-                out var metricsFilePath) && !string.IsNullOrEmpty(metricsFilePath) && File.Exists(metricsFilePath))
+                out var metricsFilePath) &&
+            !string.IsNullOrEmpty(metricsFilePath) &&
+            IsSafeMetricsFilePath(metricsFilePath) &&
+            File.Exists(metricsFilePath))
         {
             DateTime? inProcStartDate = null;
             DateTime? inProcMainStartDate = null;
@@ -920,8 +935,13 @@ internal sealed class ScenarioProcessor
                             }
 
                             name = Encoding.UTF8.GetString(nameBytes);
-                            // Read value
+                            // Read value. NaN/Infinity are not meaningful metric samples and would
+                            // make the statistics and JSON exporters fail later in the pipeline.
                             value = reader.ReadDouble();
+                            if (!double.IsFinite(value))
+                            {
+                                continue;
+                            }
                         }
                         catch (EndOfStreamException)
                         {
@@ -1044,7 +1064,10 @@ internal sealed class ScenarioProcessor
             {
                 try
                 {
-                    File.Delete(metricsFilePath);
+                    if (IsSafeMetricsFilePath(metricsFilePath))
+                    {
+                        File.Delete(metricsFilePath);
+                    }
                 }
                 catch
                 {
@@ -1120,6 +1143,31 @@ internal sealed class ScenarioProcessor
         };
         _callbacksTriggers.ScenarioFinish(result);
         return result;
+    }
+
+    private static bool IsSafeMetricsFilePath(string path)
+    {
+        try
+        {
+            var fullPath = Path.GetFullPath(path);
+            var tempPath = Path.GetFullPath(Path.GetTempPath());
+            var tempPrefix = tempPath.EndsWith(Path.DirectorySeparatorChar)
+                ? tempPath
+                : tempPath + Path.DirectorySeparatorChar;
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+            if (!fullPath.StartsWith(tempPrefix, comparison))
+            {
+                return false;
+            }
+
+            return (File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) == 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, BufferedCommandResult? cmdResult)

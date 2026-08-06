@@ -64,7 +64,15 @@ internal sealed class RuntimeMetricsWriter : IDisposable
     public void Dispose()
     {
         AppDomain.CurrentDomain.FirstChanceException -= FirstChanceException;
-        _timer.Dispose();
+        using var timerDisposed = new ManualResetEvent(false);
+        if (_timer.Dispose(timerDisposed))
+        {
+            // ProcessExit closes the backing file immediately after Dispose. Wait until an
+            // in-flight timer callback has released the writer so its final payload cannot race
+            // with BinaryFileStorage.Dispose().
+            timerDisposed.WaitOne();
+        }
+
         _listener?.Dispose();
     }
 

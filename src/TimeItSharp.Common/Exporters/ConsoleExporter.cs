@@ -159,9 +159,9 @@ public sealed class ConsoleExporter : IExporter
                     Math.Abs(result.Min - result.Max) > 0.0001
                         ? $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms[/]"
                         : $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms[/]",
-                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001
-                        ? $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms[/]"
-                        : $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms[/]",
+                    Math.Abs(result.Ci95.ElementAtOrDefault(0) - result.Ci95.ElementAtOrDefault(1)) > 0.0001
+                        ? $"[aqua][[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95.ElementAtOrDefault(0)), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95.ElementAtOrDefault(1)), 3)}]] ms[/]"
+                        : $"[aqua]{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95.ElementAtOrDefault(0)), 3)}ms[/]",
                     $"[aqua]{outliersValue}[/]"
                 };
 
@@ -260,9 +260,9 @@ public sealed class ConsoleExporter : IExporter
                     Math.Abs(result.Min - result.Max) > 0.0001
                         ? $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Max), 3)}]] ms"
                         : $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Min), 3)}ms",
-                    Math.Abs(result.Ci95[0] - result.Ci95[1]) > 0.0001
-                        ? $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[1]), 3)}]] ms"
-                        : $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95[0]), 3)}ms",
+                    Math.Abs(result.Ci95.ElementAtOrDefault(0) - result.Ci95.ElementAtOrDefault(1)) > 0.0001
+                        ? $"[[{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95.ElementAtOrDefault(0)), 3)} - {Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95.ElementAtOrDefault(1)), 3)}]] ms"
+                        : $"{Math.Round(Utils.FromNanosecondsToMilliseconds(result.Ci95.ElementAtOrDefault(0)), 3)}ms",
                     $"{outliersValue}"
                 };
 
@@ -308,7 +308,12 @@ public sealed class ConsoleExporter : IExporter
 
                 for (var j = 0; j < results.Scenarios.Count; j++)
                 {
-                    var value = results.Overheads?[i][j] ?? default;
+                    var value = results.Overheads is { Length: > 0 } overheads &&
+                                i < overheads.Length &&
+                                overheads[i] is { Length: > 0 } rowOverheads &&
+                                j < rowOverheads.Length
+                        ? rowOverheads[j]
+                        : default;
                     if (value.OverheadPercentage == 0)
                     {
                         row.Add("--");
@@ -354,6 +359,14 @@ public sealed class ConsoleExporter : IExporter
         var result = new Dictionary<string, ScenarioResult>(StringComparer.Ordinal);
         for (var index = 0; index < scenarios.Count; index++)
         {
+            // Failed/path-validation scenarios are still shown in the summary, but they do not
+            // have a distribution to plot. Do not create an empty series that later reaches Min
+            // or Max during separate-chart rendering.
+            if (!scenarios[index].Durations.Any(double.IsFinite))
+            {
+                continue;
+            }
+
             var name = string.IsNullOrWhiteSpace(scenarios[index].Name)
                 ? $"Scenario {index + 1}"
                 : scenarios[index].Name;
@@ -378,6 +391,8 @@ public sealed class ConsoleExporter : IExporter
         }
 
         // Combine all durations from all series to find the overall minimum and maximum
+        // A custom result can still contain malformed samples even after series selection;
+        // finite values are the only samples that can participate in a numeric chart.
         var allDataNanoseconds = dataSeriesDict.Values
             .SelectMany(series => series.Durations)
             .Where(double.IsFinite)
@@ -423,11 +438,15 @@ public sealed class ConsoleExporter : IExporter
         var scaledDataSeriesDict = new Dictionary<string, List<double>>();
         foreach (var kvp in dataSeriesDict)
         {
+            // Keep malformed custom results from poisoning the chart's range or bin indexes.
             var scaledData = kvp.Value.Durations
                 .Where(double.IsFinite)
                 .Select(ns => ns / scale)
                 .ToList();
-            scaledDataSeriesDict[kvp.Key] = scaledData;
+            if (scaledData.Count > 0)
+            {
+                scaledDataSeriesDict[kvp.Key] = scaledData;
+            }
         }
 
         // Find the overall minimum and maximum of the scaled data

@@ -60,6 +60,16 @@ public sealed class JsonExporter : IExporter
             {
                 tags[key] = _options.TemplateVariables.Expand(stringValue);
             }
+            else if (tag.Value is double tagDouble && !double.IsFinite(tagDouble))
+            {
+                // Non-finite values are not valid JSON numbers. A custom callback must not make
+                // the complete export fail just because one optional tag is malformed.
+                continue;
+            }
+            else if (tag.Value is float tagFloat && !float.IsFinite(tagFloat))
+            {
+                continue;
+            }
             else
             {
                 tags[key] = tag.Value;
@@ -94,31 +104,55 @@ public sealed class JsonExporter : IExporter
             Error = source.Error,
             WarmUpCount = source.WarmUpCount,
             Count = source.Count,
-            Data = source.Data.ToList(),
-            Durations = source.Durations.ToList(),
-            Outliers = source.Outliers.ToList(),
-            Mean = source.Mean,
-            Median = source.Median,
-            Max = source.Max,
-            Min = source.Min,
-            Stdev = source.Stdev,
-            StdErr = source.StdErr,
-            P99 = source.P99,
-            P95 = source.P95,
-            P90 = source.P90,
-            Ci99 = source.Ci99.ToArray(),
-            Ci95 = source.Ci95.ToArray(),
-            Ci90 = source.Ci90.ToArray(),
+            Data = source.Data.Select(CreateExportDataPoint).ToList(),
+            Durations = source.Durations.Where(double.IsFinite).ToList(),
+            Outliers = source.Outliers.Where(double.IsFinite).ToList(),
+            Mean = FiniteOrZero(source.Mean),
+            Median = FiniteOrZero(source.Median),
+            Max = FiniteOrZero(source.Max),
+            Min = FiniteOrZero(source.Min),
+            Stdev = FiniteOrZero(source.Stdev),
+            StdErr = FiniteOrZero(source.StdErr),
+            P99 = FiniteOrZero(source.P99),
+            P95 = FiniteOrZero(source.P95),
+            P90 = FiniteOrZero(source.P90),
+            Ci99 = source.Ci99.Where(double.IsFinite).ToArray(),
+            Ci95 = source.Ci95.Where(double.IsFinite).ToArray(),
+            Ci90 = source.Ci90.Where(double.IsFinite).ToArray(),
             IsBimodal = source.IsBimodal,
             PeakCount = source.PeakCount,
-            Metrics = new Dictionary<string, double>(source.Metrics),
+            Metrics = CopyFiniteMetrics(source.Metrics),
             MetricsData = source.MetricsData.ToDictionary(
                 item => item.Key,
-                item => item.Value.ToList()),
-            AdditionalMetrics = new Dictionary<string, double>(source.AdditionalMetrics),
+                item => item.Value.Where(double.IsFinite).ToList()),
+            AdditionalMetrics = CopyFiniteMetrics(source.AdditionalMetrics),
             Status = source.Status,
-            OutliersThreshold = source.OutliersThreshold,
+            OutliersThreshold = FiniteOrZero(source.OutliersThreshold),
             LastStandardOutput = source.LastStandardOutput,
         };
     }
+
+    private static DataPoint CreateExportDataPoint(DataPoint source)
+    {
+        var dataPoint = new DataPoint
+        {
+            Start = source.Start,
+            End = source.End,
+            Duration = source.Duration,
+            Metrics = CopyFiniteMetrics(source.Metrics),
+            StandardOutput = source.StandardOutput,
+            Scenario = source.Scenario,
+            AssertResults = source.AssertResults,
+        };
+        return dataPoint;
+    }
+
+    private static Dictionary<string, double> CopyFiniteMetrics(IReadOnlyDictionary<string, double> source)
+    {
+        return source
+            .Where(item => double.IsFinite(item.Value))
+            .ToDictionary(item => item.Key, item => item.Value);
+    }
+
+    private static double FiniteOrZero(double value) => double.IsFinite(value) ? value : 0;
 }

@@ -30,6 +30,21 @@ public sealed class UtilsTests
     }
 
     [Fact]
+    public void Sensitive_environment_names_cover_common_secret_aliases()
+    {
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("AWS_ACCESS_KEY_ID"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("DB_PASSWD"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("API-KEY"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("APP_KEY"));
+    }
+
+    [Fact]
+    public void CalculateIQR_handles_two_samples()
+    {
+        Assert.Equal(8, Utils.CalculateIQR([2, 10]));
+    }
+
+    [Fact]
     public void IsBimodal_returns_false_for_constant_or_nonfinite_samples()
     {
         var constant = new[] { 1d, 1d, 1d, 1d };

@@ -1,4 +1,5 @@
 using TimeItSharp.Common.Assertors;
+using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
 using TimeItSharp.Common.Exporters;
 using TimeItSharp.Common.Services;
@@ -100,4 +101,16 @@ public sealed class ConfigBuilderTests
         Assert.Single(config.Services);
         Assert.Equal("custom-service", config.Services[0].Name);
     }
+
+    [Fact]
+    public void Built_in_exporter_aliases_are_not_duplicated_by_cli_overrides()
+    {
+        var config = new Config();
+        config.Exporters.Add(new AssemblyLoadInfo { Name = "JsonExporter" });
+
+        var builder = new ConfigBuilder(config).WithExporter<JsonExporter>();
+
+        Assert.Single(builder.Build().Exporters);
+    }
+
 }

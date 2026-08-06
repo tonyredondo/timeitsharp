@@ -328,6 +328,9 @@ public sealed class DatadogProfilerService : IService
                 throw new PlatformNotSupportedException("Datadog Profiler is not supported in macOS");
             }
 
+            // Every path selected above is required by the corresponding platform loader.
+            // Windows may have both 32-bit and 64-bit profiler binaries; Linux additionally
+            // requires the native API wrapper used through LD_PRELOAD.
             if (!File.Exists(profiler64Path) ||
                 (profiler32Path is not null && !File.Exists(profiler32Path)) ||
                 !File.Exists(loaderConfig) ||

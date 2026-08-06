@@ -50,6 +50,7 @@ public static class TimeItEngine
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
     [RequiresUnreferencedCode("")]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, typeof(DatadogProfilerService))]
     public static async Task<int> RunAsync(Config config, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -95,13 +96,19 @@ public static class TimeItEngine
             var assertorsInfo = GetFromAssemblyLoadInfoList(
                 config.Assertors,
                 () => new List<IAssertor> { new DefaultAssertor() });
-            var enabledAssertorsInfo = assertorsInfo.Where(i => i.Instance.Enabled).ToList();
-            var assertors = enabledAssertorsInfo.Select(i => i.Instance).ToList();
-            foreach (var assertor in enabledAssertorsInfo)
+            // Enabled can depend on InitOptions (for example, a custom assertor may read a
+            // configuration flag in Initialize), so initialize every loaded assertor before
+            // selecting the instances that participate in scenario processing.
+            foreach (var assertor in assertorsInfo)
             {
                 var state = statesByType.GetValueOrDefault(assertor.Instance.GetType());
                 assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state));
             }
+
+            var assertors = assertorsInfo
+                .Where(i => i.Instance.Enabled)
+                .Select(i => i.Instance)
+                .ToList();
 
             var servicesInfo = GetFromAssemblyLoadInfoList<IService>(
                 config.Services,

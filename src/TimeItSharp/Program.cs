@@ -99,7 +99,9 @@ root.SetHandler(async (context) =>
     var showStdOutForFirstRunSpecified = IsOptionSpecified(showStdOutForFistRun, context);
     var processFailedExecutionsSpecified = IsOptionSpecified(processFailedExecutions, context);
     var debugModeSpecified = IsOptionSpecified(debugMode, context);
+    var jsonExporterSpecified = IsOptionSpecified(jsonExporter, context);
     var datadogExporterSpecified = IsOptionSpecified(datadogExporter, context);
+    var datadogProfilerSpecified = IsOptionSpecified(datadogProfiler, context);
 
     Config? loadedConfig = null;
     Exception? configurationLoadError = null;
@@ -168,28 +170,54 @@ root.SetHandler(async (context) =>
                 configBuilder.Build().DebugMode = debugModeValue;
             }
 
-            if (jsonExporterValue == true)
+            // A non-empty exporter list is an explicit replacement for the built-in defaults.
+            // If an exporter flag is supplied while the list is empty, materialize those defaults
+            // first so true/false overrides behave symmetrically.
+            if (jsonExporterSpecified)
             {
-                configBuilder.WithExporter<JsonExporter>();
+                EnsureDefaultExporters(configBuilder);
+                if (jsonExporterValue == true)
+                {
+                    configBuilder.WithExporter<JsonExporter>();
+                }
+                else
+                {
+                    RemoveExporter(configBuilder.Build(), typeof(JsonExporter), "Json", "JsonExporter");
+                    EnsureAtLeastOneExporter(configBuilder);
+                }
             }
 
             if (datadogExporterSpecified)
             {
+                EnsureDefaultExporters(configBuilder);
                 configBuilder.Build().EnableDatadog = datadogExporterValue;
                 if (datadogExporterValue == true)
                 {
                     configBuilder.WithExporter<DatadogExporter>();
                 }
+                else
+                {
+                    RemoveExporter(configBuilder.Build(), typeof(DatadogExporter), "Datadog", "DatadogExporter");
+                    EnsureAtLeastOneExporter(configBuilder);
+                }
             }
 
             var timeitOptions = new TimeItOptions(templateVariablesValue);
-            if (datadogProfilerValue == true)
+            if (datadogProfilerSpecified)
             {
-                configBuilder.WithService<DatadogProfilerService>();
-                var finalCount = countValue ?? configBuilder.Build().Count;
-                var extraRunCount = (int)Math.Min((long)finalCount * 40 / 100, int.MaxValue);
-                timeitOptions = timeitOptions.AddServiceState<DatadogProfilerService>(
-                    new DatadogProfilerConfiguration().WithExtraRun(extraRunCount));
+                if (datadogProfilerValue == true)
+                {
+                    configBuilder.WithService<DatadogProfilerService>();
+                    var finalCount = countValue ?? configBuilder.Build().Count;
+                    var extraRunCount = (int)Math.Min((long)finalCount * 40 / 100, int.MaxValue);
+                    timeitOptions = timeitOptions.AddServiceState<DatadogProfilerService>(
+                        new DatadogProfilerConfiguration().WithExtraRun(extraRunCount));
+                }
+                else
+                {
+                    RemoveService(configBuilder.Build(), typeof(DatadogProfilerService),
+                        "DatadogProfiler", "DatadogProfilerService");
+                }
             }
 
             // Validate after applying overrides so malformed CLI values are reported before any
@@ -295,6 +323,51 @@ static bool IsOptionSpecified<T>(Option<T> option, InvocationContext context)
     return false;
 }
 
+static void EnsureDefaultExporters(ConfigBuilder configBuilder)
+{
+    var configuration = configBuilder.Build();
+    if (configuration.Exporters is null || configuration.Exporters.Count != 0)
+    {
+        return;
+    }
+
+    // ConfigBuilder.WithExporter<DatadogExporter>() enables Datadog as a convenience for fluent
+    // callers. Preserve the JSON file's flag while materializing the built-in exporter set.
+    var datadogEnabled = configuration.EnableDatadog;
+    configBuilder
+        .WithExporter<ConsoleExporter>()
+        .WithExporter<JsonExporter>()
+        .WithExporter<DatadogExporter>();
+    configuration.EnableDatadog = datadogEnabled;
+}
+
+static void EnsureAtLeastOneExporter(ConfigBuilder configBuilder)
+{
+    var configuration = configBuilder.Build();
+    if (configuration.Exporters is { Count: 0 })
+    {
+        configBuilder.WithExporter<ConsoleExporter>();
+    }
+}
+
+static void RemoveExporter(Config configuration, Type exporterType, params string[] names)
+{
+    configuration.Exporters?.RemoveAll(info => IsExtension(info, exporterType, names));
+}
+
+static void RemoveService(Config configuration, Type serviceType, params string[] names)
+{
+    configuration.Services?.RemoveAll(info => IsExtension(info, serviceType, names));
+}
+
+static bool IsExtension(AssemblyLoadInfo? info, Type extensionType, IReadOnlyCollection<string> names)
+{
+    return info is not null &&
+           (info.InMemoryType == extensionType ||
+            string.Equals(info.Type, extensionType.FullName, StringComparison.Ordinal) ||
+            (info.Name is not null && names.Contains(info.Name, StringComparer.OrdinalIgnoreCase)));
+}
+
 static (string ProcessName, string ProcessArguments) ParseProcessCommand(string commandLine)
 {
     if (string.IsNullOrWhiteSpace(commandLine))
@@ -342,9 +415,18 @@ static (string ProcessName, string ProcessArguments) ParseProcessCommand(string 
             break;
         }
 
-        if (current is '\'' or '"')
+        if (current == '"' ||
+            (current == '\'' && (index == 0 || char.IsWhiteSpace(commandLine[index - 1]))))
         {
             quote = current;
+            index++;
+            continue;
+        }
+
+        // An apostrophe inside an unquoted word is ordinary data (for example, "don't").
+        if (current == '\'')
+        {
+            processName.Append(current);
             index++;
             continue;
         }
@@ -424,7 +506,12 @@ static void EnsureBalancedQuotes(string text, string commandLine)
             continue;
         }
 
-        if (quote == '\0' && current is '\'' or '"')
+        if (quote == '\0' && current == '"')
+        {
+            quote = current;
+        }
+        else if (quote == '\0' && current == '\'' &&
+                 (index == 0 || char.IsWhiteSpace(text[index - 1])))
         {
             quote = current;
         }

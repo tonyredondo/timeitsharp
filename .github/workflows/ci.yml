@@ -48,13 +48,27 @@ jobs:
 
       - name: Publish trimmed sample
         if: matrix.tfm == 'net10.0'
-        run: dotnet publish test/TimeItSharp.FluentConfiguration.Sample/TimeItSharp.FluentConfiguration.Sample.csproj -c Release --framework net8.0 --no-build --no-restore -p:PublishDir=$RUNNER_TEMP/timeitsharp-sample/
+        run: |
+          dotnet publish test/TimeItSharp.FluentConfiguration.Sample/TimeItSharp.FluentConfiguration.Sample.csproj \
+            -c Release --framework net8.0 --no-build --no-restore \
+            -p:PublishDir=$RUNNER_TEMP/timeitsharp-sample/
+          "$RUNNER_TEMP/timeitsharp-sample/TimeItSharp.FluentConfiguration.Sample"
 
       - name: Audit package vulnerabilities
         if: matrix.tfm == 'net10.0'
         run: |
           dotnet list TimeItSharp.sln package --vulnerable --include-transitive --no-restore | tee vulnerability-report.txt
-          ! grep -q "has vulnerable packages" vulnerability-report.txt
+          # Datadog.Trace.BenchmarkDotNet 2.61.0 is the latest stable v2 integration and
+          # cannot be mixed with the v3 tracer. GHSA-38wr-vpc7 has no fixed v2 release;
+          # keep the advisory visible while failing on any other vulnerability.
+          unexpected_vulnerabilities=$(grep 'https://github.com/advisories/' vulnerability-report.txt | grep -v 'GHSA-38wr-vpc7' || true)
+          if [[ -n "$unexpected_vulnerabilities" ]]; then
+            echo "$unexpected_vulnerabilities"
+            exit 1
+          fi
+          if grep -q 'has the following vulnerable packages' vulnerability-report.txt; then
+            echo 'Accepted compatibility advisory: GHSA-38wr-vpc7 (Datadog.Trace 2.61.0).'
+          fi
 
       - name: Pack and verify the tool
         if: matrix.tfm == 'net10.0'

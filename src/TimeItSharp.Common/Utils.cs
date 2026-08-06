@@ -175,14 +175,20 @@ internal static class Utils
             return false;
         }
 
-        var normalizedName = name.Replace("_", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .ToUpperInvariant();
+        var normalizedName = string.Concat(name.Where(char.IsLetterOrDigit)).ToUpperInvariant();
         return normalizedName.Contains("PASSWORD", StringComparison.Ordinal) ||
+               normalizedName.Contains("PASSWD", StringComparison.Ordinal) ||
+               normalizedName.Contains("PASS", StringComparison.Ordinal) ||
+               normalizedName.Contains("PWD", StringComparison.Ordinal) ||
                normalizedName.Contains("SECRET", StringComparison.Ordinal) ||
                normalizedName.Contains("TOKEN", StringComparison.Ordinal) ||
                normalizedName.Contains("APIKEY", StringComparison.Ordinal) ||
+               normalizedName.Contains("APPKEY", StringComparison.Ordinal) ||
+               normalizedName.Contains("ACCESSKEY", StringComparison.Ordinal) ||
                normalizedName.Contains("PRIVATEKEY", StringComparison.Ordinal) ||
-               normalizedName.Contains("AUTH", StringComparison.Ordinal);
+               normalizedName.Contains("CREDENTIAL", StringComparison.Ordinal) ||
+               normalizedName.Contains("AUTH", StringComparison.Ordinal) ||
+               normalizedName.Contains("CONNECTIONSTRING", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -196,6 +202,11 @@ internal static class Utils
         if (n < 2)
         {
             return 0;
+        }
+
+        if (n == 2)
+        {
+            return sortedData[1] - sortedData[0];
         }
 
         double Q1, Q3;
@@ -286,9 +297,9 @@ internal static class Utils
 
             return width;
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or ArgumentOutOfRangeException or IndexOutOfRangeException)
         {
-            // If an IOException occurs (e.g., console not available), return the default value.
+            // Console hosts and redirected test runners can report an invalid buffer width.
             return defaultValue;
         }
     }

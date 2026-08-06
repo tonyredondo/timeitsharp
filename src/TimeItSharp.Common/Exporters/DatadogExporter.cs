@@ -20,6 +20,9 @@ public sealed class DatadogExporter : IExporter
 
     public DatadogExporter()
     {
+        // The target processes are launched before exporters are initialized. Set this process-wide
+        // switch while the exporter instance is created so child processes inherit it.
+        Environment.SetEnvironmentVariable("DD_CIVISIBILITY_LOGS_ENABLED", "true");
         _startDate = DateTime.UtcNow;
     }
     
@@ -38,7 +41,6 @@ public sealed class DatadogExporter : IExporter
             return;
         }
 
-        Environment.SetEnvironmentVariable("DD_CIVISIBILITY_LOGS_ENABLED", "true");
         _testSession ??= TestSession.InternalGetOrCreate(Environment.CommandLine, Environment.CurrentDirectory, "time-it");
         _configName = options.Configuration?.Name;
         if (string.IsNullOrEmpty(_configName))
@@ -106,7 +108,7 @@ public sealed class DatadogExporter : IExporter
                     catch (Exception ex)
                     {
                         AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
-                        AnsiConsole.WriteLine(ex.ToString());
+                        AnsiConsole.WriteException(ex);
                     }
 
                     if (relativePath is not null)
@@ -132,36 +134,39 @@ public sealed class DatadogExporter : IExporter
                     RuntimeName = FrameworkDescription.Instance.Name,
                 });
 
-                // Add duration benchmark data only when samples were collected.
-                if (scenarioResult.Durations.Count > 0)
-                {
-                    test.AddBenchmarkData(
-                        BenchmarkMeasureType.Duration,
-                        "Duration of a run",
-                        BenchmarkDiscreteStats.GetFrom(scenarioResult.Durations.ToArray()));
-                }
+                // Keep the benchmark measure present even when the sample set is empty. The
+                // Datadog stats type represents an empty sample set safely, and omitting the
+                // measure changes the exported span schema.
+                test.AddBenchmarkData(
+                    BenchmarkMeasureType.Duration,
+                    "Duration of a run",
+                    BenchmarkDiscreteStats.GetFrom(scenarioResult.Durations.Where(double.IsFinite).ToArray()));
 
                 // Report benchmark duration data
                 test.SetTag("benchmark.duration.bimodal", scenarioResult.IsBimodal ? "true": "false");
                 test.SetTag("benchmark.duration.peakcount", scenarioResult.PeakCount);
-                test.SetTag("benchmark.duration.outliers_threshold", Math.Round(scenarioResult.OutliersThreshold, 2));
+                test.SetTag("benchmark.duration.outliers_threshold", Math.Round(FiniteOrZero(scenarioResult.OutliersThreshold), 2));
                 test.SetTag("benchmark.duration.outliers_count", scenarioResult.Outliers?.Count ?? 0);
 
                 // Add metrics
-                if (scenarioResult.MetricsData.TryGetValue("process.time_to_start_ms", out var timeToStart) &&
-                    timeToStart.Count > 0)
+                if (scenarioResult.MetricsData.TryGetValue("process.time_to_start_ms", out var timeToStart))
                 {
-                    var timeToStartArray = timeToStart.Select(v => v * 1000000).ToArray();
+                    var timeToStartArray = timeToStart
+                        .Select(v => v * 1000000)
+                        .Where(double.IsFinite)
+                        .ToArray();
                     test.AddBenchmarkData(
                         BenchmarkMeasureType.ApplicationLaunch,
                         "Time expend in application startup",
                         BenchmarkDiscreteStats.GetFrom(timeToStartArray));
                 }
 
-                if (scenarioResult.MetricsData.TryGetValue("process.internal_duration_ms", out var internalDuration) &&
-                    internalDuration.Count > 0)
+                if (scenarioResult.MetricsData.TryGetValue("process.internal_duration_ms", out var internalDuration))
                 {
-                    var internalDurationArray = internalDuration.Select(v => v * 1000000).ToArray();
+                    var internalDurationArray = internalDuration
+                        .Select(v => v * 1000000)
+                        .Where(double.IsFinite)
+                        .ToArray();
                     test.AddBenchmarkData(
                         BenchmarkMeasureType.RunTime,
                         "Time expend in application run",
@@ -179,14 +184,20 @@ public sealed class DatadogExporter : IExporter
                         metric.Key.EndsWith(".min") ||
                         metric.Key.EndsWith(".std_dev"))
                     {
-                        test.SetTag($"metrics.{metric.Key}", metric.Value);
+                        if (double.IsFinite(metric.Value))
+                        {
+                            test.SetTag($"metrics.{metric.Key}", metric.Value);
+                        }
                     }
                 }
 
                 // Add custom metrics
                 foreach (var metric in scenarioResult.AdditionalMetrics)
                 {
-                    test.SetTag($"metrics.{metric.Key}", metric.Value);
+                    if (double.IsFinite(metric.Value))
+                    {
+                        test.SetTag($"metrics.{metric.Key}", metric.Value);
+                    }
                 }
 
                 // Set Error
@@ -240,8 +251,8 @@ public sealed class DatadogExporter : IExporter
 
                         var overhead = results.Overheads[j][i];
                         var name = results.Scenarios[j].Name;
-                        test.SetTag($"test.overhead_over.{name}", Math.Round(overhead.OverheadPercentage, 2));
-                        test.SetTag($"test.overhead_over.{name}.delta", Math.Round(overhead.DeltaValue, 2));
+                        test.SetTag($"test.overhead_over.{name}", Math.Round(FiniteOrZero(overhead.OverheadPercentage), 2));
+                        test.SetTag($"test.overhead_over.{name}.delta", Math.Round(FiniteOrZero(overhead.DeltaValue), 2));
                     }
                 }
 
@@ -265,7 +276,7 @@ public sealed class DatadogExporter : IExporter
         {
             errors = true;
             AnsiConsole.MarkupLine("[red]Error exporting to datadog:[/]");
-            AnsiConsole.WriteLine(ex.ToString());
+            AnsiConsole.WriteException(ex);
         }
         finally
         {
@@ -286,5 +297,7 @@ public sealed class DatadogExporter : IExporter
             AnsiConsole.MarkupLine("[yellow]The Datadog export completed with errors.[/]");
         }
     }
+
+    private static double FiniteOrZero(double value) => double.IsFinite(value) ? value : 0;
 
 }

@@ -79,7 +79,9 @@ public sealed class ConfigBuilder
     public ConfigBuilder WithDatadog(bool enabled)
     {
         _configuration.EnableDatadog = enabled;
-        if (enabled && _configuration.Exporters.Find(e => e.Type == typeof(DatadogExporter).FullName || e.Name == "Datadog") is null)
+        if (enabled && _configuration.Exporters is not null &&
+            _configuration.Exporters.Find(e => e is not null &&
+                (e.Type == typeof(DatadogExporter).FullName || e.Name == "Datadog")) is null)
         {
             return WithExporter<DatadogExporter>();
         }
@@ -288,7 +290,7 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder ClearExporters()
     {
-        _configuration.Exporters.Clear();
+        _configuration.Exporters?.Clear();
         return this;
     }
     
@@ -299,10 +301,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithExporter(AssemblyLoadInfo exporter)
     {
-        // Check if exporter is already there.
-        foreach (var existingExporter in _configuration.Exporters)
+        if (_configuration.Exporters is null || exporter is null)
         {
-            if (existingExporter.Name == exporter.Name &&
+            return this;
+        }
+
+        // Check if exporter is already there.
+        foreach (var existingExporter in _configuration.Exporters ?? Enumerable.Empty<AssemblyLoadInfo>())
+        {
+            if (existingExporter is not null && existingExporter.Name == exporter.Name &&
                 existingExporter.FilePath == exporter.FilePath &&
                 existingExporter.Type == exporter.Type)
             {
@@ -310,7 +317,7 @@ public sealed class ConfigBuilder
             }
         }
 
-        _configuration.Exporters.Add(exporter);
+        _configuration.Exporters!.Add(exporter);
         return this;
     }
 
@@ -321,10 +328,14 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithExporter(params AssemblyLoadInfo[] exporters)
     {
-        _configuration.Exporters.AddRange(exporters);
+        if (_configuration.Exporters is not null)
+        {
+            _configuration.Exporters!.AddRange(exporters);
+        }
+
         return this;
     }
-    
+
     /// <summary>
     /// Adds a known exporter by name
     /// </summary>
@@ -332,16 +343,21 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithExporter(string exporterName)
     {
-        // Check if exporter is already there.
-        foreach (var exporter in _configuration.Exporters)
+        if (_configuration.Exporters is null)
         {
-            if (exporter.Name == exporterName)
+            return this;
+        }
+
+        // Check if exporter is already there.
+        foreach (var exporter in _configuration.Exporters ?? Enumerable.Empty<AssemblyLoadInfo>())
+        {
+            if (exporter is not null && exporter.Name == exporterName)
             {
                 return this;
             }
         }
 
-        _configuration.Exporters.Add(new AssemblyLoadInfo
+        _configuration.Exporters!.Add(new AssemblyLoadInfo
         {
             Name = exporterName
         });
@@ -368,6 +384,11 @@ public sealed class ConfigBuilder
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithExporter(Type exporterType)
     {
+        if (_configuration.Exporters is null)
+        {
+            return this;
+        }
+
         var exporterTypeLocation = exporterType.Assembly.Location;
         if (string.IsNullOrEmpty(exporterTypeLocation))
         {
@@ -375,16 +396,33 @@ public sealed class ConfigBuilder
         }
 
         // Check if exporter is already there.
-        foreach (var exporter in _configuration.Exporters)
+        foreach (var exporter in _configuration.Exporters ?? Enumerable.Empty<AssemblyLoadInfo>())
         {
-            if ((exporter.FilePath == exporterTypeLocation || exporter.InMemoryType == exporterType) &&
-                exporter.Type == exporterType.FullName)
+            if (exporter is null)
+            {
+                continue;
+            }
+
+            var isKnownBuiltInName =
+                (exporterType == typeof(ConsoleExporter) &&
+                 (string.Equals(exporter.Name, "Console", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(exporter.Name, "ConsoleExporter", StringComparison.OrdinalIgnoreCase))) ||
+                (exporterType == typeof(JsonExporter) &&
+                 (string.Equals(exporter.Name, "Json", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(exporter.Name, "JsonExporter", StringComparison.OrdinalIgnoreCase))) ||
+                (exporterType == typeof(DatadogExporter) &&
+                 (string.Equals(exporter.Name, "Datadog", StringComparison.OrdinalIgnoreCase) ||
+                  string.Equals(exporter.Name, "DatadogExporter", StringComparison.OrdinalIgnoreCase)));
+
+            if (exporter.InMemoryType == exporterType ||
+                string.Equals(exporter.Type, exporterType.FullName, StringComparison.Ordinal) ||
+                isKnownBuiltInName)
             {
                 return this;
             }
         }
         
-        _configuration.Exporters.Add(new AssemblyLoadInfo
+        _configuration.Exporters!.Add(new AssemblyLoadInfo
         {
             FilePath = exporterTypeLocation,
             Type = exporterType.FullName,
@@ -437,7 +475,7 @@ public sealed class ConfigBuilder
     /// <returns></returns>
     public ConfigBuilder ClearAssertors()
     {
-        _configuration.Assertors.Clear();
+        _configuration.Assertors?.Clear();
         return this;
     }
 
@@ -448,10 +486,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithAssertor(AssemblyLoadInfo assertor)
     {
-        // Check if assertor is already there.
-        foreach (var existing in _configuration.Assertors)
+        if (_configuration.Assertors is null || assertor is null)
         {
-            if (existing.Name == assertor.Name &&
+            return this;
+        }
+
+        // Check if assertor is already there.
+        foreach (var existing in _configuration.Assertors ?? Enumerable.Empty<AssemblyLoadInfo>())
+        {
+            if (existing is not null && existing.Name == assertor.Name &&
                 existing.FilePath == assertor.FilePath &&
                 existing.Type == assertor.Type)
             {
@@ -459,7 +502,7 @@ public sealed class ConfigBuilder
             }
         }
 
-        _configuration.Assertors.Add(assertor);
+        _configuration.Assertors!.Add(assertor);
         return this;
     }
     
@@ -470,7 +513,10 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithAssertor(params AssemblyLoadInfo[] assertors)
     {
-        _configuration.Assertors.AddRange(assertors);
+        if (_configuration.Assertors is not null)
+        {
+            _configuration.Assertors!.AddRange(assertors);
+        }
         return this;
     }
     
@@ -481,16 +527,21 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithAssertor(string assertorName)
     {
-        // Check if assertors is already there.
-        foreach (var exiting in _configuration.Assertors)
+        if (_configuration.Assertors is null)
         {
-            if (exiting.Name == assertorName)
+            return this;
+        }
+
+        // Check if assertors is already there.
+        foreach (var exiting in _configuration.Assertors ?? Enumerable.Empty<AssemblyLoadInfo>())
+        {
+            if (exiting is not null && exiting.Name == assertorName)
             {
                 return this;
             }
         }
 
-        _configuration.Assertors.Add(new AssemblyLoadInfo
+        _configuration.Assertors!.Add(new AssemblyLoadInfo
         {
             Name = assertorName
         });
@@ -517,6 +568,11 @@ public sealed class ConfigBuilder
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithAssertor(Type assertorType)
     {
+        if (_configuration.Assertors is null)
+        {
+            return this;
+        }
+
         var assertorTypeLocation = assertorType.Assembly.Location;
         if (string.IsNullOrEmpty(assertorTypeLocation))
         {
@@ -524,16 +580,16 @@ public sealed class ConfigBuilder
         }
 
         // Check if assertors is already there.
-        foreach (var existing in _configuration.Assertors)
+        foreach (var existing in _configuration.Assertors ?? Enumerable.Empty<AssemblyLoadInfo>())
         {
-            if ((existing.FilePath == assertorTypeLocation || existing.InMemoryType == assertorType) &&
+            if (existing is not null && (existing.FilePath == assertorTypeLocation || existing.InMemoryType == assertorType) &&
                 existing.Type == assertorType.FullName)
             {
                 return this;
             }
         }
 
-        _configuration.Assertors.Add(new AssemblyLoadInfo
+        _configuration.Assertors!.Add(new AssemblyLoadInfo
         {
             FilePath = assertorTypeLocation,
             Type = assertorType.FullName,
@@ -581,7 +637,7 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder ClearServices()
     {
-        _configuration.Services.Clear();
+        _configuration.Services?.Clear();
         return this;
     }
 
@@ -592,10 +648,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithService(AssemblyLoadInfo service)
     {
-        // Check if service is already there.
-        foreach (var existing in _configuration.Services)
+        if (_configuration.Services is null || service is null)
         {
-            if (existing.Name == service.Name &&
+            return this;
+        }
+
+        // Check if service is already there.
+        foreach (var existing in _configuration.Services ?? Enumerable.Empty<AssemblyLoadInfo>())
+        {
+            if (existing is not null && existing.Name == service.Name &&
                 existing.FilePath == service.FilePath &&
                 existing.Type == service.Type)
             {
@@ -603,7 +664,7 @@ public sealed class ConfigBuilder
             }
         }
 
-        _configuration.Services.Add(service);
+        _configuration.Services!.Add(service);
         return this;
     }
 
@@ -614,7 +675,10 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithService(params AssemblyLoadInfo[] services)
     {
-        _configuration.Services.AddRange(services);
+        if (_configuration.Services is not null)
+        {
+            _configuration.Services!.AddRange(services);
+        }
         return this;
     }
     
@@ -625,16 +689,21 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithService(string serviceName)
     {
-        // Check if service is already there.
-        foreach (var exiting in _configuration.Services)
+        if (_configuration.Services is null)
         {
-            if (exiting.Name == serviceName)
+            return this;
+        }
+
+        // Check if service is already there.
+        foreach (var exiting in _configuration.Services ?? Enumerable.Empty<AssemblyLoadInfo>())
+        {
+            if (exiting is not null && exiting.Name == serviceName)
             {
                 return this;
             }
         }
 
-        _configuration.Services.Add(new AssemblyLoadInfo
+        _configuration.Services!.Add(new AssemblyLoadInfo
         {
             Name = serviceName
         });
@@ -661,6 +730,11 @@ public sealed class ConfigBuilder
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithService(Type serviceType)
     {
+        if (_configuration.Services is null)
+        {
+            return this;
+        }
+
         var serviceTypeLocation = serviceType.Assembly.Location;
         if (string.IsNullOrEmpty(serviceTypeLocation))
         {
@@ -668,16 +742,25 @@ public sealed class ConfigBuilder
         }
 
         // Check if services is already there.
-        foreach (var existing in _configuration.Services)
+        foreach (var existing in _configuration.Services ?? Enumerable.Empty<AssemblyLoadInfo>())
         {
-            if ((existing.FilePath == serviceTypeLocation || existing.InMemoryType == serviceType) &&
-                existing.Type == serviceType.FullName)
+            if (existing is null)
+            {
+                continue;
+            }
+
+            var isKnownBuiltInName = serviceType == typeof(DatadogProfilerService) &&
+                (string.Equals(existing.Name, "DatadogProfiler", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(existing.Name, "DatadogProfilerService", StringComparison.OrdinalIgnoreCase));
+            if (existing.InMemoryType == serviceType ||
+                string.Equals(existing.Type, serviceType.FullName, StringComparison.Ordinal) ||
+                isKnownBuiltInName)
             {
                 return this;
             }
         }
 
-        _configuration.Services.Add(new AssemblyLoadInfo
+        _configuration.Services!.Add(new AssemblyLoadInfo
         {
             FilePath = serviceTypeLocation,
             Type = serviceType.FullName,

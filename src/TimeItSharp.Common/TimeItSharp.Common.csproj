@@ -25,13 +25,9 @@
 
   <ItemGroup>
     <PackageReference Include="CliWrap" Version="3.10.0" />
-    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="2.61.0">
-      <!-- Datadog.Trace.Bundle supplies the newer, complete profiler asset set. -->
-      <ExcludeAssets>contentFiles</ExcludeAssets>
-    </PackageReference>
-    <!-- Bundle includes the matching Datadog.Trace.dll and profiler/native assets.
-         A direct Datadog.Trace reference only supplies Datadog.Trace.Manual.dll. -->
-    <PackageReference Include="Datadog.Trace.Bundle" Version="3.43.0" />
+    <!-- Keep the BenchmarkDotNet integration and tracer on the same latest stable v2 line.
+         Its content files provide the profiler/tracer assets used by the CLI package. -->
+    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="2.61.0" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Spectre.Console" Version="0.53.1" />
     <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.8.0">
