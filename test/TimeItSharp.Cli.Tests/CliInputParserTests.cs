@@ -194,6 +194,44 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
+    public void LegacyPathCommandIgnoresAnAmbientCombinedSimpleFilename()
+    {
+        var executable = $"capture-{Guid.NewGuid():N}";
+        var combinedFilename = $"{executable} arg";
+        File.WriteAllText(combinedFilename, string.Empty);
+        try
+        {
+            var process = CliInputParser.ParseProcessCommand(combinedFilename);
+
+            Assert.Equal(executable, process.ProcessName);
+            Assert.Equal("arg", process.ProcessArguments);
+        }
+        finally
+        {
+            File.Delete(combinedFilename);
+        }
+    }
+
+    [Fact]
+    public void ExplicitExecutablePathWithSpacesStillUsesLongestExistingPrefix()
+    {
+        var executable = Path.Combine(Path.GetTempPath(),
+            $"timeitsharp-{Guid.NewGuid():N} executable with spaces");
+        File.WriteAllText(executable, string.Empty);
+        try
+        {
+            var process = CliInputParser.ParseProcessCommand($"{executable} --version");
+
+            Assert.Equal(executable, process.ProcessName);
+            Assert.Equal("--version", process.ProcessArguments);
+        }
+        finally
+        {
+            File.Delete(executable);
+        }
+    }
+
+    [Fact]
     public void QuotedArgvSerializationIgnoresAnAmbientCompleteFilename()
     {
         if (OperatingSystem.IsWindows())

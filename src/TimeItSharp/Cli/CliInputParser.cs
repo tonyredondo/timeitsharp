@@ -251,17 +251,19 @@ public static class CliInputParser
         // characters are syntax, never part of an ambient executable filename, so filesystem
         // probing must not reinterpret the serialized command as one complete or prefixed path.
         var isSerializedArgv = completePath.StartsWith("\"", StringComparison.Ordinal);
-        if (!isSerializedArgv && File.Exists(completePath))
+        var canProbeExplicitPath = !isSerializedArgv && IsExplicitPathCandidate(completePath);
+        if (canProbeExplicitPath && File.Exists(completePath))
         {
             return new ProcessCommand(completePath, string.Empty);
         }
 
         // The outer shell removes quotes from `--command "path with spaces --arg"`. Recover the
-        // executable boundary by choosing the longest existing file prefix before tokenizing.
-        // This keeps the documented quoted-option form equivalent to retaining inner quotes.
-        var firstNonWhitespace = isSerializedArgv
-            ? -1
-            : commandLine.IndexOfAny([' ', '\t', '\r', '\n']);
+        // executable boundary by choosing the longest existing file prefix before tokenizing, but
+        // only when the command begins with an explicit path. Simple PATH names must never turn
+        // into a different executable merely because a combined filename exists in the CWD.
+        var firstNonWhitespace = canProbeExplicitPath
+            ? commandLine.IndexOfAny([' ', '\t', '\r', '\n'])
+            : -1;
         var longestPath = string.Empty;
         var longestPathIndex = -1;
         var pathProbeCount = 0;
@@ -666,6 +668,19 @@ public static class CliInputParser
     private static string JoinArgumentValues(IEnumerable<string> arguments)
     {
         return string.Join(" ", arguments.Select(token => QuoteTokenForCommandLine(token, forceQuotes: true)));
+    }
+
+    private static bool IsExplicitPathCandidate(string value)
+    {
+        var candidate = value.TrimStart();
+        return Path.IsPathRooted(candidate) ||
+               candidate.StartsWith("./", StringComparison.Ordinal) ||
+               candidate.StartsWith("../", StringComparison.Ordinal) ||
+               candidate.StartsWith(".\\", StringComparison.Ordinal) ||
+               candidate.StartsWith("..\\", StringComparison.Ordinal) ||
+               candidate.StartsWith("\\\\", StringComparison.Ordinal) ||
+               (candidate.Length >= 2 && candidate[1] == ':' &&
+                (candidate[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'));
     }
 
     /// <summary>
