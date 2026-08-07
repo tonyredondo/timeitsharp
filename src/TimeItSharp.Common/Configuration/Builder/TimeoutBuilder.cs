@@ -21,6 +21,7 @@ public sealed class TimeoutBuilder
     /// <param name="timeout">Existing timeout instance</param>
     public TimeoutBuilder(Timeout timeout)
     {
+        ArgumentNullException.ThrowIfNull(timeout);
         _timeout = timeout;
     }
     

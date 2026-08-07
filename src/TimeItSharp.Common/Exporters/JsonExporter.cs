@@ -23,30 +23,48 @@ public sealed class JsonExporter : IExporter
         IReadOnlyList<string> knownSecrets = Array.Empty<string>();
         try
         {
+            // Collect secrets before any path resolution or filesystem work. If a custom result
+            // getter fails, the broad environment/template set is still available to sanitize the
+            // setup/cleanup exception.
+            knownSecrets = Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables)
+                .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_options.HostEnvironment))
+                .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (results?.Scenarios is not null)
+            {
+                knownSecrets = results.Scenarios.Take(Utils.MaxResultCollectionItems)
+                    .Where(item => item is not null)
+                    .SelectMany(Utils.GetSecretValues)
+                    .Concat(knownSecrets)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+            }
+
             var outputFile = _options.Configuration?.JsonExporterFilePath;
             if (string.IsNullOrWhiteSpace(outputFile))
             {
                 outputFile = Path.Combine(Environment.CurrentDirectory, $"jsonexporter_{Random.Shared.Next()}.json");
             }
 
+            // Register the raw caller-selected path before normalization can throw (for example
+            // on an invalid path character), because exception messages may echo it verbatim.
+            knownSecrets = knownSecrets.Concat(new[] { outputFile })
+                .Where(value => !string.IsNullOrEmpty(value))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
             var fullOutputFile = Path.GetFullPath(outputFile);
             var outputDirectory = Path.GetDirectoryName(fullOutputFile) ?? Environment.CurrentDirectory;
+            // A literal secret can be embedded in a user-selected output path and therefore is
+            // absent from environment/template discovery. Treat the resolved path components as
+            // redaction candidates before Directory.CreateDirectory or any exception can echo it.
+            knownSecrets = knownSecrets.Concat(new[] { outputFile, fullOutputFile, outputDirectory })
+                .Where(value => !string.IsNullOrEmpty(value))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
             Directory.CreateDirectory(outputDirectory);
 
-            // Build a completely separate graph before opening the destination.  A failure while
-            // sanitizing or serializing can therefore never truncate a previously valid report.
-            knownSecrets = results?.Scenarios is null
-                ? Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables)
-                    .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
-                    .ToArray()
-                : results.Scenarios.Where(item => item is not null)
-                    .SelectMany(Utils.GetSecretValues)
-                    .Concat(Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables))
-                    .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray();
-            var safeResult = Utils.SanitizeTimeitResult(results, _options.TemplateVariables,
-                Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables));
+            var safeResult = Utils.SanitizeTimeitResult(results, _options.TemplateVariables, knownSecrets);
             var safeScenarios = safeResult.Scenarios ?? Array.Empty<ScenarioResult>();
             temporaryFile = Path.Combine(
                 outputDirectory,
@@ -75,7 +93,7 @@ public sealed class JsonExporter : IExporter
                 "[lime]The json file '{0}' was exported.[/]",
                 Utils.EscapeMarkup(Utils.SanitizeText(fullOutputFile, knownSecrets)));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             AnsiConsole.MarkupLine("[red]Error exporting to json:[/]");
             AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecrets));
@@ -89,7 +107,7 @@ public sealed class JsonExporter : IExporter
                 {
                     File.Delete(temporaryFile);
                 }
-                catch
+                catch (Exception cleanupError) when (cleanupError is not OutOfMemoryException && cleanupError is not StackOverflowException)
                 {
                     // Preserve the original export exception.  A best-effort cleanup is safer
                     // than logging a path which could itself contain sensitive metadata.

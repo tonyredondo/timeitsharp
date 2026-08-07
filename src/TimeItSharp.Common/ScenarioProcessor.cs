@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using CliWrap;
-using CliWrap.Buffered;
 using MathNet.Numerics.Distributions;
 using MathNet.Numerics.Statistics;
 using Spectre.Console;
@@ -35,6 +34,11 @@ internal sealed class ScenarioProcessor
     private readonly IReadOnlyDictionary<string, string?> _environmentVariables;
     private readonly IReadOnlyList<string> _knownSecretValues;
 
+    private const long MaxMetricsFileBytes = 16L * 1024 * 1024;
+    private const int MaxMetricNameBytes = 64 * 1024;
+    private const int MaxMetricRecords = 100_000;
+    private static readonly TimeSpan TimeoutFallbackGrace = TimeSpan.FromMilliseconds(250);
+
     private TimeSpan _remainingDuration;
     
     public ScenarioProcessor(
@@ -42,25 +46,28 @@ internal sealed class ScenarioProcessor
         TemplateVariables templateVariables,
         IReadOnlyList<IAssertor> assertors,
         IReadOnlyList<IService> services,
-        TimeItCallbacks.CallbacksTriggers callbacksTriggers)
+        TimeItCallbacks.CallbacksTriggers callbacksTriggers,
+        IReadOnlyDictionary<string, string?> environmentVariables)
     {
         _configuration = configuration;
         _templateVariables = templateVariables;
         _assertors = assertors;
         _services = services;
         _callbacksTriggers = callbacksTriggers;
-        var environmentVariables = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (DictionaryEntry environmentVariable in Environment.GetEnvironmentVariables())
-        {
-            if (environmentVariable.Key?.ToString() is { Length: > 0 } key)
-            {
-                environmentVariables[key] = environmentVariable.Value?.ToString();
-            }
-        }
-
         _environmentVariables = environmentVariables;
         _knownSecretValues = Utils.GetSensitiveEnvironmentValues(configuration.EnvironmentVariables)
             .Concat(Utils.GetTemplateSecretValues(templateVariables))
+            .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_environmentVariables))
+            .Concat(configuration.PathValidations.Take(Utils.MaxTagEntries))
+            .Concat(Utils.GetPathRedactionValues(new[] { configuration.ProcessName, configuration.WorkingDirectory }
+                .Concat(configuration.Scenarios.SelectMany(s => new[] { s.ProcessName, s.WorkingDirectory }))))
+            .Concat(new[] { configuration.Timeout.ProcessName, configuration.Timeout.ProcessArguments }
+                .Concat(configuration.Scenarios.SelectMany(s => new[] { s.Timeout.ProcessName, s.Timeout.ProcessArguments }))
+                .OfType<string>())
+            .Concat(new[] { configuration.Timeout.ProcessName, configuration.Timeout.ProcessArguments }
+                .Concat(configuration.Scenarios.SelectMany(s => new[] { s.Timeout.ProcessName, s.Timeout.ProcessArguments }))
+                .OfType<string>()
+                .Select(_templateVariables.Expand))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         _remainingDuration = configuration.MaximumDurationInMinutes > 0
@@ -92,25 +99,31 @@ internal sealed class ScenarioProcessor
 
         scenario.WorkingDirectory = _templateVariables.Expand(scenario.WorkingDirectory ?? string.Empty);
 
-        var expandedScenarioEnvironmentVariables = scenario.EnvironmentVariables
-            .Select(item => new
-            {
-                Key = _templateVariables.Expand(item.Key),
-                Value = _templateVariables.Expand(item.Value),
-            })
-            .ToList();
-        scenario.EnvironmentVariables.Clear();
-        foreach (var item in expandedScenarioEnvironmentVariables)
+        // Environment names are case-insensitive on Windows but case-sensitive on POSIX. Build a
+        // fresh dictionary with the target comparer so PATH/path cannot silently compete at launch;
+        // scenario values retain precedence over configuration defaults in either environment.
+        var environmentComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var mergedEnvironmentVariables = new Dictionary<string, string>(environmentComparer);
+        foreach (var item in scenario.EnvironmentVariables)
         {
-            scenario.EnvironmentVariables[item.Key] = item.Value;
+            var key = _templateVariables.Expand(item.Key);
+            var value = _templateVariables.Expand(item.Value);
+            mergedEnvironmentVariables[key] = value;
         }
 
         foreach (var item in _configuration.EnvironmentVariables)
         {
             var key = _templateVariables.Expand(item.Key);
             var value = _templateVariables.Expand(item.Value);
-            scenario.EnvironmentVariables.TryAdd(key, value);
+            if (!mergedEnvironmentVariables.ContainsKey(key))
+            {
+                mergedEnvironmentVariables[key] = value;
+            }
         }
+
+        scenario.EnvironmentVariables = mergedEnvironmentVariables;
 
         foreach (var (tagName, tagValue) in _configuration.Tags)
         {
@@ -241,6 +254,8 @@ internal sealed class ScenarioProcessor
                 return null;
             }
 
+            // Mark an attempted start before invoking user callbacks. A throwing start callback
+            // still needs the symmetric finish callback to release service state and resources.
             scenarioStarted = true;
             _callbacksTriggers.ScenarioStart(scenarioStartArgs);
             result = await ProcessScenarioCoreAsync(index, scenario, scenarioStartArgs, cancellationToken)
@@ -262,9 +277,8 @@ internal sealed class ScenarioProcessor
         }
         finally
         {
-            // A service may request extra runs by assigning ParentService. It must never leak to
-            // another scenario, even when a command, callback, or cancellation throws.
-            scenario.ParentService = null;
+            // A service may request extra runs by assigning ParentService. Keep that context
+            // visible to ScenarioFinish, then clear it even if the callback itself throws.
             if (scenarioStarted)
             {
                 result ??= CreateFailedScenarioResult(scenario, cancellationToken.IsCancellationRequested
@@ -282,6 +296,14 @@ internal sealed class ScenarioProcessor
                         ? ex.Message
                         : result.Error + Environment.NewLine + ex.Message;
                 }
+                finally
+                {
+                    scenario.ParentService = null;
+                }
+            }
+            else
+            {
+                scenario.ParentService = null;
             }
         }
 
@@ -356,6 +378,11 @@ internal sealed class ScenarioProcessor
 
         foreach (var repeat in scenarioStartArgs.GetRepeats())
         {
+            if (_remainingDuration <= TimeSpan.Zero)
+            {
+                break;
+            }
+
             AnsiConsole.Markup(
                 "  [green3]Run for '{0}'[/]",
                 Utils.EscapeMarkup(Utils.SanitizeText(repeat.ServiceAskingForRepeat.Name, _knownSecretValues)));
@@ -373,7 +400,6 @@ internal sealed class ScenarioProcessor
             AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed.ToDurationString());
         }
         
-        scenario.ParentService = null;
         scenarioStopwatch.Stop();
         var scenarioDuration = scenarioStopwatch.Elapsed;
         var scenarioEnd = start + scenarioDuration;
@@ -624,13 +650,38 @@ internal sealed class ScenarioProcessor
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
         {
+            if ((phase is TimeItPhase.Run or TimeItPhase.ExtraRun) &&
+                _configuration.MaximumDurationInMinutes > 0 && _remainingDuration <= TimeSpan.Zero)
+            {
+                break;
+            }
+
             if (cancellationToken.IsCancellationRequested)
             {
                 AnsiConsole.Markup("[red]cancelled[/]");
                 break;
             }
 
-            var currentRun = await RunCommandAsync(index, scenario, phase, i, cancellationToken).ConfigureAwait(false);
+            var commandStopwatch = Stopwatch.StartNew();
+            DataPoint currentRun;
+            try
+            {
+                currentRun = await RunCommandAsync(index, scenario, phase, i, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                commandStopwatch.Stop();
+                if (phase is TimeItPhase.Run or TimeItPhase.ExtraRun)
+                {
+                    _remainingDuration -= commandStopwatch.Elapsed;
+                    if (_remainingDuration < TimeSpan.Zero)
+                    {
+                        _remainingDuration = TimeSpan.Zero;
+                    }
+                }
+            }
+
             // A command that completed before cancellation remains a useful datapoint. A command
             // interrupted by the token is not included in statistics or the completed count.
             if (cancellationToken.IsCancellationRequested &&
@@ -760,7 +811,7 @@ internal sealed class ScenarioProcessor
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 AnsiConsole.WriteLine();
                 AnsiConsole.WriteException(Utils.SanitizeException(ex, _knownSecretValues));
@@ -769,15 +820,6 @@ internal sealed class ScenarioProcessor
         }
 
         AnsiConsole.WriteLine();
-
-        if (phase == TimeItPhase.Run)
-        {
-            _remainingDuration -= stopwatch.Elapsed;
-            if (_remainingDuration < TimeSpan.Zero)
-            {
-                _remainingDuration = TimeSpan.Zero;
-            }
-        }
 
         return dataPoints;
     }
@@ -788,13 +830,25 @@ internal sealed class ScenarioProcessor
         var cmdString = scenario.ProcessName ?? string.Empty;
         var cmdArguments = scenario.ProcessArguments ?? string.Empty;
         var workingDirectory = scenario.WorkingDirectory ?? string.Empty;
-        var cmdTimeout = scenario.Timeout.MaxDuration;
+        var configuredCommandTimeout = scenario.Timeout.MaxDuration;
+        var cmdTimeout = (double)configuredCommandTimeout;
+        if (_configuration.MaximumDurationInMinutes > 0 && _remainingDuration > TimeSpan.Zero)
+        {
+            var remainingSeconds = Math.Max(0.001, _remainingDuration.TotalSeconds);
+            cmdTimeout = cmdTimeout > 0
+                ? Math.Min(cmdTimeout, remainingSeconds)
+                : remainingSeconds;
+        }
+
         var timeoutCmdString = scenario.Timeout.ProcessName ?? string.Empty;
         var timeoutCmdArguments = scenario.Timeout.ProcessArguments ?? string.Empty;
 
         // Start from this run's immutable environment snapshot. The dictionary is always copied
         // so adding a scenario PATH or metric variable cannot mutate the host or another command.
-        var cmdEnvironmentVariables = new Dictionary<string, string?>(_environmentVariables, StringComparer.Ordinal);
+        var environmentComparer = OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+        var cmdEnvironmentVariables = new Dictionary<string, string?>(_environmentVariables, environmentComparer);
 
         foreach (var envVar in scenario.EnvironmentVariables)
         {
@@ -809,57 +863,71 @@ internal sealed class ScenarioProcessor
         }
 
         string? metricsFilePath = null;
-        if (cmdEnvironmentVariables.ContainsKey(Constants.StartupHookEnvironmentVariable))
+        try
         {
-            metricsFilePath = Path.GetTempFileName();
-            cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = metricsFilePath;
-        }
-
-        // Make binaries in the working directory available only to this command.
-        if (!string.IsNullOrWhiteSpace(workingDirectory))
-        {
-            var isWindows = OperatingSystem.IsWindows();
-            // Environment variable names are case-insensitive on Windows but case-sensitive on
-            // Unix. Never rewrite a lower-case `path` entry on Unix and compare path entries with
-            // the host filesystem's semantics.
-            var pathKey = isWindows
-                ? cmdEnvironmentVariables.Keys.FirstOrDefault(
-                    key => string.Equals(key, "PATH", StringComparison.OrdinalIgnoreCase)) ?? "PATH"
-                : "PATH";
-            var currentPath = cmdEnvironmentVariables.TryGetValue(pathKey, out var path)
-                ? path
-                : Environment.GetEnvironmentVariable(pathKey);
-            var pathEntries = currentPath?.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-                ?? Array.Empty<string>();
-            var pathComparison = isWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            if (!pathEntries.Any(entry => string.Equals(entry, workingDirectory, pathComparison)))
+            if (cmdEnvironmentVariables.ContainsKey(Constants.StartupHookEnvironmentVariable))
             {
-                cmdEnvironmentVariables[pathKey] = string.IsNullOrEmpty(currentPath)
-                    ? workingDirectory
-                    : workingDirectory + Path.PathSeparator + currentPath;
+                metricsFilePath = Path.GetTempFileName();
+                cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = metricsFilePath;
             }
 
-            if (!Path.IsPathRooted(cmdString))
+            // Make binaries in the working directory available only to this command.
+            if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
-                var commandInWorkingDirectory = Path.Combine(workingDirectory, cmdString);
-                if (File.Exists(commandInWorkingDirectory))
+                var isWindows = OperatingSystem.IsWindows();
+                // Environment variable names are case-insensitive on Windows but case-sensitive on
+                // Unix. Never rewrite a lower-case `path` entry on Unix and compare path entries with
+                // the host filesystem's semantics.
+                var pathKey = isWindows
+                    ? cmdEnvironmentVariables.Keys.FirstOrDefault(
+                        key => string.Equals(key, "PATH", StringComparison.OrdinalIgnoreCase)) ?? "PATH"
+                    : "PATH";
+                var currentPath = cmdEnvironmentVariables.TryGetValue(pathKey, out var path)
+                    ? path
+                    : null;
+                var pathEntries = currentPath?.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                    ?? Array.Empty<string>();
+                var pathComparison = isWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                if (!pathEntries.Any(entry => string.Equals(entry, workingDirectory, pathComparison)))
                 {
-                    cmdString = commandInWorkingDirectory;
+                    cmdEnvironmentVariables[pathKey] = string.IsNullOrEmpty(currentPath)
+                        ? workingDirectory
+                        : workingDirectory + Path.PathSeparator + currentPath;
+                }
+
+                if (!Path.IsPathRooted(cmdString))
+                {
+                    var commandInWorkingDirectory = Path.Combine(workingDirectory, cmdString);
+                    if (File.Exists(commandInWorkingDirectory))
+                    {
+                        cmdString = commandInWorkingDirectory;
+                    }
                 }
             }
-        }
 
-        // Setup the command
-        var cmd = Cli.Wrap(cmdString)
-            .WithEnvironmentVariables(cmdEnvironmentVariables)
-            .WithWorkingDirectory(workingDirectory)
-            .WithValidation(CommandResultValidation.None);
-        if (!string.IsNullOrEmpty(cmdArguments))
+        var showCommandOutput = (executionId == 0 && _configuration.ShowStdOutForFirstRun) ||
+                                _configuration.DebugMode;
+        Command cmd;
+        try
         {
-            cmd = cmd.WithArguments(cmdArguments);
+            // Setup the command only after the metrics path exists inside a cleanup guard. No raw
+            // Console stream is attached here: output is bounded and sanitized after execution.
+            cmd = Cli.Wrap(cmdString)
+                .WithEnvironmentVariables(cmdEnvironmentVariables)
+                .WithWorkingDirectory(workingDirectory)
+                .WithValidation(CommandResultValidation.None);
+            if (!string.IsNullOrEmpty(cmdArguments))
+            {
+                cmd = cmd.WithArguments(CommandLineArguments.Parse(cmdArguments));
+            }
+        }
+        catch
+        {
+            DeleteMetricsFile(metricsFilePath);
+            throw;
         }
 
-        if ((executionId == 0 && _configuration.ShowStdOutForFirstRun) || _configuration.DebugMode)
+        if (showCommandOutput)
         {
             AnsiConsole.WriteLine();
             if (_configuration.DebugMode)
@@ -872,8 +940,8 @@ internal sealed class ScenarioProcessor
             }
             AnsiConsole.WriteLine(
                 "{0} {1}",
-                Utils.SanitizeText(cmdString, _knownSecretValues),
-                Utils.SanitizeText(cmdArguments, _knownSecretValues));
+                Utils.EscapeMarkup(Utils.SanitizeText(cmdString, _knownSecretValues)),
+                Utils.EscapeMarkup(Utils.SanitizeText(cmdArguments, _knownSecretValues)));
             if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
                 AnsiConsole.Markup("    [aqua]Working Folder:[/] ");
@@ -881,12 +949,8 @@ internal sealed class ScenarioProcessor
             }
 
             AnsiConsole.WriteLine(new string('-', 80));
-            cmd = cmd.WithStandardOutputPipe(PipeTarget.Merge(cmd.StandardOutputPipe,
-                PipeTarget.ToStream(Console.OpenStandardOutput())));
-            cmd = cmd.WithStandardErrorPipe(PipeTarget.Merge(cmd.StandardErrorPipe,
-                PipeTarget.ToStream(Console.OpenStandardError())));
         }
-        
+
         // Execute the command
         var dataPoint = new DataPoint
         {
@@ -911,18 +975,18 @@ internal sealed class ScenarioProcessor
             throw;
         }
 
+        CommandExecutionResult? commandResult = null;
         if (cmdTimeout <= 0)
         {
-            BufferedCommandResult? cmdResult = null;
             dataPoint.Start = DateTime.UtcNow;
             try
             {
-                cmdResult = await cmd.ExecuteBufferedAsync(cancellationToken: cancellationToken)
-                    .ConfigureAwait(false);
+                var capturedCommand = StartCapturedCommand(cmd, cancellationToken);
+                commandResult = await capturedCommand.WaitAsync().ConfigureAwait(false);
                 dataPoint.End = DateTime.UtcNow;
-                dataPoint.Duration = cmdResult.RunTime;
+                dataPoint.Duration = commandResult.RunTime;
                 dataPoint.Start = dataPoint.End - dataPoint.Duration;
-                dataPoint.StandardOutput = cmdResult.StandardOutput;
+                dataPoint.StandardOutput = commandResult.StandardOutput;
             }
             catch (Win32Exception wEx)
             {
@@ -931,7 +995,7 @@ internal sealed class ScenarioProcessor
                 {
                     ex = ex.InnerException;
                 }
-                
+
                 dataPoint.End = DateTime.UtcNow;
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
                 dataPoint.Error = ex.Message;
@@ -942,7 +1006,6 @@ internal sealed class ScenarioProcessor
                 dataPoint.Duration = dataPoint.End - dataPoint.Start;
                 dataPoint.Error = "Execution cancelled.";
             }
-            
             catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 dataPoint.End = DateTime.UtcNow;
@@ -952,7 +1015,7 @@ internal sealed class ScenarioProcessor
 
             try
             {
-                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+                ExecuteAssertions(index, scenario.Name, phase, dataPoint, commandResult);
             }
             catch
             {
@@ -964,21 +1027,23 @@ internal sealed class ScenarioProcessor
         }
         else
         {
-            BufferedCommandResult? cmdResult = null;
             using var cmdCts = new CancellationTokenSource();
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmdCts.Token);
             using var timeoutCts = string.IsNullOrEmpty(timeoutCmdString)
                 ? null
                 : new CancellationTokenSource();
             dataPoint.Start = DateTime.UtcNow;
-            CommandTask<BufferedCommandResult>? cmdTask = null;
+            CapturedCommand? capturedCommand = null;
             Task<bool>? timeoutTask = null;
             var targetActive = true;
             var targetGate = new object();
 
             try
             {
-                cmdTask = cmd.ExecuteBufferedAsync(linkedCts.Token);
+                capturedCommand = StartCapturedCommand(cmd, linkedCts.Token);
+                // Let the configured helper run at the deadline, but keep a short independent
+                // fallback in case it cannot launch or exits unsuccessfully.
+                cmdCts.CancelAfter(TimeSpan.FromSeconds(cmdTimeout) + TimeoutFallbackGrace);
             }
             catch (Win32Exception wEx)
             {
@@ -1005,7 +1070,7 @@ internal sealed class ScenarioProcessor
                 dataPoint.Error = ex.Message;
             }
 
-            if (cmdTask is not null)
+            if (capturedCommand is not null)
             {
                 Action cancelTarget = () =>
                 {
@@ -1018,18 +1083,18 @@ internal sealed class ScenarioProcessor
                     }
                 };
 
-                if (timeoutCts is not null)
+                if (timeoutCts is not null && configuredCommandTimeout > 0)
                 {
                     timeoutTask = RunCommandTimeoutAsync(
                         TimeSpan.FromSeconds(cmdTimeout),
                         timeoutCmdString,
                         timeoutCmdArguments,
-                        workingDirectory,
-                        cmdTask.ProcessId,
+                        cmd.WorkingDirPath ?? workingDirectory,
+                        capturedCommand.ProcessId,
                         cancelTarget,
                         timeoutCts.Token,
                         cancellationToken,
-                        cmdEnvironmentVariables);
+                        cmd.EnvironmentVariables);
                 }
                 else
                 {
@@ -1038,11 +1103,11 @@ internal sealed class ScenarioProcessor
 
                 try
                 {
-                    cmdResult = await cmdTask.ConfigureAwait(false);
+                    commandResult = await capturedCommand.WaitAsync().ConfigureAwait(false);
                     dataPoint.End = DateTime.UtcNow;
-                    dataPoint.Duration = cmdResult.RunTime;
+                    dataPoint.Duration = commandResult.RunTime;
                     dataPoint.Start = dataPoint.End - dataPoint.Duration;
-                    dataPoint.StandardOutput = cmdResult.StandardOutput;
+                    dataPoint.StandardOutput = commandResult.StandardOutput;
                 }
                 catch (Win32Exception wEx)
                 {
@@ -1094,7 +1159,7 @@ internal sealed class ScenarioProcessor
 
             try
             {
-                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+                ExecuteAssertions(index, scenario.Name, phase, dataPoint, commandResult);
             }
             catch
             {
@@ -1122,8 +1187,11 @@ internal sealed class ScenarioProcessor
                 await using (var file = File.Open(metricsFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                 using (var reader = new BinaryReader(file))
                 {
-                    while (file.Position + 4 <= file.Length)
+                    if (file.Length <= MaxMetricsFileBytes)
                     {
+                        var metricRecords = 0;
+                        while (metricRecords++ < MaxMetricRecords && file.Position + 4 <= file.Length)
+                        {
                         BinaryFileStorage.MetricType type;
                         int nameLength;
                         byte[] nameBytes;
@@ -1142,7 +1210,8 @@ internal sealed class ScenarioProcessor
                             type = (BinaryFileStorage.MetricType)reader.ReadByte();
                             // Read name length
                             nameLength = reader.ReadInt32();
-                            if (nameLength < 0 || nameLength > file.Length - file.Position - sizeof(double))
+                            if (nameLength < 0 || nameLength > MaxMetricNameBytes ||
+                                nameLength > file.Length - file.Position - sizeof(double))
                             {
                                 break;
                             }
@@ -1268,9 +1337,11 @@ internal sealed class ScenarioProcessor
                                 }
                             }
                         }
-                        catch
+                        catch (Exception metricError) when (metricError is not OutOfMemoryException &&
+                                                             metricError is not StackOverflowException)
                         {
                             // Error reading metric item, we just skip that item
+                        }
                         }
                     }
                 }
@@ -1289,7 +1360,8 @@ internal sealed class ScenarioProcessor
                         File.Delete(metricsFilePath);
                     }
                 }
-                catch
+                catch (Exception cleanupError) when (cleanupError is not OutOfMemoryException &&
+                                                        cleanupError is not StackOverflowException)
                 {
                     // Do nothing
                 }
@@ -1314,8 +1386,23 @@ internal sealed class ScenarioProcessor
             throw;
         }
 
-        if ((executionId == 0 && _configuration.ShowStdOutForFirstRun) || _configuration.DebugMode)
+        if (showCommandOutput)
         {
+            if (commandResult is not null)
+            {
+                var output = Utils.SanitizeOutput(commandResult.StandardOutput, _knownSecretValues);
+                var errorOutput = Utils.SanitizeOutput(commandResult.StandardError, _knownSecretValues);
+                if (!string.IsNullOrEmpty(output))
+                {
+                    AnsiConsole.WriteLine(output);
+                }
+
+                if (!string.IsNullOrEmpty(errorOutput))
+                {
+                    AnsiConsole.WriteLine(errorOutput);
+                }
+            }
+
             AnsiConsole.WriteLine(new string('-', 80));
             AnsiConsole.Write("   ");
             if (_configuration.DebugMode)
@@ -1323,8 +1410,112 @@ internal sealed class ScenarioProcessor
                 AnsiConsole.Markup(" [aqua]Result:[/] ");
             }
         }
-        
+
         return dataPoint;
+        }
+        finally
+        {
+            // The metrics file belongs to this command attempt, including setup and callback
+            // failures. Cleanup is deliberately best effort and never masks the original error.
+            DeleteMetricsFile(metricsFilePath);
+        }
+    }
+
+    private sealed class CommandExecutionResult
+    {
+        public CommandExecutionResult(CommandResult result, string standardOutput, string standardError)
+        {
+            ExitCode = result.ExitCode;
+            RunTime = result.RunTime;
+            StandardOutput = standardOutput;
+            StandardError = standardError;
+        }
+
+        public int ExitCode { get; }
+        public TimeSpan RunTime { get; }
+        public string StandardOutput { get; }
+        public string StandardError { get; }
+    }
+
+    private sealed class BoundedOutputCollector
+    {
+        private readonly StringBuilder _builder = new();
+        private bool _truncated;
+
+        public Task AppendAsync(string chunk, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(chunk))
+            {
+                return Task.CompletedTask;
+            }
+
+            lock (_builder)
+            {
+                var remaining = Utils.MaxExportLogCharacters - _builder.Length;
+                if (remaining <= 0)
+                {
+                    _truncated = true;
+                    return Task.CompletedTask;
+                }
+
+                if (chunk.Length > remaining)
+                {
+                    _builder.Append(chunk.AsSpan(0, remaining));
+                    _truncated = true;
+                }
+                else
+                {
+                    _builder.Append(chunk);
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public string GetText()
+        {
+            lock (_builder)
+            {
+                return _truncated
+                    ? _builder.ToString() + Environment.NewLine + "[OUTPUT TRUNCATED]"
+                    : _builder.ToString();
+            }
+        }
+    }
+
+    private sealed class CapturedCommand
+    {
+        private readonly BoundedOutputCollector _standardOutput;
+        private readonly BoundedOutputCollector _standardError;
+        private readonly CommandTask<CommandResult> _task;
+
+        public CapturedCommand(
+            CommandTask<CommandResult> task,
+            BoundedOutputCollector standardOutput,
+            BoundedOutputCollector standardError)
+        {
+            _task = task;
+            _standardOutput = standardOutput;
+            _standardError = standardError;
+        }
+
+        public int ProcessId => _task.ProcessId;
+
+        public async Task<CommandExecutionResult> WaitAsync()
+        {
+            var result = await _task.ConfigureAwait(false);
+            return new CommandExecutionResult(result, _standardOutput.GetText(), _standardError.GetText());
+        }
+    }
+
+    private static CapturedCommand StartCapturedCommand(Command command, CancellationToken cancellationToken)
+    {
+        var standardOutput = new BoundedOutputCollector();
+        var standardError = new BoundedOutputCollector();
+        var capturedCommand = command
+            .WithStandardOutputPipe(PipeTarget.ToDelegate(standardOutput.AppendAsync))
+            .WithStandardErrorPipe(PipeTarget.ToDelegate(standardError.AppendAsync));
+        return new CapturedCommand(capturedCommand.ExecuteAsync(cancellationToken), standardOutput, standardError);
     }
 
     private ScenarioResult CreateFailedScenarioResult(
@@ -1379,11 +1570,31 @@ internal sealed class ScenarioProcessor
         {
             _callbacksTriggers.ExecutionEnd(dataPoint, phase);
         }
-        catch
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
-            // Preserve the original command/assertion/start failure. The scenario lifecycle
-            // wrapper records the failed result and still invokes ScenarioFinish.
+            // Preserve the original command/assertion/start failure while making cleanup failure
+            // observable through the failed datapoint and the engine exit code.
+            HasLifecycleErrors = true;
+            var message = ex.Message;
+            dataPoint.Error = string.IsNullOrEmpty(dataPoint.Error)
+                ? message
+                : dataPoint.Error + Environment.NewLine + message;
         }
+    }
+
+    internal static IReadOnlyDictionary<string, string?> CaptureEnvironmentVariables()
+    {
+        var environmentVariables = new Dictionary<string, string?>(
+            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (DictionaryEntry environmentVariable in Environment.GetEnvironmentVariables())
+        {
+            if (environmentVariable.Key?.ToString() is { Length: > 0 } key)
+            {
+                environmentVariables[key] = environmentVariable.Value?.ToString();
+            }
+        }
+
+        return new System.Collections.ObjectModel.ReadOnlyDictionary<string, string?>(environmentVariables);
     }
 
     private static string? GetStartupHookAssemblyLocation()
@@ -1437,11 +1648,11 @@ internal sealed class ScenarioProcessor
         }
     }
 
-    private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, BufferedCommandResult? cmdResult)
+    private void ExecuteAssertions(int scenarioId, string scenarioName, TimeItPhase phase, DataPoint dataPoint, CommandExecutionResult? commandResult)
     {
-        var exitCode = cmdResult?.ExitCode ?? -1;
-        var standardOutput = cmdResult?.StandardOutput ?? string.Empty;
-        var standardError = cmdResult?.StandardError ?? dataPoint.Error;
+        var exitCode = commandResult?.ExitCode ?? -1;
+        var standardOutput = commandResult?.StandardOutput ?? string.Empty;
+        var standardError = commandResult?.StandardError ?? dataPoint.Error;
         var assertionData = new AssertionData(scenarioId, scenarioName, phase, dataPoint.Start, dataPoint.End,
             dataPoint.Duration, exitCode, standardOutput, standardError, _services);
         var assertionResult = ExecutionAssertion(in assertionData);
@@ -1496,10 +1707,10 @@ internal sealed class ScenarioProcessor
                 .WithValidation(CommandResultValidation.None);
             if (!string.IsNullOrEmpty(timeoutArgument))
             {
-                cmd = cmd.WithArguments(timeoutArgument);
+                cmd = cmd.WithArguments(CommandLineArguments.Parse(timeoutArgument));
             }
 
-            var cmdResult = await cmd.ExecuteBufferedAsync(linkedCts.Token).ConfigureAwait(false);
+            var cmdResult = await StartCapturedCommand(cmd, linkedCts.Token).WaitAsync().ConfigureAwait(false);
             if (cmdResult.ExitCode != 0)
             {
                 if (!string.IsNullOrWhiteSpace(cmdResult.StandardError))

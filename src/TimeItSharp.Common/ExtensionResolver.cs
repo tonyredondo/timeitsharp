@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
 using TimeItSharp.Common.Configuration;
 
@@ -107,7 +108,11 @@ internal static class ExtensionResolver
 
         // Name resolution for custom extensions is intentionally exact. Built-in aliases are
         // handled above and are case-insensitive by contract.
-        var activationError = default(Exception);
+        // Do not run constructors for every assignable extension merely to discover its Name.
+        // Probe the property on an uninitialized instance first, then activate only exact matches.
+        // Constructors remain the authoritative path for the selected extension and can still
+        // report their own failure without causing side effects in unrelated extensions.
+        var matchingTypes = new List<Type>();
         foreach (var assembly in loadContext.Assemblies)
         {
             TypeInfo[] definedTypes;
@@ -125,33 +130,49 @@ internal static class ExtensionResolver
 
             foreach (var typeInfo in definedTypes)
             {
+                var type = typeInfo.AsType();
                 if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum ||
-                    !typeof(T).IsAssignableFrom(typeInfo.AsType()))
+                    !typeof(T).IsAssignableFrom(type))
                 {
+                    continue;
+                }
+
+                if (string.Equals(typeInfo.Name, loadInfo.Name, StringComparison.Ordinal) ||
+                    string.Equals(typeInfo.FullName, loadInfo.Name, StringComparison.Ordinal))
+                {
+                    matchingTypes.Add(type);
                     continue;
                 }
 
                 try
                 {
-                    if (Activator.CreateInstance(typeInfo.AsType()) is T candidate &&
-                        string.Equals(candidate.Name, loadInfo.Name, StringComparison.Ordinal))
+                    if (RuntimeHelpers.GetUninitializedObject(type) is T probe &&
+                        string.Equals(probe.Name, loadInfo.Name, StringComparison.Ordinal))
                     {
-                        return candidate;
+                        matchingTypes.Add(type);
                     }
                 }
-                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
                 {
-                    // A constructor failure in an unrelated extension must not prevent an exact
-                    // name match later in the scan.  The CLR type name is the only non-activating
-                    // hint available here; retain a diagnostic only when it matches the selector.
-                    if (string.Equals(typeInfo.Name, loadInfo.Name, StringComparison.Ordinal))
-                    {
-                        activationError ??= ex;
-                    }
+                    // A custom Name getter may depend on constructor state. Such an extension
+                    // must use FilePath+Type (or an in-memory type) rather than causing unrelated
+                    // constructors to run during name discovery.
                 }
             }
         }
 
+        Exception? activationError = null;
+        foreach (var matchingType in matchingTypes.Distinct())
+        {
+            try
+            {
+                return CreateInstance<T>(matchingType, loadInfo, $"custom name '{loadInfo.Name}'");
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                activationError ??= ex;
+            }
+        }
         if (activationError is not null)
         {
             throw new InvalidOperationException(

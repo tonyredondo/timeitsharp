@@ -29,8 +29,17 @@ public sealed class ConsoleExporter : IExporter
             return;
         }
 
-        var safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables,
-                Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables));
+        var knownSecrets = Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables)
+            .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_options.HostEnvironment))
+            .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
+            .Concat(configuration.PathValidations.Take(Utils.MaxTagEntries))
+            .Concat(new[] { configuration.FilePath, configuration.Path, configuration.JsonExporterFilePath }
+                .OfType<string>())
+            .Concat(Utils.GetPathRedactionValues(new[] { configuration.ProcessName, configuration.WorkingDirectory }
+                .Concat(configuration.Scenarios.SelectMany(s => new[] { s.ProcessName, s.WorkingDirectory }))))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables, knownSecrets);
         var scenarios = safeResults.Scenarios ?? Array.Empty<ScenarioResult>();
         if (scenarios.Count == 0)
         {
@@ -658,8 +667,8 @@ public sealed class ConsoleExporter : IExporter
                     var end = binRanges[i].Item2;
 
                     // Format the bin range string
-                    var startStr = (start.ToString(formatStr) + seriesUnit).PadLeft(10);
-                    var endStr = (end.ToString(formatStr) + seriesUnit).PadRight(10);
+                    var startStr = (start.ToString(formatStr, CultureInfo.InvariantCulture) + seriesUnit).PadLeft(10);
+                    var endStr = (end.ToString(formatStr, CultureInfo.InvariantCulture) + seriesUnit).PadRight(10);
                     var rangeStr = $"{startStr} - {endStr}";
                     rangeStr = rangeStr.PadLeft(labelWidth);
 
@@ -670,7 +679,12 @@ public sealed class ConsoleExporter : IExporter
                     var bar = new string(barChar, barLength);
 
                     // Use AnsiConsole to print colored bars with counts
-                    AnsiConsole.MarkupLine(rangeStr + " ├ " + $"[{barColor}]{bar.PadRight(barMaxLength)} ({count})[/]");
+                    AnsiConsole.MarkupLine(
+                        "{0} ├ [{1}]{2} ({3})[/]",
+                        Utils.EscapeMarkup(rangeStr),
+                        barColor,
+                        Utils.EscapeMarkup(bar.PadRight(barMaxLength)),
+                        count);
                 }
 
                 // Display the legend
@@ -678,19 +692,28 @@ public sealed class ConsoleExporter : IExporter
                 if (dataSeriesDict.TryGetValue(seriesLabel, out var result))
                 {
                     // Format the width string
-                    var seriesRangeStr = $"Width: {seriesRange.ToString(formatStr)}{seriesUnit}";
+                    var seriesRangeStr = $"Width: {seriesRange.ToString(formatStr, CultureInfo.InvariantCulture)}{seriesUnit}";
 
                     if (result.IsBimodal)
                     {
                         if (seriesColors.TryGetValue(seriesLabel, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{Utils.EscapeMarkup(seriesLabel)}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                "    [{0}]{1}[/] : [dodgerblue1 bold]{2}[/]  {3}  [yellow bold]Bimodal with peak count: {4}[/]",
+                                color,
+                                seriesChars[seriesLabel],
+                                Utils.EscapeMarkup(seriesLabel),
+                                Utils.EscapeMarkup(seriesRangeStr),
+                                result.PeakCount);
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{Utils.EscapeMarkup(seriesLabel)}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                "    {0} : [dodgerblue1 bold]{1}[/]  {2}  [yellow bold]Bimodal with peak count: {3}[/]",
+                                seriesChars[seriesLabel],
+                                Utils.EscapeMarkup(seriesLabel),
+                                Utils.EscapeMarkup(seriesRangeStr),
+                                result.PeakCount);
                         }
                     }
                     else
@@ -698,12 +721,19 @@ public sealed class ConsoleExporter : IExporter
                         if (seriesColors.TryGetValue(seriesLabel, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{seriesChars[seriesLabel]}[/] : [dodgerblue1 bold]{Utils.EscapeMarkup(seriesLabel)}[/]  {seriesRangeStr}");
+                                "    [{0}]{1}[/] : [dodgerblue1 bold]{2}[/]  {3}",
+                                color,
+                                seriesChars[seriesLabel],
+                                Utils.EscapeMarkup(seriesLabel),
+                                Utils.EscapeMarkup(seriesRangeStr));
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {seriesChars[seriesLabel]} : [dodgerblue1 bold]{Utils.EscapeMarkup(seriesLabel)}[/]  {seriesRangeStr}");
+                                "    {0} : [dodgerblue1 bold]{1}[/]  {2}",
+                                seriesChars[seriesLabel],
+                                Utils.EscapeMarkup(seriesLabel),
+                                Utils.EscapeMarkup(seriesRangeStr));
                         }
                     }
                 }
@@ -737,8 +767,8 @@ public sealed class ConsoleExporter : IExporter
                 var end = binRanges[i].Item2;
 
                 // Format the bin range string
-                var startStr = (start.ToString(formatStr) + unit).PadLeft(10);
-                var endStr = (end.ToString(formatStr) + unit).PadRight(10);
+                var startStr = (start.ToString(formatStr, CultureInfo.InvariantCulture) + unit).PadLeft(10);
+                var endStr = (end.ToString(formatStr, CultureInfo.InvariantCulture) + unit).PadRight(10);
                 var rangeStr = $"{startStr} - {endStr}";
                 rangeStr = rangeStr.PadLeft(labelWidth);
 
@@ -784,7 +814,12 @@ public sealed class ConsoleExporter : IExporter
                     }
 
                     // Use AnsiConsole to print colored bars with counts
-                    AnsiConsole.MarkupLine(linePrefix + $"[{barColor}]{bar.PadRight(barMaxLength)} ({count})[/]");
+                    AnsiConsole.MarkupLine(
+                        "{0}[{1}]{2} ({3})[/]",
+                        Utils.EscapeMarkup(linePrefix),
+                        barColor,
+                        Utils.EscapeMarkup(bar.PadRight(barMaxLength)),
+                        count);
                     seriesIndex++;
                 }
             }
@@ -806,19 +841,28 @@ public sealed class ConsoleExporter : IExporter
                     }
 
                     // Format the width string
-                    var seriesRangeStr = $"Width: {seriesRange.ToString(formatStr)}{unit}";
+                    var seriesRangeStr = $"Width: {seriesRange.ToString(formatStr, CultureInfo.InvariantCulture)}{unit}";
 
                     if (result.IsBimodal)
                     {
                         if (seriesColors.TryGetValue(kvp.Key, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{Utils.EscapeMarkup(kvp.Key)}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                "    [{0}]{1}[/] : [dodgerblue1 bold]{2}[/]  {3}  [yellow bold]Bimodal with peak count: {4}[/]",
+                                color,
+                                kvp.Value,
+                                Utils.EscapeMarkup(kvp.Key),
+                                Utils.EscapeMarkup(seriesRangeStr),
+                                result.PeakCount);
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {kvp.Value} : [dodgerblue1 bold]{Utils.EscapeMarkup(kvp.Key)}[/]  {seriesRangeStr}  [yellow bold]Bimodal with peak count: {result.PeakCount}[/]");
+                                "    {0} : [dodgerblue1 bold]{1}[/]  {2}  [yellow bold]Bimodal with peak count: {3}[/]",
+                                kvp.Value,
+                                Utils.EscapeMarkup(kvp.Key),
+                                Utils.EscapeMarkup(seriesRangeStr),
+                                result.PeakCount);
                         }
                     }
                     else
@@ -826,12 +870,19 @@ public sealed class ConsoleExporter : IExporter
                         if (seriesColors.TryGetValue(kvp.Key, out var color))
                         {
                             AnsiConsole.MarkupLine(
-                                $"    [{color}]{kvp.Value}[/] : [dodgerblue1 bold]{Utils.EscapeMarkup(kvp.Key)}[/]  {seriesRangeStr}");
+                                "    [{0}]{1}[/] : [dodgerblue1 bold]{2}[/]  {3}",
+                                color,
+                                kvp.Value,
+                                Utils.EscapeMarkup(kvp.Key),
+                                Utils.EscapeMarkup(seriesRangeStr));
                         }
                         else
                         {
                             AnsiConsole.MarkupLine(
-                                $"    {kvp.Value} : [dodgerblue1 bold]{Utils.EscapeMarkup(kvp.Key)}[/]  {seriesRangeStr}");
+                                "    {0} : [dodgerblue1 bold]{1}[/]  {2}",
+                                kvp.Value,
+                                Utils.EscapeMarkup(kvp.Key),
+                                Utils.EscapeMarkup(seriesRangeStr));
                         }
                     }
                 }

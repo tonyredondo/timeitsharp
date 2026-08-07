@@ -89,6 +89,17 @@ public sealed class ConfigBuilder
         {
             WithExporter<DatadogExporter>();
         }
+        else
+        {
+            // Preserve the legacy switch semantics when a builder is reused: do not leave an
+            // exporter declaration behind that the modern declaration-based resolver would treat
+            // as an explicit Datadog enablement.
+            _configuration.Exporters.RemoveAll(extension =>
+                extension is not null &&
+                (extension.InMemoryType == typeof(DatadogExporter) ||
+                 BuiltInExtensionAliases.IsAlias(typeof(DatadogExporter), extension.Name) ||
+                 string.Equals(extension.Type, typeof(DatadogExporter).FullName, StringComparison.Ordinal)));
+        }
 
         return this;
     }
@@ -308,6 +319,7 @@ public sealed class ConfigBuilder
     {
         EnsureConfigurationStructure();
         _configuration.Exporters.Clear();
+        _configuration.EnableDatadog = false;
         return this;
     }
 
@@ -763,7 +775,8 @@ public sealed class ConfigBuilder
 
         if (extensionContract == typeof(IExporter) &&
             (extension.InMemoryType == typeof(DatadogExporter) ||
-             BuiltInExtensionAliases.IsAlias(typeof(DatadogExporter), extension.Name)))
+             BuiltInExtensionAliases.IsAlias(typeof(DatadogExporter), extension.Name) ||
+             string.Equals(extension.Type, typeof(DatadogExporter).FullName, StringComparison.Ordinal)))
         {
             _configuration.EnableDatadog = true;
         }

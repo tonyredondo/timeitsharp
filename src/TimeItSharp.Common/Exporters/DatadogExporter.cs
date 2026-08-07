@@ -42,7 +42,10 @@ public sealed class DatadogExporter : IExporter
 
         var configuration = _options.Configuration;
         var templateSecrets = Utils.GetSensitiveEnvironmentValues(configuration?.EnvironmentVariables)
+            .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_options.HostEnvironment))
             .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
+            .Concat(GetPathRedactionValues(configuration?.FilePath, configuration?.Path,
+                configuration?.JsonExporterFilePath))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         _configName = Utils.SanitizeText(configuration?.Name, templateSecrets);
@@ -63,7 +66,7 @@ public sealed class DatadogExporter : IExporter
                 typeof(DatadogExporter).Assembly.GetName().Version?.ToString() ?? "(unknown)",
                 _startDate);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             ReportException(ex, templateSecrets);
             // Initialization can fail after creating a session or module. Close partial
@@ -72,7 +75,7 @@ public sealed class DatadogExporter : IExporter
             {
                 _testModule?.Close();
             }
-            catch (Exception closeError)
+            catch (Exception closeError) when (closeError is not OutOfMemoryException && closeError is not StackOverflowException)
             {
                 ReportException(closeError, templateSecrets);
             }
@@ -81,7 +84,7 @@ public sealed class DatadogExporter : IExporter
             {
                 _testSession?.Close(TestStatus.Fail);
             }
-            catch (Exception closeError)
+            catch (Exception closeError) when (closeError is not OutOfMemoryException && closeError is not StackOverflowException)
             {
                 ReportException(closeError, templateSecrets);
             }
@@ -113,16 +116,38 @@ public sealed class DatadogExporter : IExporter
             return;
         }
 
-        var safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables,
-                Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables));
-        var safeScenarios = safeResults.Scenarios ?? Array.Empty<ScenarioResult>();
-        var originalScenarios = results?.Scenarios?.Where(item => item is not null).ToList()
-                                ?? new List<ScenarioResult>();
+        // Build the baseline secret set before touching custom result graphs. Setup failures and
+        // sanitizer fallbacks therefore use the same redaction policy as per-scenario export.
+        var knownSecrets = Utils.GetSensitiveEnvironmentValues(_options.Configuration?.EnvironmentVariables)
+            .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_options.HostEnvironment))
+            .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
+            .Concat(GetPathRedactionValues(
+                _options.Configuration?.FilePath,
+                _options.Configuration?.Path,
+                _options.Configuration?.JsonExporterFilePath))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        TimeitResult safeResults = new();
+        IReadOnlyList<ScenarioResult> safeScenarios = Array.Empty<ScenarioResult>();
+        var originalScenarios = new List<ScenarioResult>();
         var exportErrors = new List<Exception>();
         TestSuite? testSuite = null;
 
         try
         {
+            // Keep graph sanitization and all result enumeration inside the same cleanup guard as
+            // module/suite creation. A custom result getter must never strand the CI session.
+            safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables, knownSecrets);
+            safeScenarios = safeResults.Scenarios ?? Array.Empty<ScenarioResult>();
+            originalScenarios = results?.Scenarios?.Take(Utils.MaxResultCollectionItems)
+                                    .Where(item => item is not null).ToList()
+                                ?? new List<ScenarioResult>();
+            knownSecrets = safeScenarios
+                .SelectMany(item => Utils.GetSecretValues(item))
+                .Concat(knownSecrets)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
             if (safeScenarios.Count > 0)
             {
                 var minStartDate = safeScenarios.Min(item => item.Start);
@@ -138,11 +163,18 @@ public sealed class DatadogExporter : IExporter
                 for (var i = 0; i < safeScenarios.Count; i++)
                 {
                     var scenarioResult = safeScenarios[i];
-                    var knownSecrets = Utils.GetSecretValues(
+                    var scenarioSecrets = Utils.GetSecretValues(
                             i < originalScenarios.Count ? originalScenarios[i] : scenarioResult)
                         .Concat(Utils.GetSensitiveEnvironmentValues(
                             _options.Configuration?.EnvironmentVariables))
+                        .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_options.HostEnvironment))
                         .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
+                        .Concat(new[]
+                        {
+                            _options.Configuration?.FilePath,
+                            _options.Configuration?.Path,
+                            _options.Configuration?.JsonExporterFilePath,
+                        }.OfType<string>())
                         .Distinct(StringComparer.Ordinal)
                         .ToArray();
                     Test? test = null;
@@ -155,7 +187,7 @@ public sealed class DatadogExporter : IExporter
                         {
                             DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
                             test = testSuite.InternalCreateTest(
-                                Utils.SanitizeText(scenarioResult.Name, knownSecrets),
+                                Utils.SanitizeText(scenarioResult.Name, scenarioSecrets),
                                 scenarioResult.Start,
                                 traceId,
                                 spanId);
@@ -163,27 +195,27 @@ public sealed class DatadogExporter : IExporter
                         else
                         {
                             test = testSuite.InternalCreateTest(
-                                Utils.SanitizeText(scenarioResult.Name, knownSecrets),
+                                Utils.SanitizeText(scenarioResult.Name, scenarioSecrets),
                                 scenarioResult.Start);
                         }
 
-                        ExportScenario(test, scenarioResult, safeResults, i, knownSecrets);
+                        ExportScenario(test, scenarioResult, safeResults, i, scenarioSecrets);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         scenarioFailed = true;
-                        exportErrors.Add(Utils.SanitizeException(ex, knownSecrets));
-                        ReportException(ex, knownSecrets);
+                        exportErrors.Add(Utils.SanitizeException(ex, scenarioSecrets));
+                        ReportException(ex, scenarioSecrets);
                         if (test is not null)
                         {
                             try
                             {
-                                test.SetErrorInfo("Time-It Error", Utils.SanitizeText(ex.Message, knownSecrets), null);
+                                test.SetErrorInfo("Time-It Error", Utils.SanitizeText(ex.Message, scenarioSecrets), null);
                             }
-                            catch (Exception closeError)
+                            catch (Exception closeError) when (closeError is not OutOfMemoryException && closeError is not StackOverflowException)
                             {
-                                exportErrors.Add(Utils.SanitizeException(closeError, knownSecrets));
-                                ReportException(closeError, knownSecrets);
+                                exportErrors.Add(Utils.SanitizeException(closeError, scenarioSecrets));
+                                ReportException(closeError, scenarioSecrets);
                             }
                         }
                     }
@@ -198,27 +230,27 @@ public sealed class DatadogExporter : IExporter
                                     scenarioFailed ? TestStatus.Fail : TestStatus.Pass,
                                     SafeDuration(scenarioResult.Duration));
                             }
-                            catch (Exception ex)
+                            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                             {
-                                exportErrors.Add(Utils.SanitizeException(ex, knownSecrets));
-                                ReportException(ex, knownSecrets);
+                                exportErrors.Add(Utils.SanitizeException(ex, scenarioSecrets));
+                                ReportException(ex, scenarioSecrets);
                             }
                         }
                     }
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             // Module/suite creation can fail before a scenario is entered.  Preserve the same
             // cleanup/status contract as per-scenario failures and continue to close the session.
-            exportErrors.Add(Utils.SanitizeException(ex));
-            ReportException(ex);
+            exportErrors.Add(Utils.SanitizeException(ex, knownSecrets));
+            ReportException(ex, knownSecrets);
         }
         finally
         {
-            TryClose(testSuite, "test suite", exportErrors);
-            TryClose(_testModule, "test module", exportErrors);
+            TryClose(testSuite, "test suite", exportErrors, knownSecrets);
+            TryClose(_testModule, "test module", exportErrors, knownSecrets);
             var sessionStatus = exportErrors.Count > 0 || safeScenarios.Any(item => item.Status != Status.Passed)
                 ? TestStatus.Fail
                 : TestStatus.Pass;
@@ -226,10 +258,10 @@ public sealed class DatadogExporter : IExporter
             {
                 testSession.Close(sessionStatus);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                exportErrors.Add(Utils.SanitizeException(ex));
-                ReportException(ex);
+                exportErrors.Add(Utils.SanitizeException(ex, knownSecrets));
+                ReportException(ex, knownSecrets);
             }
 
             _sessionClosed = true;
@@ -263,14 +295,16 @@ public sealed class DatadogExporter : IExporter
         var sourceFile = configuration?.FilePath;
         if (!string.IsNullOrEmpty(sourceFile))
         {
-            sourceFile = Utils.SanitizeText(sourceFile, knownSecrets);
-            sourceFile = Path.IsPathFullyQualified(sourceFile) ? sourceFile : Path.GetFullPath(sourceFile);
             string? relativePath = null;
             try
             {
-                relativePath = CIEnvironmentValues.Instance.MakeRelativePathFromSourceRoot(sourceFile, false);
+                // Resolve the real path for Datadog's source-root matcher. It is already in the
+                // redaction set, so any setup exception or resulting relative path is sanitized at
+                // the sink without feeding a placeholder path into the matcher.
+                var sourcePath = Path.IsPathFullyQualified(sourceFile) ? sourceFile : Path.GetFullPath(sourceFile);
+                relativePath = CIEnvironmentValues.Instance.MakeRelativePathFromSourceRoot(sourcePath, false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 ReportException(ex, knownSecrets);
             }
@@ -475,7 +509,7 @@ public sealed class DatadogExporter : IExporter
                         break;
                     }
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     ReportException(ex, knownSecrets);
                 }
@@ -488,7 +522,11 @@ public sealed class DatadogExporter : IExporter
         }
     }
 
-    private static void TryClose(object? resource, string resourceName, ICollection<Exception> errors)
+    private static void TryClose(
+        object? resource,
+        string resourceName,
+        ICollection<Exception> errors,
+        IEnumerable<string>? knownSecrets)
     {
         if (resource is null)
         {
@@ -507,10 +545,10 @@ public sealed class DatadogExporter : IExporter
                     break;
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
-            errors.Add(Utils.SanitizeException(ex));
-            ReportException(ex);
+            errors.Add(Utils.SanitizeException(ex, knownSecrets));
+            ReportException(ex, knownSecrets);
         }
     }
 
@@ -520,6 +558,19 @@ public sealed class DatadogExporter : IExporter
     }
 
     private static double FiniteOrZero(double value) => double.IsFinite(value) ? value : 0;
+
+    private static IEnumerable<string> GetPathRedactionValues(params string?[] paths)
+    {
+        foreach (var path in paths.Where(path => !string.IsNullOrWhiteSpace(path)))
+        {
+            yield return path!;
+            foreach (var part in path!.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+                         .Where(part => part.Length >= 4))
+            {
+                yield return part;
+            }
+        }
+    }
 
     private static void ReportException(Exception exception, IEnumerable<string>? knownSecrets = null)
     {

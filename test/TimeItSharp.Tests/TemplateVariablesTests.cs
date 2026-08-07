@@ -50,4 +50,34 @@ public sealed class TemplateVariablesTests
         Assert.Equal("value", clone.Expand("$(CHILD)"));
         Assert.Equal("/tmp/root/child", clone.Expand("$(ROOT)/child"));
     }
+    [Fact]
+    public void Duplicate_name_with_markup_is_rendered_as_text()
+    {
+        var variables = new TemplateVariables();
+        const string maliciousName = "broken[/][red]\" <script>";
+        variables.Add(maliciousName, "first");
+
+        var exception = Record.Exception(() => variables.Add(maliciousName, "second"));
+
+        Assert.Null(exception);
+        Assert.Equal("first", variables.Expand($"$({maliciousName})"));
+    }
+
+    [Fact]
+    public void Add_rejects_oversized_variable_values()
+    {
+        var variables = new TemplateVariables();
+
+        Assert.Throws<ArgumentException>(() => variables.Add("BIG", new string('x', 65 * 1024)));
+    }
+
+    [Fact]
+    public void Expand_rejects_amplified_template_text()
+    {
+        var variables = new TemplateVariables();
+        variables.Add("BIG", new string('x', 64 * 1024));
+
+        Assert.Throws<ArgumentException>(() => variables.Expand(string.Concat(Enumerable.Repeat("$(BIG)", 32))));
+    }
+
 }

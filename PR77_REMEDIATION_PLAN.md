@@ -667,12 +667,10 @@ estado de esta rama y deben validarse como regresiones del PR.
 
 ### 13.13 Rangos estadísticos que aún requieren una decisión
 
-La validación actual sólo exige finitud y positividad para `acceptableRelativeWidth` y permite
-`minimumErrorReduction > 1`. El algoritmo compara una anchura relativa y una reducción que, por
-su definición, no pueden justificar esos valores en todos los casos. Decidir y documentar los
-rangos soportados (incluidos exactamente 1, 0 y valores muy grandes), o declarar que cualquier
-valor finito positivo es válido; añadir pruebas de frontera. No llamar “validación estricta” a
-una política que no ha fijado esos límites.
+La validación mantiene `acceptableRelativeWidth` como una anchura relativa positiva y limita
+`minimumErrorReduction` al intervalo [0, 1], que es el rango de una reducción relativa. Los
+extremos 0 y 1 son válidos y quedan cubiertos por la validación finita; valores mayores se
+rechazan antes de clonar.
 
 
 ### 13.14 Cierre Datadog y errores del engine
@@ -725,3 +723,50 @@ misma regla OS-aware y probar helper en PATH/directorio de trabajo.
 alias `Name="Datadog"`/`"DatadogExporter"`, retorna antes de ejecutar `EnableDatadog = true`.
 La resolución/canonicalización debe separar “ya existe” de “habilitar configuración” y probar
 alias fluent con `EnableDatadog=false`.
+
+
+### 13.18 Verificación del follow-up de robustez (2026-08-07)
+
+La implementación posterior a la revisión cubre también las rutas que no pasan por el CLI: los
+argumentos de configuración, timeout y `ExecuteService` se tokenizan y se entregan a CliWrap como
+argv ya delimitados. La captura de callbacks queda acotada y sanitizada, y el timeout mantiene una
+cancelación de reserva con una pequeña gracia para permitir que el helper configurado se ejecute.
+La instantánea de entorno capturada al entrar en `RunAsync` se propaga mediante `InitOptions` al
+servicio de profiler, evitando leer `DD_DOTNET_TRACER_HOME` en vivo durante la inicialización.
+
+Los grafos de resultados sanitizados limitan escenarios, datapoints, métricas y matrices de
+overhead; los valores de secretos se descubren con presupuesto de recorrido. Las rutas literales
+de JSON/Datadog se registran antes de operaciones de filesystem y se incluyen en la redacción de
+excepciones. Los nombres de conexión/DSN reconocidos, controles ANSI/OSC y excepciones de getters
+se filtran en los sinks integrados. La validación local final pasó: build Release de la solución,
+74 pruebas Common, 31 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
+timeout y callback output. `NU1903` de `Datadog.Trace` 2.61.0 continúa siendo el advisory
+exacto documentado y Linux trimmed consumer permanece validación exclusiva de CI.
+
+
+### 13.19 Endurecimiento adicional verificado durante la revisión adversarial
+
+Se añadió semántica de inicio intentado: `ScenarioFinish` se intenta aunque un callback de
+`ScenarioStart` falle, y `ParentService` se limpia siempre; los clones nunca heredan contexto de
+servicio. Los valores sensibles del snapshot de entorno se incluyen en todos los sinks integrados,
+las validaciones de rutas y working directories se registran antes de informar errores, y se
+eliminan también controles C1 además de ANSI/OSC/C0.
+
+La configuración limita escenarios, iteraciones, warmups, extensiones, variables, tags y
+validaciones de rutas. Las repeticiones extra tienen un límite agregado y consumen el presupuesto de
+duración; cada comando también queda sujeto al deadline global cuando no hay timeout específico.
+La tabla de comparación y la materialización previa de escenarios en exporters tienen límites
+independientes. La CLI conserva rutas `.json` ausentes con espacios y ordena correctamente los
+tokens situados antes y después de `--`.
+
+
+La carga de configuración también rechaza archivos mayores de 16 MiB y limita strings, opciones
+JSON, colecciones de extensiones y valores de proceso antes de clonar. La selección de profiler
+sólo considera raíces absolutas (nunca el CWD mutable), exige archivos/directorios regulares y
+limita `loader.conf` por bytes, filas y longitud de fila antes de validar su provenance.
+
+
+Las variables de plantilla están acotadas por número, tamaño de nombre/valor y expansión; la
+expansión no puede amplificar una ruta, tag o argumento más allá del límite de texto compartido.
+El release de metadata Datadog se ejecuta después de `OnFinish`, incluyendo metadata recreada por
+ese callback.

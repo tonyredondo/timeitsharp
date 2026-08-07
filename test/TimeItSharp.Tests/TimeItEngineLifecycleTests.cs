@@ -71,6 +71,27 @@ public sealed class TimeItEngineLifecycleTests
     }
 
     [Fact]
+    public async Task Scenario_finish_runs_when_scenario_start_fails()
+    {
+        ScenarioStartFailingService.StartCalls = 0;
+        ScenarioStartFailingService.FinishCalls = 0;
+        var config = new Config
+        {
+            Count = 1,
+            EnableMetrics = false,
+            ProcessName = "echo",
+        };
+        config.Scenarios.Add(new Scenario { Name = "scenario" });
+        config.Services.Add(new AssemblyLoadInfo { InMemoryType = typeof(ScenarioStartFailingService) });
+
+        var exitCode = await TimeItEngine.RunAsync(config);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(1, ScenarioStartFailingService.StartCalls);
+        Assert.Equal(1, ScenarioStartFailingService.FinishCalls);
+    }
+
+    [Fact]
     public async Task AfterAll_runs_when_before_all_fails()
     {
         BeforeAllFailingService.BeforeAllCalls = 0;
@@ -117,6 +138,32 @@ public sealed class TimeItEngineLifecycleTests
         };
 
         Assert.Throws<ArgumentException>(() => config.Validate());
+    }
+
+    public sealed class ScenarioStartFailingService : IService
+    {
+        public static int StartCalls;
+        public static int FinishCalls;
+
+        public string Name => nameof(ScenarioStartFailingService);
+
+        public void Initialize(InitOptions options, TimeItCallbacks callbacks)
+        {
+            callbacks.OnScenarioStart += OnScenarioStart;
+            callbacks.OnScenarioFinish += OnScenarioFinish;
+        }
+
+        public object? GetExecutionServiceData() => null;
+
+        public object? GetScenarioServiceData() => null;
+
+        private static void OnScenarioStart(TimeItCallbacks.ScenarioStartArg scenario)
+        {
+            StartCalls++;
+            throw new InvalidOperationException("Scenario start failed for test.");
+        }
+
+        private static void OnScenarioFinish(ScenarioResult result) => FinishCalls++;
     }
 
     public sealed class BeforeAllFailingService : IService

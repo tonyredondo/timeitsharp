@@ -93,9 +93,12 @@ root.SetHandler(async (context) =>
     var commandValue = GetValueForHandlerParameter(command, context);
     if (commandValue is not null && positionalArguments.Length != 0)
     {
+        // Values before a standalone `--` are the command's executable/leading arguments;
+        // terminated values follow them. Appending in the opposite order turns
+        // `echo -- --config foo.json` into `--config foo.json echo`.
         commandValue = string.IsNullOrEmpty(commandValue)
             ? positionalArgument
-            : $"{commandValue} {positionalArgument}";
+            : $"{positionalArgument} {commandValue}";
     }
 
     CliInput cliInput;
@@ -111,12 +114,17 @@ root.SetHandler(async (context) =>
     catch (Exception ex)
     {
         AnsiConsole.MarkupLine("[red]An error occurred while parsing the TimeItSharp input:[/]");
-        AnsiConsole.WriteException(Utils.SanitizeException(ex));
+        AnsiConsole.WriteException(Utils.SanitizeException(ex,
+            new[] { positionalArgument, configurationPathValue, commandValue }.OfType<string>()));
         Environment.ExitCode = 1;
         return;
     }
 
     var argumentValue = cliInput.Value;
+    var inputRedactionValues = new[] { argumentValue, configurationPathValue, commandValue }
+        .OfType<string>()
+        .Where(value => value.Length > 0)
+        .ToArray();
     var templateVariablesValue = GetValueForHandlerParameter(templateVariables, context) ?? new TemplateVariables();
     var countValue = GetValueForHandlerParameter(count, context);
     var warmupValue = GetValueForHandlerParameter(warmup, context);
@@ -152,8 +160,9 @@ root.SetHandler(async (context) =>
         catch (Exception ex)
         {
             // A configuration-looking file must not silently be interpreted as an executable
-            // command when it is malformed or inaccessible.
-            configurationLoadError = ex;
+            // command when it is malformed or inaccessible. Register the requested path before
+            // preserving the exception because filesystem messages often echo it.
+            configurationLoadError = Utils.SanitizeException(ex, inputRedactionValues);
         }
     }
     else if (!fileExists && !cliInput.IsExplicit)
@@ -320,7 +329,7 @@ root.SetHandler(async (context) =>
     catch (Exception ex)
     {
         AnsiConsole.MarkupLine("[red]An error occurred while running TimeItSharp:[/]");
-        AnsiConsole.WriteException(Utils.SanitizeException(ex));
+        AnsiConsole.WriteException(Utils.SanitizeException(ex, inputRedactionValues));
         exitCode = 1;
     }
 
@@ -369,13 +378,18 @@ static void EnsureDefaultExporters(ConfigBuilder configBuilder)
         return;
     }
 
-    // ConfigBuilder.WithExporter<DatadogExporter>() enables Datadog as a convenience for fluent
-    // callers. Preserve the JSON file's flag while materializing the built-in exporter set.
+    // Materialize only the non-Datadog defaults unless the configuration explicitly enabled
+    // Datadog. A declaration itself is now an enablement signal, so adding it unconditionally
+    // would make --json-exporter true/false unexpectedly start CI Visibility.
     var datadogEnabled = configuration.EnableDatadog;
     configBuilder
         .WithExporter<ConsoleExporter>()
-        .WithExporter<JsonExporter>()
-        .WithExporter<DatadogExporter>();
+        .WithExporter<JsonExporter>();
+    if (datadogEnabled)
+    {
+        configBuilder.WithExporter<DatadogExporter>();
+    }
+
     configuration.EnableDatadog = datadogEnabled;
 }
 

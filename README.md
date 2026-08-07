@@ -16,7 +16,18 @@ dotnet timeit "[command] [arguments]"
 ```
 
 The command form accepts a quoted executable/argument string, including paths containing
-spaces. Configuration files are validated before any process is started; malformed counts,
+spaces. The command line is parsed by CliWrap: quote an executable path and use double quotes for
+argument boundaries. POSIX-style single-quoted argument values are translated safely; ordinary
+backslashes (including a trailing Windows path slash) are preserved.
+
+```bash
+dotnet timeit --command '"/path with spaces/app" --name "a b"'
+dotnet timeit --command "echo 'literal spaces and C:\\temp\\'"
+# For multiple argv values, use -- so TimeItSharp does not consume process options.
+dotnet timeit -- echo --config foo.json
+```
+
+Configuration files are validated before any process is started; malformed counts,
 statistics, scenarios, and extension entries are reported together.
 
 TimeItSharp classifies a positional value with these rules:
@@ -59,8 +70,16 @@ CLI options also override matching values in a JSON configuration when explicitl
 In legacy positional mode, a path ending in `.json` is always treated as configuration (even if
 it names an executable); use `--command <line>` or `-- <line>` when the executable itself has
 that suffix. Malformed or missing `.json` paths are never executed as commands.
-Environment variables and exported Datadog metadata redact names containing passwords,
-secrets, tokens, API keys, private keys, or authentication values.
+Environment variables and built-in JSON/console/Datadog outputs redact names containing passwords,
+secrets, tokens, API keys, private keys, webhooks, recognized database/DSN connection aliases, URI user-info, or authentication values.
+Custom exporters and callback services receive the original result graph by design; they must apply
+their own sanitization before writing logs or external reports. The built-in `ExecuteService` captures
+callback stdout/stderr with a bound and applies the shared sanitizer when `redirectStandardOutput`
+is enabled; arbitrary custom services that write directly to `Console` remain outside that guarantee.
+Opaque literals in configuration, command arguments, callback/process output, or inherited environment
+(for example a password with no secret-like key) cannot be inferred as secrets. Callers should use
+secret-bearing names/templates or avoid sending those values to logs; this is especially important
+when custom services write directly to `Console`.
 
 #### Datadog profiler and package consumers
 

@@ -5,6 +5,17 @@ namespace TimeItSharp.Common.Configuration;
 
 public class Config : ProcessData
 {
+    internal const int MaxIterations = 100_000;
+    internal const int MaxScenarioEntries = 1_024;
+    private const int MaxConfigurationStringLength = 64 * 1024;
+    private const int MaxConfigurationFileBytes = 16 * 1024 * 1024;
+    private const int MaxOptionEntries = 1_024;
+    private const int MaxEnvironmentEntries = 4_096;
+    private const int MaxTagEntries = 1_024;
+    private const int MaxExtensionEntries = 256;
+    private const int MaxPathValidationEntries = 1_024;
+    private const int MaxPathValidationLength = 64 * 1024;
+
     [JsonIgnore]
     public string FilePath { get; set; }
 
@@ -134,11 +145,29 @@ public class Config : ProcessData
         {
             errors.Add("count must be greater than zero");
         }
+        else if (Count > MaxIterations)
+        {
+            errors.Add($"count cannot exceed {MaxIterations}");
+        }
 
         if (WarmUpCount < 0)
         {
             errors.Add("warmUpCount cannot be negative");
         }
+        else if (WarmUpCount > MaxIterations)
+        {
+            errors.Add($"warmUpCount cannot exceed {MaxIterations}");
+        }
+
+        ValidateBoundedString(MetricsProcessName, "metricsProcessName", errors);
+        ValidateBoundedString(JsonExporterFilePath, "jsonExporterFilePath", errors);
+        ValidateBoundedString(FilePath, "filePath", errors);
+        ValidateBoundedString(Path, "path", errors);
+        ValidateBoundedString(FileName, "fileName", errors);
+        ValidateBoundedString(Name, "name", errors);
+        ValidateBoundedString(ProcessName, "configuration.processName", errors);
+        ValidateBoundedString(ProcessArguments, "configuration.processArguments", errors);
+        ValidateBoundedString(WorkingDirectory, "configuration.workingDirectory", errors);
 
         if (EnableMetrics && MetricsFrequencyInMs <= 0)
         {
@@ -169,9 +198,9 @@ public class Config : ProcessData
             errors.Add("evaluationInterval must be greater than zero");
         }
 
-        if (!double.IsFinite(MinimumErrorReduction) || MinimumErrorReduction < 0)
+        if (!double.IsFinite(MinimumErrorReduction) || MinimumErrorReduction < 0 || MinimumErrorReduction > 1)
         {
-            errors.Add("minimumErrorReduction must be a finite number greater than or equal to zero");
+            errors.Add("minimumErrorReduction must be a finite number between zero and one (inclusive)");
         }
 
         if (!double.IsFinite(OverheadThreshold) || OverheadThreshold < 0)
@@ -189,6 +218,10 @@ public class Config : ProcessData
         {
             errors.Add("scenarios must contain at least one scenario");
         }
+        else if (Scenarios.Count > MaxScenarioEntries)
+        {
+            errors.Add($"scenarios cannot contain more than {MaxScenarioEntries} entries");
+        }
         else
         {
             for (var i = 0; i < Scenarios.Count; i++)
@@ -205,6 +238,7 @@ public class Config : ProcessData
                 {
                     errors.Add($"{prefix}.name cannot be empty");
                 }
+                ValidateBoundedString(scenario.Name, $"{prefix}.name", errors);
 
                 ValidateProcessData(scenario, prefix, errors);
                 if (string.IsNullOrWhiteSpace(scenario.ProcessName) &&
@@ -260,7 +294,12 @@ public class Config : ProcessData
         }
         else
         {
-            for (var i = 0; i < Scenarios.Count; i++)
+            if (Scenarios.Count > MaxScenarioEntries)
+            {
+                errors.Add($"scenarios cannot contain more than {MaxScenarioEntries} entries");
+            }
+
+            for (var i = 0; i < Math.Min(Scenarios.Count, MaxScenarioEntries); i++)
             {
                 if (Scenarios[i] is null)
                 {
@@ -288,6 +327,33 @@ public class Config : ProcessData
         {
             errors.Add($"{propertyName} cannot be null");
             return errors;
+        }
+
+        ValidateBoundedString(info.FilePath, $"{propertyName}.filePath", errors);
+        ValidateBoundedString(info.Type, $"{propertyName}.type", errors);
+        ValidateBoundedString(info.Name, $"{propertyName}.name", errors);
+        if (info.Options is not null)
+        {
+            if (info.Options.Count > MaxOptionEntries)
+            {
+                errors.Add($"{propertyName}.options cannot contain more than {MaxOptionEntries} entries");
+            }
+
+            foreach (var option in info.Options.Take(MaxOptionEntries))
+            {
+                ValidateBoundedString(option.Key, $"{propertyName}.options key", errors);
+                try
+                {
+                    if (option.Value is JsonElement element && element.GetRawText().Length > MaxConfigurationStringLength)
+                    {
+                        errors.Add($"{propertyName}.options value cannot exceed {MaxConfigurationStringLength} characters");
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or ObjectDisposedException)
+                {
+                    errors.Add($"{propertyName}.options contains an invalid JSON value");
+                }
+            }
         }
 
         var hasName = !string.IsNullOrWhiteSpace(info.Name);
@@ -341,6 +407,14 @@ public class Config : ProcessData
         return errors;
     }
 
+    private static void ValidateBoundedString(string? value, string propertyName, ICollection<string> errors)
+    {
+        if (value is not null && value.Length > MaxConfigurationStringLength)
+        {
+            errors.Add($"{propertyName} cannot exceed {MaxConfigurationStringLength} characters");
+        }
+    }
+
     private static void ValidateProcessDataStructure(ProcessData processData, string prefix, ICollection<string> errors)
     {
         if (processData.EnvironmentVariables is null)
@@ -366,17 +440,40 @@ public class Config : ProcessData
 
     private static void ValidateProcessData(ProcessData processData, string prefix, ICollection<string> errors)
     {
+        ValidateBoundedString(processData.ProcessName, $"{prefix}.processName", errors);
+        ValidateBoundedString(processData.ProcessArguments, $"{prefix}.processArguments", errors);
+        ValidateBoundedString(processData.WorkingDirectory, $"{prefix}.workingDirectory", errors);
+
         if (processData.EnvironmentVariables is null)
         {
             errors.Add($"{prefix}.environmentVariables cannot be null");
         }
         else
         {
-            foreach (var item in processData.EnvironmentVariables)
+            if (processData.EnvironmentVariables.Count > MaxEnvironmentEntries)
+            {
+                errors.Add($"{prefix}.environmentVariables cannot contain more than {MaxEnvironmentEntries} entries");
+            }
+
+            var environmentNames = new HashSet<string>(
+                OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+            foreach (var item in processData.EnvironmentVariables.Take(MaxEnvironmentEntries))
             {
                 if (string.IsNullOrWhiteSpace(item.Key))
                 {
                     errors.Add($"{prefix}.environmentVariables cannot contain an empty name");
+                }
+                else if (item.Key.Length > MaxConfigurationStringLength)
+                {
+                    errors.Add($"{prefix}.environmentVariables name cannot exceed {MaxConfigurationStringLength} characters");
+                }
+                else if (item.Value is not null && item.Value.Length > MaxConfigurationStringLength)
+                {
+                    errors.Add($"{prefix}.environmentVariables value cannot exceed {MaxConfigurationStringLength} characters");
+                }
+                else if (!environmentNames.Add(item.Key))
+                {
+                    errors.Add($"{prefix}.environmentVariables contains duplicate names differing only by case: '{item.Key}'");
                 }
 
                 if (item.Value is null)
@@ -392,11 +489,21 @@ public class Config : ProcessData
         }
         else
         {
-            for (var i = 0; i < processData.PathValidations.Count; i++)
+            if (processData.PathValidations.Count > MaxPathValidationEntries)
             {
-                if (string.IsNullOrWhiteSpace(processData.PathValidations[i]))
+                errors.Add($"{prefix}.pathValidations cannot contain more than {MaxPathValidationEntries} entries");
+            }
+
+            for (var i = 0; i < Math.Min(processData.PathValidations.Count, MaxPathValidationEntries); i++)
+            {
+                var path = processData.PathValidations[i];
+                if (string.IsNullOrWhiteSpace(path))
                 {
                     errors.Add($"{prefix}.pathValidations[{i}] cannot be empty");
+                }
+                else if (path.Length > MaxPathValidationLength)
+                {
+                    errors.Add($"{prefix}.pathValidations[{i}] cannot exceed {MaxPathValidationLength} characters");
                 }
             }
         }
@@ -405,9 +512,14 @@ public class Config : ProcessData
         {
             errors.Add($"{prefix}.timeout cannot be null");
         }
-        else if (processData.Timeout.MaxDuration < 0)
+        else
         {
-            errors.Add($"{prefix}.timeout.maxDuration cannot be negative");
+            ValidateBoundedString(processData.Timeout.ProcessName, $"{prefix}.timeout.processName", errors);
+            ValidateBoundedString(processData.Timeout.ProcessArguments, $"{prefix}.timeout.processArguments", errors);
+            if (processData.Timeout.MaxDuration < 0)
+            {
+                errors.Add($"{prefix}.timeout.maxDuration cannot be negative");
+            }
         }
 
         if (processData.Tags is null)
@@ -416,11 +528,34 @@ public class Config : ProcessData
         }
         else
         {
-            foreach (var item in processData.Tags)
+            if (processData.Tags.Count > MaxTagEntries)
+            {
+                errors.Add($"{prefix}.tags cannot contain more than {MaxTagEntries} entries");
+            }
+
+            foreach (var item in processData.Tags.Take(MaxTagEntries))
             {
                 if (string.IsNullOrWhiteSpace(item.Key))
                 {
                     errors.Add($"{prefix}.tags cannot contain an empty name");
+                }
+                ValidateBoundedString(item.Key, $"{prefix}.tags key", errors);
+                try
+                {
+                    var valueLength = item.Value switch
+                    {
+                        string text => text.Length,
+                        JsonElement element => element.GetRawText().Length,
+                        _ => 0,
+                    };
+                    if (valueLength > MaxConfigurationStringLength)
+                    {
+                        errors.Add($"{prefix}.tags value cannot exceed {MaxConfigurationStringLength} characters");
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or ObjectDisposedException)
+                {
+                    errors.Add($"{prefix}.tags contains an invalid JSON value");
                 }
             }
         }
@@ -439,7 +574,12 @@ public class Config : ProcessData
             return;
         }
 
-        for (var i = 0; i < extensionInfos.Count; i++)
+        if (extensionInfos.Count > MaxExtensionEntries)
+        {
+            errors.Add($"{propertyName} cannot contain more than {MaxExtensionEntries} entries");
+        }
+
+        for (var i = 0; i < Math.Min(extensionInfos.Count, MaxExtensionEntries); i++)
         {
             var info = extensionInfos[i];
             if (info is null)
@@ -462,31 +602,61 @@ public class Config : ProcessData
         {
             throw new ArgumentException("A configuration file path is required.", nameof(filePath));
         }
+        if (filePath.Length > MaxConfigurationStringLength)
+        {
+            throw new ArgumentException($"A configuration file path cannot exceed {MaxConfigurationStringLength} characters.", nameof(filePath));
+        }
 
-        if (!File.Exists(filePath))
+        FileStream fStream;
+        try
+        {
+            // Open once and inspect this same handle so a replacement after File.Exists cannot
+            // bypass the configuration size limit.
+            fStream = File.OpenRead(filePath);
+        }
+        catch (FileNotFoundException)
         {
             throw new FileNotFoundException("Configuration file not found.", filePath);
         }
 
+        using (fStream)
+        {
+            if (fStream.Length > MaxConfigurationFileBytes)
+            {
+                throw new InvalidDataException($"Configuration file exceeds the {MaxConfigurationFileBytes} byte limit.");
+            }
+
 #if NET5_0
-        var jsonBytes = File.ReadAllBytes(filePath);
-        if (JsonSerializer.Deserialize<Config>(jsonBytes) is { } config)
-        {
-            config.FilePath = filePath;
-            config.FileName = System.IO.Path.GetFileName(filePath);
-            config.Path = System.IO.Path.GetDirectoryName(filePath) ?? string.Empty;
-            return config;
-        }
+            var jsonBytes = new byte[(int)fStream.Length];
+            var offset = 0;
+            while (offset < jsonBytes.Length)
+            {
+                var read = fStream.Read(jsonBytes, offset, jsonBytes.Length - offset);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                offset += read;
+            }
+
+            if (JsonSerializer.Deserialize<Config>(jsonBytes) is { } config)
+            {
+                config.FilePath = filePath;
+                config.FileName = System.IO.Path.GetFileName(filePath);
+                config.Path = System.IO.Path.GetDirectoryName(filePath) ?? string.Empty;
+                return config;
+            }
 #else
-        using var fStream = File.OpenRead(filePath);
-        if (JsonSerializer.Deserialize(fStream, ConfigContext.Default.Config) is { } config)
-        {
-            config.FilePath = filePath;
-            config.FileName = System.IO.Path.GetFileName(filePath);
-            config.Path = System.IO.Path.GetDirectoryName(filePath) ?? string.Empty;
-            return config;
-        }
+            if (JsonSerializer.Deserialize(fStream, ConfigContext.Default.Config) is { } config)
+            {
+                config.FilePath = filePath;
+                config.FileName = System.IO.Path.GetFileName(filePath);
+                config.Path = System.IO.Path.GetDirectoryName(filePath) ?? string.Empty;
+                return config;
+            }
 #endif
+        }
 
         throw new JsonException($"Configuration file '{filePath}' is empty or contains a null value.");
     }

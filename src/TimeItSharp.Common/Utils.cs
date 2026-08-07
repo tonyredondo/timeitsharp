@@ -1,4 +1,5 @@
 ﻿using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -225,13 +226,64 @@ internal static class Utils
     internal const int MaxExportLogLines = 100;
     internal const int MaxExportLogLineLength = 4096;
     internal const int MaxExportLogCharacters = 64 * 1024;
+    internal const int MaxTagEntries = 1024;
+    internal const int MaxTagCollectionItems = 512;
+    internal const int MaxTagCharacters = 16 * 1024;
+    // Result graphs can be supplied by custom assertors/exporters. Keep detached copies bounded
+    // even when a hostile extension reports an absurdly large matrix or collection.
+    internal const int MaxResultCollectionItems = 100_000;
+    internal const int MaxOverheadRows = 1024;
+    internal const int MaxOverheadColumns = 1024;
+    private const int MaxSanitizationAssignmentSeparators = 128;
+
+    internal sealed class SanitizationBudget
+    {
+        private int _remainingItems;
+        private int _remainingCharacters;
+
+        public SanitizationBudget(int maxItems, int maxCharacters)
+        {
+            _remainingItems = maxItems;
+            _remainingCharacters = maxCharacters;
+        }
+
+        public bool TryConsumeItem() => _remainingItems-- > 0;
+
+        public string LimitText(string value)
+        {
+            if (value.Length <= _remainingCharacters)
+            {
+                _remainingCharacters -= value.Length;
+                return value;
+            }
+
+            const string marker = "[TAG TRUNCATED]";
+            var length = Math.Max(0, _remainingCharacters - marker.Length);
+            _remainingCharacters = 0;
+            return value[..length] + marker;
+        }
+    }
+
+    private sealed class SecretTraversalBudget
+    {
+        public int Remaining = MaxTagCollectionItems;
+
+        public bool TryConsume() => Remaining-- > 0;
+    }
 
     private static readonly Regex SensitiveAssignment = new(
-        "(?<key>[\\\"']?[A-Za-z][A-Za-z0-9_.-]*[\\\"']?)(?<separator>\\s*[:=]\\s*)(?<value>[\\\"'][^\\\"']*[\\\"']|[^,\\s;&}]+)",
+        "(?<key>[\\\"']?[A-Za-z][A-Za-z0-9_.-]*[\\\"']?)(?<separator>\\s*[:=]\\s*)(?<value>[\\\"'][^\\\"']*[\\\"']|[^,\\s;&}>]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex SensitiveArgument = new(
-        "(?<key>(?:--?|/)?[A-Za-z][A-Za-z0-9_.-]*)(?<separator>\\s+|\\s*=\\s*)(?<value>[\\\"'][^\\\"']*[\\\"']|[^\\s,;&]+)",
+        "(?<key>(?:--?|/)?[A-Za-z][A-Za-z0-9_.-]*)(?<separator>\\s+|\\s*=\\s*)(?<value>[\\\"'][^\\\"']*[\\\"']|[^\\s,;&>]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // Build and MSBuild-style arguments can nest a credential assignment after a switch prefix,
+    // e.g. /p:Password=... or -Dpassword=.... The generic assignment expression otherwise sees
+    // only the non-sensitive outer `p`/`D` key and consumes the inner assignment as its value.
+    private static readonly Regex PrefixedSensitiveAssignment = new(
+        @"(?<prefix>(?:--?|/)[A-Za-z0-9_.-]+:?)(?<key>[A-Za-z][A-Za-z0-9_.-]*)(?<separator>\s*[:=]\s*)(?<value>[""'][^""']*[""']|[^,\s;&}>]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex UriUserInfo = new(
@@ -239,7 +291,7 @@ internal static class Utils
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex AuthorizationValue = new(
-        "(?<key>\\b(?:authorization|proxy-authorization)\\b)(?<separator>\\s*[:=]\\s*)(?<scheme>bearer|basic)\\s+(?<value>[^\\s,;&}]+)",
+        "(?<key>\\b(?:authorization|proxy-authorization)\\b)(?<separator>\\s*[:=]\\s*)(?<scheme>bearer|basic)\\s+(?<value>[^\\s,;&}>]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -262,7 +314,7 @@ internal static class Utils
             return false;
         }
 
-        if (normalizedName is "PAT" or "JWT" or "SAS" ||
+        if (normalizedName is "PAT" or "JWT" or "SAS" or "DDTAGS" ||
             normalizedName.EndsWith("PAT", StringComparison.Ordinal) ||
             normalizedName.EndsWith("JWT", StringComparison.Ordinal) ||
             normalizedName.EndsWith("SAS", StringComparison.Ordinal))
@@ -274,7 +326,20 @@ internal static class Utils
         // contains none of the usual TOKEN/PASSWORD words.  Keep the explicit aliases narrow so
         // ordinary URL and PATH metadata remain exportable.
         if (normalizedName.Contains("DATABASEURL", StringComparison.Ordinal) ||
-            normalizedName.Contains("CONNECTIONSTRING", StringComparison.Ordinal))
+            normalizedName.Equals("DBURL", StringComparison.Ordinal) ||
+            normalizedName.Equals("DBURI", StringComparison.Ordinal) ||
+            normalizedName.Contains("DATABASEURI", StringComparison.Ordinal) ||
+            normalizedName.Contains("REDISURI", StringComparison.Ordinal) ||
+            normalizedName.Contains("MONGOURI", StringComparison.Ordinal) ||
+            normalizedName.Contains("JDBCURL", StringComparison.Ordinal) ||
+            normalizedName.Contains("CONNECTIONURL", StringComparison.Ordinal) ||
+            normalizedName.EndsWith("DSN", StringComparison.Ordinal) ||
+            normalizedName.Contains("CONNECTIONSTRING", StringComparison.Ordinal) ||
+            normalizedName.Contains("ENCRYPTIONKEY", StringComparison.Ordinal) ||
+            normalizedName.Contains("SIGNINGKEY", StringComparison.Ordinal) ||
+            normalizedName.Contains("GPGKEY", StringComparison.Ordinal) ||
+            normalizedName.Contains("SSHKEY", StringComparison.Ordinal) ||
+            normalizedName.Contains("WEBHOOK", StringComparison.Ordinal))
         {
             return true;
         }
@@ -307,9 +372,26 @@ internal static class Utils
     /// </summary>
     internal static string SanitizeText(string? value, IEnumerable<string>? knownSecretValues = null)
     {
+        return SanitizeTextCore(value, knownSecretValues, nestedAssignmentDepth: 0);
+    }
+
+    private static string SanitizeTextCore(
+        string? value,
+        IEnumerable<string>? knownSecretValues,
+        int nestedAssignmentDepth)
+    {
         if (string.IsNullOrEmpty(value))
         {
             return string.Empty;
+        }
+
+        // Assignment regexes are intentionally conservative, but a target can still emit a very
+        // long chain such as A=A=A=.... Reject pathological metadata before regex backtracking or
+        // nested assignment passes can consume unbounded CPU.
+        if (value.Length > MaxExportLogCharacters ||
+            value.Count(character => character is '=' or ':') > MaxSanitizationAssignmentSeparators)
+        {
+            return RedactedValue;
         }
 
         // Handle authorization headers before generic assignment redaction so the scheme and the
@@ -318,12 +400,24 @@ internal static class Utils
             match.Groups["key"].Value + match.Groups["separator"].Value +
             match.Groups["scheme"].Value + " " + RedactedValue);
 
-        sanitized = SensitiveAssignment.Replace(sanitized, match =>
+        // Nested build arguments can hide more than one assignment (foo=Password=...). Repeat a
+        // bounded number of passes so the first outer match cannot suppress the inner credential.
+        for (var pass = 0; pass < 4; pass++)
+        {
+            var previous = sanitized;
+
+            sanitized = SensitiveAssignment.Replace(sanitized, match =>
         {
             var key = TrimMetadataKey(match.Groups["key"].Value);
-            return IsSensitiveEnvironmentVariable(key)
-                ? match.Groups["key"].Value + match.Groups["separator"].Value + RedactedValue
-                : match.Value;
+            if (IsSensitiveEnvironmentVariable(key))
+            {
+                return match.Groups["key"].Value + match.Groups["separator"].Value + RedactedValue;
+            }
+
+            var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecretValues, nestedAssignmentDepth);
+            return nestedValue is null
+                ? match.Value
+                : match.Groups["key"].Value + match.Groups["separator"].Value + nestedValue;
         });
 
         sanitized = SensitiveArgument.Replace(sanitized, match =>
@@ -331,7 +425,10 @@ internal static class Utils
             var key = TrimMetadataKey(match.Groups["key"].Value);
             if (!IsSensitiveEnvironmentVariable(key))
             {
-                return match.Value;
+                var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecretValues, nestedAssignmentDepth);
+                return nestedValue is null
+                    ? match.Value
+                    : match.Groups["key"].Value + match.Groups["separator"].Value + nestedValue;
             }
 
             var valueGroup = match.Groups["value"].Value;
@@ -343,6 +440,34 @@ internal static class Utils
             return match.Groups["key"].Value + match.Groups["separator"].Value +
                    quote + RedactedValue + quote;
         });
+
+        sanitized = PrefixedSensitiveAssignment.Replace(sanitized, match =>
+        {
+            var key = TrimMetadataKey(match.Groups["key"].Value);
+            if (!IsSensitiveEnvironmentVariable(key))
+            {
+                var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecretValues, nestedAssignmentDepth);
+                return nestedValue is null
+                    ? match.Value
+                    : match.Groups["prefix"].Value + match.Groups["key"].Value +
+                      match.Groups["separator"].Value + nestedValue;
+            }
+
+            var valueGroup = match.Groups["value"].Value;
+            var quote = valueGroup.Length > 1 &&
+                        ((valueGroup[0] == '"' && valueGroup[^1] == '"') ||
+                         (valueGroup[0] == '\'' && valueGroup[^1] == '\''))
+                ? valueGroup[0].ToString()
+                : string.Empty;
+            return match.Groups["prefix"].Value + match.Groups["key"].Value +
+                   match.Groups["separator"].Value + quote + RedactedValue + quote;
+        });
+
+            if (string.Equals(previous, sanitized, StringComparison.Ordinal))
+            {
+                break;
+            }
+        }
 
         // Header credentials contain a scheme and token; the generic key/value expression would
         // otherwise redact only the scheme and leave the token after a space.
@@ -358,7 +483,8 @@ internal static class Utils
         if (knownSecretValues is not null)
         {
             foreach (var secret in knownSecretValues
-                         .Where(item => !string.IsNullOrEmpty(item))
+                         .Take(MaxTagCollectionItems)
+                         .Where(item => !string.IsNullOrEmpty(item) && item.Length <= MaxExportLogCharacters)
                          .Distinct(StringComparer.Ordinal)
                          .OrderByDescending(item => item.Length))
             {
@@ -374,11 +500,69 @@ internal static class Utils
             }
         }
 
-        return sanitized;
+        return StripTerminalControls(sanitized);
+    }
+
+    private static string StripTerminalControls(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        for (var index = 0; index < value.Length; index++)
+        {
+            var current = value[index];
+            if (current == '\e')
+            {
+                // Remove CSI and OSC terminal sequences, including OSC hyperlinks/clipboard
+                // payloads. An unterminated sequence consumes the remainder of this bounded value.
+                if (index + 1 < value.Length && value[index + 1] == '[')
+                {
+                    index += 2;
+                    while (index < value.Length && (value[index] < '@' || value[index] > '~'))
+                    {
+                        index++;
+                    }
+                }
+                else if (index + 1 < value.Length && value[index + 1] == ']')
+                {
+                    index += 2;
+                    while (index < value.Length)
+                    {
+                        if (value[index] == '\a')
+                        {
+                            break;
+                        }
+
+                        if (value[index] == '\e' && index + 1 < value.Length && value[index + 1] == '\\')
+                        {
+                            index++;
+                            break;
+                        }
+
+                        index++;
+                    }
+                }
+
+                continue;
+            }
+
+            if ((current < ' ' && current is not '\t' and not '\r' and not '\n') ||
+                (current >= '\u007f' && current <= '\u009f'))
+            {
+                continue;
+            }
+
+            builder.Append(current);
+        }
+
+        return builder.ToString();
     }
 
     internal static string SanitizeOutput(string? value, IEnumerable<string>? knownSecretValues = null)
     {
+        if (string.IsNullOrEmpty(value) || value.Length > MaxExportLogCharacters)
+        {
+            return string.IsNullOrEmpty(value) ? string.Empty : RedactedValue;
+        }
+
         var sanitized = SanitizeText(value, knownSecretValues);
         if (sanitized.Length == 0)
         {
@@ -437,10 +621,30 @@ internal static class Utils
     internal static Exception SanitizeException(Exception exception, IEnumerable<string>? knownSecretValues = null)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        var message = SanitizeText(exception.Message, knownSecretValues);
+        var message = StripTerminalControls(SanitizeText(exception.Message, knownSecretValues));
         // Do not retain the original exception as InnerException: its ToString() can contain a
         // secret in a nested message or Data value, and Spectre's WriteException traverses it.
         return new Exception($"{exception.GetType().Name}: {message}");
+    }
+
+    private static bool LooksLikePath(string value)
+    {
+        return Path.IsPathRooted(value) ||
+               value.Contains('/') ||
+               value.Contains('\\') ||
+               (value.Length >= 2 && value[1] == ':' &&
+                (value[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'));
+    }
+
+    internal static IReadOnlyList<string> GetPathRedactionValues(IEnumerable<string?> values)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        return values.Take(MaxResultCollectionItems)
+            .Where(value => !string.IsNullOrEmpty(value) && value.Length <= MaxExportLogCharacters &&
+                            LooksLikePath(value))
+            .Select(value => value!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     internal static string EscapeMarkup(string? value)
@@ -458,21 +662,44 @@ internal static class Utils
 
         if (source.EnvironmentVariables is not null)
         {
-            foreach (var item in source.EnvironmentVariables)
+            foreach (var item in source.EnvironmentVariables.Take(MaxResultCollectionItems))
             {
-                if (IsSensitiveEnvironmentVariable(item.Key) && !string.IsNullOrEmpty(item.Value))
+                if (IsSensitiveEnvironmentVariable(item.Key) && !string.IsNullOrEmpty(item.Value) &&
+                    item.Value.Length <= MaxExportLogCharacters)
                 {
                     values.Add(item.Value);
                 }
             }
         }
 
+        if (source.PathValidations is not null)
+        {
+            foreach (var path in source.PathValidations.Take(MaxTagEntries)
+                         .Where(path => !string.IsNullOrEmpty(path) && path.Length <= MaxExportLogCharacters))
+            {
+                values.Add(path);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(source.WorkingDirectory) &&
+            source.WorkingDirectory.Length <= MaxExportLogCharacters)
+        {
+            values.Add(source.WorkingDirectory);
+        }
+
+        if (!string.IsNullOrEmpty(source.ProcessName) &&
+            source.ProcessName.Length <= MaxExportLogCharacters &&
+            LooksLikePath(source.ProcessName))
+        {
+            values.Add(source.ProcessName);
+        }
+
         if (source.Tags is not null)
         {
-            foreach (var item in source.Tags)
+            foreach (var item in source.Tags.Take(MaxTagEntries))
             {
                 AddSensitiveValues(item.Value, item.Key, values, 0,
-                    new HashSet<object>(ReferenceEqualityComparer.Instance));
+                    new HashSet<object>(ReferenceEqualityComparer.Instance), new SecretTraversalBudget());
             }
         }
 
@@ -480,6 +707,8 @@ internal static class Utils
         if (source.Timeout is not null)
         {
             AddArgumentSecrets(source.Timeout.ProcessArguments, values);
+            AddOpaqueValue(source.Timeout.ProcessName, values);
+            AddOpaqueValue(source.Timeout.ProcessArguments, values);
         }
 
         return values.ToArray();
@@ -490,21 +719,35 @@ internal static class Utils
     {
         return environmentVariables is null
             ? Array.Empty<string>()
-            : environmentVariables
-                .Where(item => IsSensitiveEnvironmentVariable(item.Key) && !string.IsNullOrEmpty(item.Value))
+            : environmentVariables.Take(MaxResultCollectionItems)
+                .Where(item => IsSensitiveEnvironmentVariable(item.Key) && !string.IsNullOrEmpty(item.Value) &&
+                               item.Value.Length <= MaxExportLogCharacters)
                 .Select(item => item.Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+    }
+
+    internal static IReadOnlyList<string> GetSensitiveEnvironmentSnapshotValues(
+        IReadOnlyDictionary<string, string?>? environmentVariables)
+    {
+        return environmentVariables is null
+            ? Array.Empty<string>()
+            : environmentVariables.Take(MaxTagCollectionItems)
+                .Where(item => IsSensitiveEnvironmentVariable(item.Key) &&
+                               !string.IsNullOrEmpty(item.Value) &&
+                               item.Value.Length <= MaxExportLogCharacters)
+                .Select(item => item.Value!)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
     }
 
     internal static IReadOnlyList<string> GetTemplateSecretValues(TemplateVariables? templateVariables)
     {
-        return templateVariables?.EntriesForSanitization
-                   // CWD is the only built-in display/location variable and is not a credential;
-                   // custom variables are treated conservatively because their names are user
-                   // controlled and may not follow a known secret alias.
-                   .Where(item => !string.Equals(item.Key, "$(CWD)", StringComparison.OrdinalIgnoreCase) &&
-                                  !string.IsNullOrEmpty(item.Value))
+        return templateVariables?.EntriesForSanitization.Take(MaxResultCollectionItems)
+                   // Template values are user-controlled and may contain credentials even when the
+                   // variable name is innocuous (including the built-in CWD location).
+                   .Where(item => !string.IsNullOrEmpty(item.Value) &&
+                                  item.Value.Length <= MaxExportLogCharacters)
                    .Select(item => item.Value)
                    .Distinct(StringComparer.Ordinal)
                    .ToArray()
@@ -528,7 +771,7 @@ internal static class Utils
         var knownSecretsSet = new HashSet<string>(GetSecretValues(source), StringComparer.Ordinal);
         if (additionalSecretValues is not null)
         {
-            foreach (var value in additionalSecretValues)
+            foreach (var value in additionalSecretValues.Take(MaxResultCollectionItems))
             {
                 if (!string.IsNullOrEmpty(value))
                 {
@@ -546,17 +789,20 @@ internal static class Utils
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
         if (source.EnvironmentVariables is not null)
         {
-            foreach (var item in source.EnvironmentVariables)
+            foreach (var item in source.EnvironmentVariables.Take(MaxTagEntries))
             {
                 var key = SanitizeText(item.Key, knownSecrets);
-                if (string.IsNullOrEmpty(key))
+                if (string.IsNullOrEmpty(key) || key.Length > MaxTagCharacters)
                 {
                     continue;
                 }
 
-                environmentVariables[key] = IsSensitiveEnvironmentVariable(item.Key)
+                var safeValue = IsSensitiveEnvironmentVariable(item.Key)
                     ? RedactedValue
                     : SanitizeText(item.Value, knownSecrets);
+                environmentVariables[key] = safeValue.Length > MaxTagCharacters
+                    ? RedactedValue
+                    : safeValue;
             }
         }
 
@@ -571,23 +817,29 @@ internal static class Utils
         var safeMetricsData = new Dictionary<string, List<double>>(StringComparer.Ordinal);
         if (source.MetricsData is not null)
         {
-            foreach (var item in source.MetricsData)
+            foreach (var item in source.MetricsData.Take(MaxResultCollectionItems))
             {
                 if (string.IsNullOrWhiteSpace(item.Key) || IsSensitiveEnvironmentVariable(item.Key))
                 {
                     continue;
                 }
 
-                safeMetricsData[SanitizeText(item.Key, knownSecrets)] = item.Value is null
+                var safeMetricName = SanitizeText(item.Key, knownSecrets);
+                if (safeMetricName.Length > MaxTagCharacters)
+                {
+                    continue;
+                }
+
+                safeMetricsData[safeMetricName] = item.Value is null
                     ? new List<double>()
-                    : item.Value.Where(double.IsFinite).ToList();
+                    : item.Value.Take(MaxResultCollectionItems).Where(double.IsFinite).ToList();
             }
         }
 
         var safeData = new List<DataPoint>();
         if (source.Data is not null)
         {
-            foreach (var item in source.Data)
+            foreach (var item in source.Data.Take(MaxResultCollectionItems))
             {
                 if (item is not null)
                 {
@@ -610,7 +862,7 @@ internal static class Utils
             EnvironmentVariables = environmentVariables,
             PathValidations = source.PathValidations is null
                 ? new List<string>()
-                : source.PathValidations.Where(item => item is not null)
+                : source.PathValidations.Take(MaxResultCollectionItems).Where(item => item is not null)
                     .Select(item => SanitizeText(item, knownSecrets)).ToList(),
             Timeout = safeTimeout,
             Tags = safeTags,
@@ -623,10 +875,10 @@ internal static class Utils
             Data = safeData,
             Durations = source.Durations is null
                 ? new List<double>()
-                : source.Durations.Where(double.IsFinite).ToList(),
+                : source.Durations.Take(MaxResultCollectionItems).Where(double.IsFinite).ToList(),
             Outliers = source.Outliers is null
                 ? new List<double>()
-                : source.Outliers.Where(double.IsFinite).ToList(),
+                : source.Outliers.Take(MaxResultCollectionItems).Where(double.IsFinite).ToList(),
             Mean = FiniteOrZero(source.Mean),
             Median = FiniteOrZero(source.Median),
             Max = FiniteOrZero(source.Max),
@@ -636,9 +888,9 @@ internal static class Utils
             P99 = FiniteOrZero(source.P99),
             P95 = FiniteOrZero(source.P95),
             P90 = FiniteOrZero(source.P90),
-            Ci99 = source.Ci99 is null ? Array.Empty<double>() : source.Ci99.Where(double.IsFinite).ToArray(),
-            Ci95 = source.Ci95 is null ? Array.Empty<double>() : source.Ci95.Where(double.IsFinite).ToArray(),
-            Ci90 = source.Ci90 is null ? Array.Empty<double>() : source.Ci90.Where(double.IsFinite).ToArray(),
+            Ci99 = source.Ci99 is null ? Array.Empty<double>() : source.Ci99.Take(MaxResultCollectionItems).Where(double.IsFinite).ToArray(),
+            Ci95 = source.Ci95 is null ? Array.Empty<double>() : source.Ci95.Take(MaxResultCollectionItems).Where(double.IsFinite).ToArray(),
+            Ci90 = source.Ci90 is null ? Array.Empty<double>() : source.Ci90.Take(MaxResultCollectionItems).Where(double.IsFinite).ToArray(),
             IsBimodal = source.IsBimodal,
             PeakCount = source.PeakCount,
             Metrics = CopyFiniteMetrics(source.Metrics, knownSecrets),
@@ -657,26 +909,63 @@ internal static class Utils
         var scenarios = new List<ScenarioResult>();
         if (source?.Scenarios is not null)
         {
-            foreach (var item in source.Scenarios)
+            foreach (var item in source.Scenarios.Take(MaxResultCollectionItems))
             {
                 if (item is null)
                 {
                     continue;
                 }
 
+                var fallbackSecrets = new HashSet<string>(StringComparer.Ordinal);
                 try
                 {
-                    scenarios.Add(SanitizeScenarioResult(item, templateVariables, additionalSecretValues));
+                    foreach (var secret in GetSecretValues(item))
+                    {
+                        if (!string.IsNullOrEmpty(secret))
+                        {
+                            fallbackSecrets.Add(secret);
+                        }
+                    }
+
+                    if (additionalSecretValues is not null)
+                    {
+                        foreach (var secret in additionalSecretValues)
+                        {
+                            if (!string.IsNullOrEmpty(secret))
+                            {
+                                fallbackSecrets.Add(secret);
+                            }
+                        }
+                    }
+
+                    foreach (var secret in GetTemplateSecretValues(templateVariables))
+                    {
+                        fallbackSecrets.Add(secret);
+                    }
+
+                    scenarios.Add(SanitizeScenarioResult(item, templateVariables, fallbackSecrets));
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     // One malformed custom tag/collection must not suppress all other scenarios.
-                    // The fallback contains no source object graph and its exception is sanitized.
+                    // The fallback contains no source object graph and uses all secrets collected
+                    // before the throwing getter so a malformed custom graph cannot bypass policy.
+                    string safeName;
+                    try
+                    {
+                        safeName = SanitizeText(item.Name, fallbackSecrets);
+                    }
+                    catch (Exception nameError) when (nameError is not OutOfMemoryException &&
+                                                       nameError is not StackOverflowException)
+                    {
+                        safeName = string.Empty;
+                    }
+
                     scenarios.Add(new ScenarioResult
                     {
-                        Name = SanitizeText(item.Name),
+                        Name = safeName,
                         Status = TimeItSharp.Common.Results.Status.Failed,
-                        Error = SanitizeException(ex).Message,
+                        Error = SanitizeException(ex, fallbackSecrets).Message,
                     });
                 }
             }
@@ -685,8 +974,9 @@ internal static class Utils
         OverheadResult[][]? overheads = null;
         if (source?.Overheads is not null)
         {
-            overheads = new OverheadResult[source.Overheads.Length][];
-            for (var i = 0; i < source.Overheads.Length; i++)
+            var rowCount = Math.Min(source.Overheads.Length, MaxOverheadRows);
+            overheads = new OverheadResult[rowCount][];
+            for (var i = 0; i < rowCount; i++)
             {
                 var row = source.Overheads[i];
                 if (row is null)
@@ -695,7 +985,7 @@ internal static class Utils
                     continue;
                 }
 
-                overheads[i] = row.Select(item => new OverheadResult(
+                overheads[i] = row.Take(MaxOverheadColumns).Select(item => new OverheadResult(
                     FiniteOrZero(item.OverheadPercentage),
                     FiniteOrZero(item.DeltaValue))).ToArray();
             }
@@ -704,9 +994,11 @@ internal static class Utils
         return new TimeitResult { Scenarios = scenarios, Overheads = overheads };
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Extension-defined tag objects are inspected best-effort; missing trimmed properties are safely omitted.")]
     internal static object? SanitizeValue(object? value, string? key = null,
         IEnumerable<string>? knownSecretValues = null, int depth = 0,
-        HashSet<object>? visited = null)
+        HashSet<object>? visited = null, SanitizationBudget? budget = null)
     {
         if (IsSensitiveEnvironmentVariable(key))
         {
@@ -723,6 +1015,8 @@ internal static class Utils
             return RedactedValue;
         }
 
+        budget ??= new SanitizationBudget(MaxTagCollectionItems, MaxTagCharacters);
+
         if (value is double doubleValue)
         {
             return double.IsFinite(doubleValue) ? doubleValue : null;
@@ -735,16 +1029,18 @@ internal static class Utils
 
         if (value is string stringValue)
         {
-            return SanitizeText(stringValue, knownSecretValues);
+            var sanitizedString = SanitizeText(stringValue, knownSecretValues);
+            return budget is null ? sanitizedString : budget.LimitText(sanitizedString);
         }
 
         if (value is JsonElement jsonElement)
         {
             try
             {
-                return SanitizeJsonElement(jsonElement, knownSecretValues, depth, visited);
+                return SanitizeJsonElement(jsonElement, knownSecretValues, depth, visited, budget);
             }
-            catch
+            catch (Exception jsonError) when (jsonError is not OutOfMemoryException &&
+                                                 jsonError is not StackOverflowException)
             {
                 // A JsonElement can outlive its JsonDocument.  Treat an unreadable value as
                 // sensitive rather than aborting an otherwise valid export.
@@ -765,12 +1061,22 @@ internal static class Utils
             {
                 var originalKey = Convert.ToString(item.Key, CultureInfo.InvariantCulture) ?? string.Empty;
                 var itemKey = SanitizeText(originalKey, knownSecretValues);
+                if (budget is not null)
+                {
+                    itemKey = budget.LimitText(itemKey);
+                }
+
                 if (itemKey.Length == 0)
                 {
                     continue;
                 }
 
-                var itemValue = SanitizeValue(item.Value, originalKey, knownSecretValues, depth + 1, visited);
+                if (budget is not null && !budget.TryConsumeItem())
+                {
+                    break;
+                }
+
+                var itemValue = SanitizeValue(item.Value, originalKey, knownSecretValues, depth + 1, visited, budget);
                 if (itemValue is null && IsNonFiniteNumber(item.Value))
                 {
                     continue;
@@ -787,7 +1093,12 @@ internal static class Utils
             var result = new List<object?>();
             foreach (var item in enumerable)
             {
-                result.Add(SanitizeValue(item, null, knownSecretValues, depth + 1, visited));
+                if (budget is not null && !budget.TryConsumeItem())
+                {
+                    break;
+                }
+
+                result.Add(SanitizeValue(item, null, knownSecretValues, depth + 1, visited, budget));
             }
 
             return result;
@@ -814,10 +1125,19 @@ internal static class Utils
             {
                 try
                 {
-                    result[property.Name] = SanitizeValue(
-                        property.GetValue(value), property.Name, knownSecretValues, depth + 1, visited);
+                    if (budget is not null && !budget.TryConsumeItem())
+                    {
+                        break;
+                    }
+
+                    var propertyName = budget is null
+                        ? property.Name
+                        : budget.LimitText(property.Name);
+                    result[propertyName] = SanitizeValue(
+                        property.GetValue(value), propertyName, knownSecretValues, depth + 1, visited, budget);
                 }
-                catch
+                catch (Exception propertyError) when (propertyError is not OutOfMemoryException &&
+                                                      propertyError is not StackOverflowException)
                 {
                     // An extension object is untrusted input.  Do not expose getter exception
                     // text, and do not abort unrelated scenarios.
@@ -827,13 +1147,18 @@ internal static class Utils
             return result;
         }
 
-        return SanitizeText(Convert.ToString(value, CultureInfo.InvariantCulture), knownSecretValues);
+        var scalarText = SanitizeText(Convert.ToString(value, CultureInfo.InvariantCulture), knownSecretValues);
+        return budget is null ? scalarText : budget.LimitText(scalarText);
     }
 
     internal static object? ToDatadogTagValue(object? value, string? key,
         IEnumerable<string>? knownSecretValues = null)
     {
-        var safe = SanitizeValue(value, key, knownSecretValues);
+        var safe = SanitizeValue(
+            value,
+            key,
+            knownSecretValues,
+            budget: new SanitizationBudget(MaxTagCollectionItems, MaxTagCharacters));
         if (safe is null)
         {
             return null;
@@ -933,6 +1258,38 @@ internal static class Utils
         }
     }
 
+    private static string? SanitizeNestedAssignmentValue(
+        string value,
+        IEnumerable<string>? knownSecretValues,
+        int nestedAssignmentDepth)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+
+        // Never recursively parse attacker-controlled assignment chains without a hard bound.
+        // Very large nested values are replaced before the outer sink can materialize them.
+        if (nestedAssignmentDepth >= 4 || value.Length > MaxExportLogCharacters)
+        {
+            return RedactedValue;
+        }
+
+        var quote = value.Length > 1 &&
+                    ((value[0] == '"' && value[^1] == '"') ||
+                     (value[0] == '\'' && value[^1] == '\''))
+            ? value[0].ToString()
+            : string.Empty;
+        var unquoted = quote.Length == 0 ? value : value[1..^1];
+        var sanitized = SanitizeTextCore(unquoted, knownSecretValues, nestedAssignmentDepth + 1);
+        if (sanitized == unquoted)
+        {
+            return null;
+        }
+
+        return quote + sanitized + quote;
+    }
+
     private static string TrimMetadataKey(string key)
     {
         return key.Trim().Trim('"', '\'').TrimStart('-', '/');
@@ -944,9 +1301,23 @@ internal static class Utils
                value is float f && !float.IsFinite(f);
     }
 
+    private static void AddOpaqueValue(string? value, ISet<string> values)
+    {
+        if (!string.IsNullOrEmpty(value) && value.Length <= MaxExportLogCharacters)
+        {
+            values.Add(value);
+        }
+    }
+
     private static void AddArgumentSecrets(string? arguments, ISet<string> values)
     {
         if (string.IsNullOrEmpty(arguments))
+        {
+            return;
+        }
+
+        if (arguments.Length > MaxExportLogCharacters ||
+            arguments.Count(character => character is '=' or ':') > MaxSanitizationAssignmentSeparators)
         {
             return;
         }
@@ -984,17 +1355,19 @@ internal static class Utils
         }
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Secret discovery over extension-defined objects is best-effort and getters are guarded.")]
     private static void AddSensitiveValues(object? value, string? key, ISet<string> values,
-        int depth, HashSet<object> visited)
+        int depth, HashSet<object> visited, SecretTraversalBudget budget)
     {
-        if (value is null || depth > 32)
+        if (value is null || depth > 32 || !budget.TryConsume())
         {
             return;
         }
 
         if (IsSensitiveEnvironmentVariable(key))
         {
-            AddStringValues(value, values, depth, visited);
+            AddStringValues(value, values, depth, visited, budget);
             return;
         }
 
@@ -1007,18 +1380,19 @@ internal static class Utils
                     case JsonValueKind.Object:
                         foreach (var item in jsonElement.EnumerateObject())
                         {
-                            AddSensitiveValues(item.Value, item.Name, values, depth + 1, visited);
+                            AddSensitiveValues(item.Value, item.Name, values, depth + 1, visited, budget);
                         }
                         break;
                     case JsonValueKind.Array:
                         foreach (var item in jsonElement.EnumerateArray())
                         {
-                            AddSensitiveValues(item, null, values, depth + 1, visited);
+                            AddSensitiveValues(item, null, values, depth + 1, visited, budget);
                         }
                         break;
                 }
             }
-            catch
+            catch (Exception jsonError) when (jsonError is not OutOfMemoryException &&
+                                                 jsonError is not StackOverflowException)
             {
                 // Unreadable DOM values are redacted by the sanitizer itself.
             }
@@ -1036,14 +1410,14 @@ internal static class Utils
             foreach (DictionaryEntry item in dictionary)
             {
                 AddSensitiveValues(item.Value,
-                    Convert.ToString(item.Key, CultureInfo.InvariantCulture), values, depth + 1, visited);
+                    Convert.ToString(item.Key, CultureInfo.InvariantCulture), values, depth + 1, visited, budget);
             }
         }
         else if (value is IEnumerable enumerable && value is not string)
         {
             foreach (var item in enumerable)
             {
-                AddSensitiveValues(item, null, values, depth + 1, visited);
+                AddSensitiveValues(item, null, values, depth + 1, visited, budget);
             }
         }
         else
@@ -1053,9 +1427,10 @@ internal static class Utils
             {
                 try
                 {
-                    AddSensitiveValues(property.GetValue(value), property.Name, values, depth + 1, visited);
+                    AddSensitiveValues(property.GetValue(value), property.Name, values, depth + 1, visited, budget);
                 }
-                catch
+                catch (Exception propertyError) when (propertyError is not OutOfMemoryException &&
+                                                      propertyError is not StackOverflowException)
                 {
                     // Ignore untrusted getter failures.
                 }
@@ -1063,10 +1438,12 @@ internal static class Utils
         }
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Secret discovery over extension-defined objects is best-effort and getters are guarded.")]
     private static void AddStringValues(object? value, ISet<string> values, int depth,
-        HashSet<object> visited)
+        HashSet<object> visited, SecretTraversalBudget budget)
     {
-        if (value is null || depth > 32)
+        if (value is null || depth > 32 || !budget.TryConsume())
         {
             return;
         }
@@ -1088,23 +1465,24 @@ internal static class Utils
                 switch (jsonElement.ValueKind)
                 {
                     case JsonValueKind.String:
-                        AddStringValues(jsonElement.GetString(), values, depth + 1, visited);
+                        AddStringValues(jsonElement.GetString(), values, depth + 1, visited, budget);
                         break;
                     case JsonValueKind.Object:
                         foreach (var item in jsonElement.EnumerateObject())
                         {
-                            AddStringValues(item.Value, values, depth + 1, visited);
+                            AddStringValues(item.Value, values, depth + 1, visited, budget);
                         }
                         break;
                     case JsonValueKind.Array:
                         foreach (var item in jsonElement.EnumerateArray())
                         {
-                            AddStringValues(item, values, depth + 1, visited);
+                            AddStringValues(item, values, depth + 1, visited, budget);
                         }
                         break;
                 }
             }
-            catch
+            catch (Exception jsonError) when (jsonError is not OutOfMemoryException &&
+                                                 jsonError is not StackOverflowException)
             {
                 // Disposed/malformed DOM values are handled as redacted by SanitizeValue.
             }
@@ -1121,14 +1499,14 @@ internal static class Utils
         {
             foreach (DictionaryEntry item in dictionary)
             {
-                AddStringValues(item.Value, values, depth + 1, visited);
+                AddStringValues(item.Value, values, depth + 1, visited, budget);
             }
         }
         else if (value is IEnumerable enumerable)
         {
             foreach (var item in enumerable)
             {
-                AddStringValues(item, values, depth + 1, visited);
+                AddStringValues(item, values, depth + 1, visited, budget);
             }
         }
         else
@@ -1142,9 +1520,10 @@ internal static class Utils
             {
                 try
                 {
-                    AddStringValues(property.GetValue(value), values, depth + 1, visited);
+                    AddStringValues(property.GetValue(value), values, depth + 1, visited, budget);
                 }
-                catch
+                catch (Exception propertyError) when (propertyError is not OutOfMemoryException &&
+                                                      propertyError is not StackOverflowException)
                 {
                     // Ignore untrusted getter failures.
                 }
@@ -1153,7 +1532,7 @@ internal static class Utils
     }
 
     private static object? SanitizeJsonElement(JsonElement element, IEnumerable<string>? knownSecretValues,
-        int depth, HashSet<object>? visited)
+        int depth, HashSet<object>? visited, SanitizationBudget? budget)
     {
         if (depth > 32)
         {
@@ -1167,7 +1546,17 @@ internal static class Utils
                 var result = new Dictionary<string, object?>(StringComparer.Ordinal);
                 foreach (var item in element.EnumerateObject())
                 {
+                    if (budget is not null && !budget.TryConsumeItem())
+                    {
+                        break;
+                    }
+
                     var propertyName = SanitizeText(item.Name, knownSecretValues);
+                    if (budget is not null)
+                    {
+                        propertyName = budget.LimitText(propertyName);
+                    }
+
                     if (propertyName.Length == 0)
                     {
                         continue;
@@ -1175,7 +1564,7 @@ internal static class Utils
 
                     result[propertyName] = IsSensitiveEnvironmentVariable(item.Name)
                         ? RedactedValue
-                        : SanitizeJsonElement(item.Value, knownSecretValues, depth + 1, visited);
+                        : SanitizeJsonElement(item.Value, knownSecretValues, depth + 1, visited, budget);
                 }
 
                 return result;
@@ -1185,13 +1574,21 @@ internal static class Utils
                 var result = new List<object?>();
                 foreach (var item in element.EnumerateArray())
                 {
-                    result.Add(SanitizeJsonElement(item, knownSecretValues, depth + 1, visited));
+                    if (budget is not null && !budget.TryConsumeItem())
+                    {
+                        break;
+                    }
+
+                    result.Add(SanitizeJsonElement(item, knownSecretValues, depth + 1, visited, budget));
                 }
 
                 return result;
             }
             case JsonValueKind.String:
-                return SanitizeText(element.GetString(), knownSecretValues);
+            {
+                var sanitizedString = SanitizeText(element.GetString(), knownSecretValues);
+                return budget is null ? sanitizedString : budget.LimitText(sanitizedString);
+            }
             case JsonValueKind.Number:
                 return element.TryGetDecimal(out var decimalValue)
                     ? decimalValue
@@ -1218,17 +1615,23 @@ internal static class Utils
             return result;
         }
 
-        foreach (var item in source)
+        foreach (var item in source.Take(MaxTagEntries))
         {
             var key = item.Key ?? string.Empty;
             key = templateVariables is null ? key : templateVariables.Expand(key);
             key = SanitizeText(key, knownSecrets);
+            if (key.Length > 1024)
+            {
+                key = key[..1024];
+            }
+
             if (string.IsNullOrWhiteSpace(key))
             {
                 continue;
             }
 
-            var value = SanitizeValue(item.Value, key, knownSecrets);
+            var budget = new SanitizationBudget(MaxTagCollectionItems, MaxTagCharacters);
+            var value = SanitizeValue(item.Value, key, knownSecrets, budget: budget);
             if (value is null && IsNonFiniteNumber(item.Value))
             {
                 continue;
@@ -1236,7 +1639,7 @@ internal static class Utils
 
             if (value is string stringValue && templateVariables is not null)
             {
-                value = SanitizeText(templateVariables.Expand(stringValue), knownSecrets);
+                value = budget.LimitText(SanitizeText(templateVariables.Expand(stringValue), knownSecrets));
             }
 
             result[key] = value!;
@@ -1271,7 +1674,7 @@ internal static class Utils
             return result;
         }
 
-        foreach (var item in source)
+        foreach (var item in source.Take(MaxResultCollectionItems))
         {
             if (!double.IsFinite(item.Value) || string.IsNullOrWhiteSpace(item.Key) ||
                 IsSensitiveEnvironmentVariable(item.Key))
@@ -1280,7 +1683,7 @@ internal static class Utils
             }
 
             var key = SanitizeText(item.Key, knownSecrets);
-            if (!string.IsNullOrWhiteSpace(key))
+            if (!string.IsNullOrWhiteSpace(key) && key.Length <= MaxTagCharacters)
             {
                 result[key] = item.Value;
             }
@@ -1357,14 +1760,17 @@ internal static class Utils
             return [];
         }
 
-        // Initialize a 2D array to hold the comparison table data
-        var tableData = new OverheadResult[results.Count][];
+        // Keep direct callers from forcing a quadratic allocation before an exporter can apply
+        // its detached-graph limits.
+        var rowCount = Math.Min(results.Count, MaxOverheadRows);
+        var columnCount = Math.Min(results.Count, MaxOverheadColumns);
+        var tableData = new OverheadResult[rowCount][];
 
         // Loop through each pair of results to populate the table
-        for (var i = 0; i < results.Count; i++)
+        for (var i = 0; i < rowCount; i++)
         {
-            tableData[i] = new OverheadResult[results.Count];
-            for (var j = 0; j < results.Count; j++)
+            tableData[i] = new OverheadResult[columnCount];
+            for (var j = 0; j < columnCount; j++)
             {
                 // Retrieve the mean values for the i-th and j-th results
                 var firstItem = results[i];
@@ -1479,7 +1885,7 @@ internal static class Utils
 
             return [lowerBound, upperBound];
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             AnsiConsole.WriteException(SanitizeException(ex));
             return [safeMean, safeMean];

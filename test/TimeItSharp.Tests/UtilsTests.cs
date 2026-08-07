@@ -36,6 +36,16 @@ public sealed class UtilsTests
         Assert.True(Utils.IsSensitiveEnvironmentVariable("DB_PASSWD"));
         Assert.True(Utils.IsSensitiveEnvironmentVariable("API-KEY"));
         Assert.True(Utils.IsSensitiveEnvironmentVariable("APP_KEY"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("ENCRYPTION_KEY"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("SIGNING_KEY"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("GPG_KEY"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("SSH_KEY"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("SLACK_WEBHOOK"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("DB_URL"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("DATABASE_URI"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("REDIS_URI"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("MONGO_DSN"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("DB_URI"));
     }
 
     [Fact]
@@ -58,6 +68,16 @@ public sealed class UtilsTests
 
         var authorization = Utils.SanitizeText("Authorization: Bearer header-secret");
         Assert.DoesNotContain("header-secret", authorization, StringComparison.Ordinal);
+
+        foreach (var argument in new[]
+                 {
+                     "/p:foo=Password=supersecret",
+                     "-Dpassword=supersecret",
+                     "ARG0=Password=supersecret"
+                 })
+        {
+            Assert.DoesNotContain("supersecret", Utils.SanitizeText(argument), StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -69,6 +89,17 @@ public sealed class UtilsTests
         Assert.True(output.Split('\n').Length <= Utils.MaxExportLogLines + 1);
         Assert.All(output.Split('\n'), line => Assert.True(line.Length <= Utils.MaxExportLogLineLength ||
             line == "[OUTPUT TRUNCATED]"));
+    }
+
+    [Fact]
+    public void Sanitizer_removes_c1_terminal_controls()
+    {
+        var sanitized = Utils.SanitizeText("before\u009b31mRED\u009cafter\u0085");
+
+        Assert.Equal("before31mREDafter", sanitized);
+        Assert.DoesNotContain("\u009b", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u009c", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u0085", sanitized, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -116,4 +147,30 @@ public sealed class UtilsTests
 
         Assert.Equal(new[] { 12.5, 12.5 }, interval);
     }
+    [Fact]
+    public void Sanitizer_bounds_deep_assignment_chains()
+    {
+        var nested = string.Join("=", Enumerable.Repeat("A", 500)) + "=Password=SECRETNEST";
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var sanitized = Utils.SanitizeOutput(nested);
+        stopwatch.Stop();
+
+        Assert.DoesNotContain("SECRETNEST", sanitized, StringComparison.Ordinal);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5),
+            $"Sanitization took {stopwatch.Elapsed}.");
+    }
+
+    [Fact]
+    public void Sanitizer_redacts_nested_prefixed_assignments()
+    {
+        var sanitized = Utils.SanitizeOutput(
+            "/p:Password=supersecret -Dpassword=also-secret /p:foo=Password=third-secret",
+            knownSecretValues: null);
+
+        Assert.DoesNotContain("supersecret", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("also-secret", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("third-secret", sanitized, StringComparison.Ordinal);
+        Assert.Contains(Utils.RedactedValue, sanitized, StringComparison.Ordinal);
+    }
+
 }

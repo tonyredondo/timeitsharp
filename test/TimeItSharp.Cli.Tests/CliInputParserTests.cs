@@ -127,6 +127,18 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
+    public void MissingAbsoluteJsonPathWithSpacesRemainsConfiguration()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            $"timeitsharp-missing-{Guid.NewGuid():N} config.json");
+
+        var input = CliInputParser.Classify(path);
+
+        Assert.Equal(CliInputKind.Configuration, input.Kind);
+        Assert.Equal(path, input.Value);
+    }
+
+    [Fact]
     public void ExistingExtensionlessJsonFileIsConfiguration()
     {
         using var file = TemporaryFile.Create("\ufeff {\"processName\":\"echo\"}", string.Empty);
@@ -134,6 +146,74 @@ public sealed class CliInputParserTests
         var input = CliInputParser.Classify(file.Path);
 
         Assert.Equal(CliInputKind.Configuration, input.Kind);
+    }
+
+    [Fact]
+    public void PosixQuoteConcatenationPreservesAnEmbeddedApostrophe()
+    {
+        var process = CliInputParser.ParseProcessCommand("'foo'\"'\"'bar'");
+
+        Assert.Equal("foo'bar", process.ProcessName);
+        Assert.Equal(string.Empty, process.ProcessArguments);
+    }
+
+    [Fact]
+    public void ApostropheInsideAnUnquotedWordCanJoinAQuotedSpan()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo foo'bar baz'");
+
+        Assert.Equal("echo", process.ProcessName);
+        Assert.Equal("foo\"bar baz\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void TrailingBackslashInsideSingleQuotesIsPreserved()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo 'C:\\temp\\'");
+
+        Assert.Equal("echo", process.ProcessName);
+        Assert.Equal("\"C:\\temp\\\\\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void SingleQuoteGroupingCanHaveAnUnquotedSuffix()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo foo'bar baz'qux");
+
+        Assert.Equal("echo", process.ProcessName);
+        Assert.Equal("foo\"bar baz\"qux", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void ContractionBeforeLaterQuotedTokenRemainsLiteral()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo don't say 'hi'");
+
+        Assert.Equal("echo", process.ProcessName);
+        Assert.Equal("don't say \"hi\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void PosixQuoteConcatenationWorksInProcessArguments()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo 'foo'\"'\"'bar'");
+
+        Assert.Equal("echo", process.ProcessName);
+        Assert.Equal("\"foo'bar\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void EscapedApostropheCanAppearInExecutableName()
+    {
+        var process = CliInputParser.ParseProcessCommand("foo\\'bar");
+
+        Assert.Equal("foo'bar", process.ProcessName);
+    }
+
+    [Fact]
+    public void EmptyQuotedExecutableIsRejected()
+    {
+        Assert.Throws<ArgumentException>(() => CliInputParser.ParseProcessCommand("''"));
     }
 
     [Fact]
@@ -162,6 +242,55 @@ public sealed class CliInputParserTests
 
         Assert.Equal("/tmp/my executable", process.ProcessName);
         Assert.Equal("--version", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void OptionTerminatorAppendsToAnExistingCommandOption()
+    {
+        var normalized = CliInputParser.NormalizeArguments(new[] { "--command", "echo", "--", "a b", "c" });
+
+        Assert.Equal(new[] { "--command=echo \"a b\" c" }, normalized);
+    }
+
+    [Fact]
+    public void PosixEscapedSpaceIsPreservedInCommandArguments()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo a\\ b");
+
+        Assert.Equal("a\\ b", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void EscapedDoubleQuoteIsNotTreatedAsAnOpeningQuote()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo a\\\"b");
+
+        Assert.Equal("a\\\"b", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void SingleQuoteGroupingCanFollowAnUnquotedToken()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo foo'bar baz'");
+
+        Assert.Equal("foo\"bar baz\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void ContractionDoesNotConsumeALaterQuotedToken()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo don't say 'hi'");
+
+        Assert.Equal("don't say \"hi\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void UnterminatedAssignmentQuoteIsRejected()
+    {
+        var exception = Assert.Throws<ArgumentException>(() =>
+            CliInputParser.ParseProcessCommand("echo key='unterminated"));
+
+        Assert.Contains("unterminated quote", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class TemporaryFile : IDisposable

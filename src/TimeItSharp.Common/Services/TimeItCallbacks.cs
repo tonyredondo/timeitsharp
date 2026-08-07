@@ -118,7 +118,7 @@ public sealed class TimeItCallbacks
                 {
                     callback(scenarios);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     firstException ??= ex;
                 }
@@ -142,7 +142,7 @@ public sealed class TimeItCallbacks
                 {
                     callback(scenarioStartArg);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     firstException ??= ex;
                 }
@@ -182,7 +182,7 @@ public sealed class TimeItCallbacks
                     {
                         callbacks[0](dataPoint, phase);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         firstException = ex;
                     }
@@ -197,7 +197,7 @@ public sealed class TimeItCallbacks
                     {
                         callback(dataPoint, phase);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         firstException ??= ex;
                     }
@@ -216,7 +216,7 @@ public sealed class TimeItCallbacks
                     {
                         callback(dataPoint, phase);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         firstException ??= ex;
                     }
@@ -241,7 +241,7 @@ public sealed class TimeItCallbacks
                 {
                     callback(scenarioResults);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     firstException ??= ex;
                 }
@@ -265,7 +265,7 @@ public sealed class TimeItCallbacks
                 {
                     callback(scenariosResults);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     firstException ??= ex;
                 }
@@ -289,7 +289,7 @@ public sealed class TimeItCallbacks
                 {
                     callback();
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     firstException ??= ex;
                 }
@@ -314,7 +314,7 @@ public sealed class TimeItCallbacks
                     {
                         callbacks[0](dataPoint, phase, ref command);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         firstException = ex;
                     }
@@ -329,7 +329,7 @@ public sealed class TimeItCallbacks
                     {
                         callback(dataPoint, phase, ref command);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         firstException ??= ex;
                     }
@@ -348,7 +348,7 @@ public sealed class TimeItCallbacks
                     {
                         callback(dataPoint, phase, ref command);
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         firstException ??= ex;
                     }
@@ -370,6 +370,7 @@ public sealed class TimeItCallbacks
     public sealed class ScenarioStartArg
     {
         private readonly List<(IService ServiceAskingForRepeat, int Count)> _repeats;
+        private int _totalRepeatCount;
 
         public Scenario Scenario { get; private set; }
 
@@ -387,6 +388,13 @@ public sealed class TimeItCallbacks
                 throw new ArgumentOutOfRangeException(nameof(count), count, "A repeated scenario count must be greater than zero.");
             }
 
+            if (count > Config.MaxIterations - _totalRepeatCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), count,
+                    $"Repeated scenario runs cannot exceed {Config.MaxIterations} in total.");
+            }
+
+            _totalRepeatCount += count;
             _repeats.Add((serviceAskingForRepeat, count));
         }
 

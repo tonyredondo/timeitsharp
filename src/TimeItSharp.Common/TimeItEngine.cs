@@ -53,15 +53,25 @@ public static class TimeItEngine
     public static async Task<int> RunAsync(Config config, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
         ArgumentNullException.ThrowIfNull(config);
+        // Snapshot the host at RunAsync entry, before extension constructors/Initialize callbacks
+        // can mutate process-wide state. Each child receives a private copy of this snapshot.
+        var environmentVariables = ScenarioProcessor.CaptureEnvironmentVariables();
         // Validate before cloning: Clone assumes all collections and nested process data are
         // present, and malformed input should result in a useful configuration error.
         config.Validate();
         config = config.Clone();
+
         options ??= new TimeItOptions(new TemplateVariables());
         cancellationToken ??= CancellationToken.None;
         var templateVariables = options.TemplateVariables ?? new TemplateVariables();
         var knownSecretValues = Utils.GetSensitiveEnvironmentValues(config.EnvironmentVariables)
+            .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(environmentVariables))
             .Concat(Utils.GetTemplateSecretValues(templateVariables))
+            .Concat(config.PathValidations.Take(Utils.MaxTagEntries))
+            .Concat(new[] { config.FilePath, config.Path, config.FileName, config.JsonExporterFilePath }
+                .OfType<string>())
+            .Concat(Utils.GetPathRedactionValues(new[] { config.ProcessName, config.WorkingDirectory }
+                .Concat(config.Scenarios.SelectMany(s => new[] { s.ProcessName, s.WorkingDirectory }))))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var statesByType = options.StatesByType;
@@ -96,6 +106,13 @@ public static class TimeItEngine
                 () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() },
                 config.Path);
             var exporters = exportersInfo.Select(i => i.Instance).ToList();
+            // Resolve first, then enable the private configuration clone based on the actual
+            // instance. This covers aliases, in-memory registrations, and FilePath+Type selectors
+            // without mutating a caller-owned Config or trusting a spoofed type string.
+            if (exportersInfo.Any(item => item.LoadInfo is not null && item.Instance is DatadogExporter))
+            {
+                config.EnableDatadog = true;
+            }
 
             var assertorsInfo = GetFromAssemblyLoadInfoList(
                 config.Assertors,
@@ -104,7 +121,7 @@ public static class TimeItEngine
             foreach (var assertor in assertorsInfo)
             {
                 var state = statesByType.GetValueOrDefault(assertor.Instance.GetType());
-                assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state));
+                assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state) { HostEnvironment = environmentVariables });
             }
 
             var assertors = assertorsInfo
@@ -120,7 +137,7 @@ public static class TimeItEngine
             foreach (var service in servicesInfo)
             {
                 var state = statesByType.GetValueOrDefault(service.Instance.GetType());
-                service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state), timeitCallbacks);
+                service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state) { HostEnvironment = environmentVariables }, timeitCallbacks);
             }
 
             // Initialize exporters before any scenario lifecycle callback. Datadog creates its
@@ -131,20 +148,38 @@ public static class TimeItEngine
                 try
                 {
                     var state = statesByType.GetValueOrDefault(exporterInfo.Instance.GetType());
-                    exporterInfo.Instance.Initialize(new InitOptions(config, exporterInfo.LoadInfo, templateVariables, state));
+                    exporterInfo.Instance.Initialize(new InitOptions(config, exporterInfo.LoadInfo, templateVariables, state) { HostEnvironment = environmentVariables });
                     initializedExporters.Add(exporterInfo.Instance);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     exporterErrors++;
                     AnsiConsole.MarkupLine(
                         "[red]Error initializing exporter '{0}':[/]",
                         Utils.EscapeMarkup(Utils.SanitizeText(exporterInfo.Instance.Name, knownSecretValues)));
                     AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                    if (exporterInfo.Instance is IDisposable disposable)
+                    {
+                        try
+                        {
+                            disposable.Dispose();
+                        }
+                        catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
+                                                             disposeError is not StackOverflowException)
+                        {
+                            AnsiConsole.WriteException(Utils.SanitizeException(disposeError, knownSecretValues));
+                        }
+                    }
                 }
             }
 
-            processor = new ScenarioProcessor(config, templateVariables, assertors, services, callbacksTriggers);
+            processor = new ScenarioProcessor(
+                config,
+                templateVariables,
+                assertors,
+                services,
+                callbacksTriggers,
+                environmentVariables);
 
             AnsiConsole.Profile.Width = Utils.GetSafeWidth();
             AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
@@ -173,7 +208,8 @@ public static class TimeItEngine
                     Utils.SanitizeText(e.Name, knownSecretValues)))));
             AnsiConsole.WriteLine();
 
-            if (config is { Count: > 0, Scenarios.Count: > 0 })
+            if (config is { Count: > 0, Scenarios.Count: > 0 } &&
+                !cancellationToken.Value.IsCancellationRequested)
             {
                 if (config.Scenarios.Any(s => s.IsBaseline))
                 {
@@ -280,7 +316,7 @@ public static class TimeItEngine
                             exporter.Instance.Export(results);
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         exporterErrors++;
                         AnsiConsole.MarkupLine(
@@ -305,19 +341,6 @@ public static class TimeItEngine
                 RunAfterAll();
             }
 
-            foreach (var scenario in config.Scenarios)
-            {
-                DatadogMetadata.Release(scenario);
-            }
-
-            foreach (var result in scenariosResults)
-            {
-                if (result.Scenario is { } scenario)
-                {
-                    DatadogMetadata.Release(scenario);
-                }
-            }
-
             if (callbacksInitialized)
             {
                 try
@@ -331,9 +354,50 @@ public static class TimeItEngine
                     AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
                 }
             }
+
+            // Finish callbacks may legitimately inspect or recreate metadata. Release only after
+            // they have completed so no static entry survives the run.
+            foreach (var scenario in config.Scenarios)
+            {
+                DatadogMetadata.Release(scenario);
+            }
+
+            foreach (var result in scenariosResults)
+            {
+                if (result.Scenario is { } scenario)
+                {
+                    DatadogMetadata.Release(scenario);
+                }
+            }
+
+            DisposeInitializedExporters();
         }
 
-        return lifecycleErrors ? 1 : engineExitCode;
+        return cancellationToken.Value.IsCancellationRequested || lifecycleErrors ? 1 : engineExitCode;
+
+        void DisposeInitializedExporters()
+        {
+            foreach (var exporter in initializedExporters.Reverse())
+            {
+                if (exporter is not IDisposable disposable)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    exporterErrors++;
+                    AnsiConsole.MarkupLine("[red]Error disposing exporter '{0}':[/]",
+                        Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+            }
+        }
 
         void CleanScenarios()
         {

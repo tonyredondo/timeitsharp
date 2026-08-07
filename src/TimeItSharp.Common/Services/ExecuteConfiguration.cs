@@ -71,19 +71,11 @@ public sealed class ExecuteConfiguration
             var command = Cli.Wrap(templateVariables.Expand(ProcessName));
             if (!string.IsNullOrWhiteSpace(ProcessArguments))
             {
-                command = command.WithArguments(templateVariables.Expand(ProcessArguments));
+                command = command.WithArguments(CommandLineArguments.Parse(templateVariables.Expand(ProcessArguments)));
             }
             if (!string.IsNullOrWhiteSpace(WorkingDirectory))
             {
                 command = command.WithWorkingDirectory(templateVariables.Expand(WorkingDirectory));
-            }
-
-            if (RedirectStandardOutput)
-            {
-                command = command.WithStandardOutputPipe(PipeTarget.Merge(command.StandardOutputPipe,
-                    PipeTarget.ToStream(Console.OpenStandardOutput())));
-                command = command.WithStandardErrorPipe(PipeTarget.Merge(command.StandardErrorPipe,
-                    PipeTarget.ToStream(Console.OpenStandardError())));
             }
 
             return command;

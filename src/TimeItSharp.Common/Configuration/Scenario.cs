@@ -11,6 +11,7 @@ public class Scenario : ProcessData
     [JsonPropertyName("isBaseline")]
     public bool IsBaseline { get; set; }
     
+    [JsonIgnore]
     public IService? ParentService { get; set; }
 
     public Scenario()
@@ -39,7 +40,7 @@ public class Scenario : ProcessData
     {
         Name = Name,
         IsBaseline = IsBaseline,
-        ParentService = ParentService,
+        ParentService = null,
         ProcessName = ProcessName,
         ProcessArguments = ProcessArguments,
         WorkingDirectory = WorkingDirectory,
