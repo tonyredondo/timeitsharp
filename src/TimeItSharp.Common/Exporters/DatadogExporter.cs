@@ -16,6 +16,8 @@ internal interface IRunOutcomeAwareExporter
 
 public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareExporter
 {
+    private readonly record struct ScenarioCorrelation(TraceId TraceId, ulong SpanId, bool HasIds);
+
     private string? _configName;
     private InitOptions _options;
     private TestSession? _testSession;
@@ -176,6 +178,7 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
             .ToArray();
         TimeitResult safeResults = new();
         IReadOnlyList<ScenarioResult> safeScenarios = Array.Empty<ScenarioResult>();
+        var scenarioCorrelations = new List<ScenarioCorrelation>();
         var exportErrors = new List<Exception>();
         TestSuite? testSuite = null;
 
@@ -183,7 +186,24 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
         {
             // Keep graph sanitization and all result enumeration inside the same cleanup guard as
             // module/suite creation. A custom result getter must never strand the CI session.
-            safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables, knownSecrets);
+            safeResults = Utils.SanitizeTimeitResult(
+                results,
+                _options.TemplateVariables,
+                knownSecrets,
+                scenarioObserver: item =>
+                {
+                    // Always append a slot so observer failures leave correlation indices aligned
+                    // with the detached scenarios produced by the same single capture pass.
+                    var index = scenarioCorrelations.Count;
+                    scenarioCorrelations.Add(default);
+                    if (item.Scenario is not { } scenario)
+                    {
+                        return;
+                    }
+
+                    DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
+                    scenarioCorrelations[index] = new ScenarioCorrelation(traceId, spanId, true);
+                });
             safeScenarios = safeResults.Scenarios ?? Array.Empty<ScenarioResult>();
             if (safeScenarios.Count > 0)
             {
@@ -208,9 +228,20 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
                     var scenarioFailed = scenarioResult.Status != Status.Passed;
                     try
                     {
-                        test = testSuite.InternalCreateTest(
-                            Utils.SanitizeText(scenarioResult.Name, scenarioSecrets),
-                            scenarioResult.Start);
+                        var testName = Utils.SanitizeText(scenarioResult.Name, scenarioSecrets);
+                        if (i < scenarioCorrelations.Count &&
+                            scenarioCorrelations[i] is { HasIds: true } correlation)
+                        {
+                            test = testSuite.InternalCreateTest(
+                                testName,
+                                scenarioResult.Start,
+                                correlation.TraceId,
+                                correlation.SpanId);
+                        }
+                        else
+                        {
+                            test = testSuite.InternalCreateTest(testName, scenarioResult.Start);
+                        }
 
                         ExportScenario(test, scenarioResult, safeResults, i, scenarioSecrets);
                     }

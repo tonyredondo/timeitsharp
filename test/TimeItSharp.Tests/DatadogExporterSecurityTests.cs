@@ -48,6 +48,59 @@ public sealed class DatadogExporterSecurityTests
         }
     }
 
+    [Fact]
+    public void Sanitization_observer_captures_Datadog_ids_during_the_only_source_enumeration()
+    {
+        var runtimeScenario = new Scenario { Name = "runtime" };
+        var expected = GetCorrelation(runtimeScenario);
+        var source = new SingleEnumerationScenarios(new ScenarioResult
+        {
+            Name = "scenario",
+            Scenario = runtimeScenario,
+        });
+        (object TraceId, ulong SpanId)? observed = null;
+
+        Utils.SanitizeTimeitResult(
+            new TimeitResult { Scenarios = source },
+            scenarioObserver: item => observed = GetCorrelation(item.Scenario!));
+
+        Assert.True(observed.HasValue);
+        Assert.Equal(expected.TraceId, observed.Value.TraceId);
+        Assert.Equal(expected.SpanId, observed.Value.SpanId);
+        Assert.Equal(1, source.EnumerationCount);
+    }
+
+    [Fact]
+    public void Sanitization_observer_failure_is_contained_without_exception_text()
+    {
+        const string exceptionSecret = "secret-only-in-observer-exception";
+        var source = new SingleEnumerationScenarios(new ScenarioResult { Name = "scenario" });
+
+        var exception = Record.Exception(() =>
+        {
+            var safe = Utils.SanitizeTimeitResult(
+                new TimeitResult { Scenarios = source },
+                scenarioObserver: _ => throw new InvalidOperationException(exceptionSecret));
+            Assert.DoesNotContain(
+                exceptionSecret,
+                Assert.Single(safe.Scenarios).Error,
+                StringComparison.Ordinal);
+        });
+
+        Assert.Null(exception);
+        Assert.Equal(1, source.EnumerationCount);
+    }
+
+    private static (object TraceId, ulong SpanId) GetCorrelation(object scenario)
+    {
+        var getIds = typeof(DatadogMetadata).GetMethod(
+            nameof(DatadogMetadata.GetIds),
+            BindingFlags.Static | BindingFlags.Public)!;
+        object?[] arguments = [scenario, null, 0UL];
+        getIds.Invoke(null, arguments);
+        return (arguments[1]!, (ulong)arguments[2]!);
+    }
+
     private static object CreateAmbientSession()
     {
         var getOrCreate = TestSessionType.GetMethod(

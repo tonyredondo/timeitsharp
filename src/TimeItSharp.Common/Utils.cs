@@ -1190,7 +1190,8 @@ internal static class Utils
         TemplateVariables? templateVariables = null,
         IEnumerable<string>? additionalSecretValues = null,
         int maximumScenarios = MaxResultCollectionItems,
-        int maximumOverheadDimension = MaxOverheadRows)
+        int maximumOverheadDimension = MaxOverheadRows,
+        Action<ScenarioResult>? scenarioObserver = null)
     {
         var graphBudget = new ResultGraphBudget();
         var capturedScenarios = new List<(ScenarioResult Source, Dictionary<string, object> Tags)>();
@@ -1200,7 +1201,24 @@ internal static class Utils
         {
             if (item is not null)
             {
-                capturedScenarios.Add((item, DetachTags(item.Tags, graphBudget)));
+                var detachedTags = DetachTags(item.Tags, graphBudget);
+                if (scenarioObserver is not null)
+                {
+                    try
+                    {
+                        // The observer runs while this single source item is captured. It may copy
+                        // small value metadata, but the detached graph never retains runtime state.
+                        scenarioObserver(item);
+                    }
+                    catch (Exception observerError) when (observerError is not OutOfMemoryException &&
+                                                          observerError is not StackOverflowException)
+                    {
+                        // Observer failures are untrusted and may contain secrets in their text.
+                        // Omit the observation without logging or changing the sanitized result.
+                    }
+                }
+
+                capturedScenarios.Add((item, detachedTags));
             }
         }
 
