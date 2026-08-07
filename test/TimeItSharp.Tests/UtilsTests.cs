@@ -294,6 +294,77 @@ public sealed class UtilsTests
         throw new InvalidOperationException("secret only in iterator exception");
     }
 
+    [Fact]
+    public void Sanitizer_removes_default_ignorables_before_sensitive_key_detection()
+    {
+        var text = "Author\u034Fization: Custom header-secret\n" +
+                   "pass\uFE0Fword=assignment-secret\n" +
+                   "ordinary=cafe\u0301";
+
+        var sanitized = Utils.SanitizeText(text);
+
+        Assert.DoesNotContain("header-secret", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment-secret", sanitized, StringComparison.Ordinal);
+        Assert.Contains("cafe\u0301", sanitized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sanitizer_fails_closed_when_collection_count_disagrees_with_enumeration()
+    {
+        Assert.Equal(Utils.RedactedValue,
+            Utils.SanitizeText("ordinary", new CountMismatchSecrets()));
+    }
+
+    [Fact]
+    public void Result_sanitizer_fails_closed_when_additional_secret_enumeration_is_partial()
+    {
+        var source = new ScenarioResult
+        {
+            Name = "source-name",
+            ProcessName = "source-process",
+            Error = "source-error",
+        };
+
+        var safe = Utils.SanitizeTimeitResult(
+            new TimeitResult { Scenarios = [source] },
+            additionalSecretValues: EnumerateThenThrow());
+        var scenario = Assert.Single(safe.Scenarios);
+
+        Assert.Equal(Utils.RedactedValue, scenario.Name);
+        Assert.Equal(Utils.RedactedValue, scenario.ProcessName);
+        Assert.Equal(Utils.RedactedValue, scenario.ProcessArguments);
+        Assert.Equal(Utils.RedactedValue, scenario.WorkingDirectory);
+        Assert.Equal(Utils.RedactedValue, scenario.Error);
+        Assert.Equal(Utils.RedactedValue, scenario.LastStandardOutput);
+        Assert.Equal(Status.Failed, scenario.Status);
+        Assert.Equal("source-name", source.Name);
+    }
+
+    private sealed class CountMismatchSecrets : ICollection<string>
+    {
+        public int Count => 2;
+
+        public bool IsReadOnly => true;
+
+        public IEnumerator<string> GetEnumerator()
+        {
+            yield return "secret";
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public bool Contains(string item) => item == "secret";
+
+        public void CopyTo(string[] array, int arrayIndex) => array[arrayIndex] = "secret";
+
+        public void Add(string item) => throw new NotSupportedException();
+
+        public void Clear() => throw new NotSupportedException();
+
+        public bool Remove(string item) => throw new NotSupportedException();
+    }
+
+
     private sealed class DisposeThrowingSecrets : IEnumerable<string>
     {
         public IEnumerator<string> GetEnumerator() => new Enumerator();

@@ -690,7 +690,8 @@ internal static class Utils
             }
         }
 
-        if (!succeeded)
+        if (!succeeded ||
+            reportedCount.HasValue && reportedCount.Value != values.Count)
         {
             return false;
         }
@@ -771,7 +772,8 @@ internal static class Utils
             if (current == '\r' ||
                 (current < ' ' && current is not '\t' and not '\n') ||
                 (current >= '\u007f' && current <= '\u009f') ||
-                char.GetUnicodeCategory(value, index) == UnicodeCategory.Format)
+                char.GetUnicodeCategory(value, index) == UnicodeCategory.Format ||
+                IsDefaultIgnorableCodePoint(value, index))
             {
                 // CR can rewrite a terminal line, and Unicode format characters include bidi
                 // overrides/isolates which can visually disguise the text that follows.
@@ -788,6 +790,32 @@ internal static class Utils
         }
 
         return builder.ToString();
+    }
+
+    private static bool IsDefaultIgnorableCodePoint(string value, int index)
+    {
+        var codePoint = char.IsHighSurrogate(value[index]) &&
+                        index + 1 < value.Length &&
+                        char.IsLowSurrogate(value[index + 1])
+            ? char.ConvertToUtf32(value[index], value[index + 1])
+            : value[index];
+
+        // Unicode Default_Ignorable_Code_Point is broader than General_Category=Format.
+        // These ranges cover Other_Default_Ignorable_Code_Point and variation selectors while
+        // intentionally retaining ordinary combining marks such as U+0301.
+        return codePoint == 0x034F ||
+               codePoint is >= 0x115F and <= 0x1160 ||
+               codePoint is >= 0x17B4 and <= 0x17B5 ||
+               codePoint is >= 0x180B and <= 0x180D ||
+               codePoint == 0x180F ||
+               codePoint == 0x2065 ||
+               codePoint == 0x3164 ||
+               codePoint is >= 0xFE00 and <= 0xFE0F ||
+               codePoint == 0xFFA0 ||
+               codePoint is >= 0xFFF0 and <= 0xFFF8 ||
+               codePoint is >= 0x1BCA0 and <= 0x1BCA3 ||
+               codePoint is >= 0x1D173 and <= 0x1D17A ||
+               codePoint is >= 0xE0000 and <= 0xE0FFF;
     }
 
     internal static string SanitizeOutput(string? value, IEnumerable<string>? knownSecretValues = null)
@@ -1012,15 +1040,37 @@ internal static class Utils
     {
         var graphBudget = new ResultGraphBudget();
         var detachedTags = source is null ? null : DetachTags(source.Tags, graphBudget);
+        IReadOnlyList<string>? additionalSecretSnapshot = null;
+        if (additionalSecretValues is not null &&
+            !TrySnapshotKnownSecrets(additionalSecretValues, out additionalSecretSnapshot))
+        {
+            return CreateFailClosedScenarioResult();
+        }
+
         return SanitizeScenarioResultCore(
-            source, detachedTags, templateVariables, additionalSecretValues, graphBudget);
+            source, detachedTags, templateVariables, additionalSecretSnapshot, graphBudget);
+    }
+
+    private static ScenarioResult CreateFailClosedScenarioResult()
+    {
+        return new ScenarioResult
+        {
+            Name = RedactedValue,
+            ProcessName = RedactedValue,
+            ProcessArguments = RedactedValue,
+            WorkingDirectory = RedactedValue,
+            Timeout = new Configuration.Timeout(0, RedactedValue, RedactedValue),
+            Error = RedactedValue,
+            LastStandardOutput = RedactedValue,
+            Status = TimeItSharp.Common.Results.Status.Failed,
+        };
     }
 
     private static ScenarioResult SanitizeScenarioResultCore(
         ScenarioResult? source,
         IReadOnlyDictionary<string, object>? detachedTags,
         TemplateVariables? templateVariables,
-        IEnumerable<string>? additionalSecretValues,
+        IReadOnlyList<string>? additionalSecretValues,
         ResultGraphBudget graphBudget,
         IReadOnlyList<string>? completeSecretSnapshot = null)
     {
@@ -1043,7 +1093,7 @@ internal static class Utils
         {
             var knownSecretsSet = new HashSet<string>(
                 GetSecretValues(source, detachedTags), StringComparer.Ordinal);
-            foreach (var value in EnumerateSafely(additionalSecretValues, MaxResultCollectionItems))
+            foreach (var value in additionalSecretValues ?? Array.Empty<string>())
             {
                 if (!string.IsNullOrEmpty(value))
                 {
@@ -1222,10 +1272,24 @@ internal static class Utils
             }
         }
 
-        // Materialize caller-provided secrets once. A stateful/throwing enumerable is never read
-        // again, and discoveries made before it stops remain available to every scenario.
+        // Materialize caller-provided secrets once. Partial secret discovery is never safe: if
+        // Count disagrees or any enumeration operation fails, return only fixed redacted shells
+        // for the source items already captured above.
+        IReadOnlyList<string>? additionalSecretSnapshot = null;
+        if (additionalSecretValues is not null &&
+            !TrySnapshotKnownSecrets(additionalSecretValues, out additionalSecretSnapshot))
+        {
+            return new TimeitResult
+            {
+                Scenarios = capturedScenarios
+                    .Select(_ => CreateFailClosedScenarioResult())
+                    .ToArray(),
+                Overheads = null,
+            };
+        }
+
         var globalSecrets = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var secret in EnumerateSafely(additionalSecretValues, MaxResultCollectionItems)
+        foreach (var secret in (additionalSecretSnapshot ?? Array.Empty<string>())
                      .Concat(GetTemplateSecretValues(templateVariables)))
         {
             if (!string.IsNullOrEmpty(secret) && secret.Length <= MaxExportLogCharacters)
