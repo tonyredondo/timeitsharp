@@ -231,6 +231,139 @@ public class Config : ProcessData
         return errors.Count == 0;
     }
 
+    /// <summary>
+    /// Validates only the object graph invariants needed by a builder or clone operation.
+    /// Semantic settings such as counts and scenario names are intentionally left to
+    /// <see cref="Validate"/> so a fluent builder can be composed before it is complete.
+    /// </summary>
+    internal void ValidateStructure()
+    {
+        var errors = GetStructuralValidationErrors();
+        if (errors.Count == 0)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            $"The configuration structure is invalid:{Environment.NewLine} - {string.Join(Environment.NewLine + " - ", errors)}",
+            nameof(Config));
+    }
+
+    internal IReadOnlyList<string> GetStructuralValidationErrors()
+    {
+        var errors = new List<string>();
+        ValidateProcessDataStructure(this, "configuration", errors);
+
+        if (Scenarios is null)
+        {
+            errors.Add("scenarios cannot be null");
+        }
+        else
+        {
+            for (var i = 0; i < Scenarios.Count; i++)
+            {
+                if (Scenarios[i] is null)
+                {
+                    errors.Add($"scenarios[{i}] cannot be null");
+                }
+                else
+                {
+                    ValidateProcessDataStructure(Scenarios[i], $"scenarios[{i}]", errors);
+                }
+            }
+        }
+
+        ValidateAssemblyLoadInfos(Exporters, "exporters", errors);
+        ValidateAssemblyLoadInfos(Assertors, "assertors", errors);
+        ValidateAssemblyLoadInfos(Services, "services", errors);
+        return errors;
+    }
+
+    internal static IReadOnlyList<string> GetAssemblyLoadInfoValidationErrors(
+        AssemblyLoadInfo? info,
+        string propertyName)
+    {
+        var errors = new List<string>();
+        if (info is null)
+        {
+            errors.Add($"{propertyName} cannot be null");
+            return errors;
+        }
+
+        var hasName = !string.IsNullOrWhiteSpace(info.Name);
+        var hasFilePath = !string.IsNullOrWhiteSpace(info.FilePath);
+        var hasType = !string.IsNullOrWhiteSpace(info.Type);
+        var hasInMemoryType = info.InMemoryType is not null;
+
+        if (info.Name is not null && !hasName)
+        {
+            errors.Add($"{propertyName}.name cannot be empty");
+        }
+
+        if (hasInMemoryType)
+        {
+            // Fluent type registrations carry both the in-memory type and its assembly metadata
+            // for single-file/diagnostic scenarios. Name is still ambiguous and is rejected.
+            if (hasName)
+            {
+                errors.Add($"{propertyName} cannot combine name with inMemoryType");
+            }
+
+            if (hasFilePath != hasType)
+            {
+                errors.Add($"{propertyName}.type and filePath must be specified together when inMemoryType is set");
+            }
+
+            return errors;
+        }
+
+        if (!hasName && !hasFilePath && !hasType)
+        {
+            // Preserve the established diagnostic for an entirely empty entry.
+            errors.Add($"{propertyName} must specify name or filePath");
+        }
+        else if (hasName)
+        {
+            if (hasFilePath || hasType)
+            {
+                errors.Add($"{propertyName} name cannot be combined with filePath or type");
+            }
+        }
+        else if (hasFilePath && !hasType)
+        {
+            errors.Add($"{propertyName}.type is required when filePath is specified");
+        }
+        else if (hasType && !hasFilePath)
+        {
+            errors.Add($"{propertyName}.filePath is required when type is specified");
+        }
+
+        return errors;
+    }
+
+    private static void ValidateProcessDataStructure(ProcessData processData, string prefix, ICollection<string> errors)
+    {
+        if (processData.EnvironmentVariables is null)
+        {
+            errors.Add($"{prefix}.environmentVariables cannot be null");
+        }
+
+        if (processData.PathValidations is null)
+        {
+            errors.Add($"{prefix}.pathValidations cannot be null");
+        }
+
+        if (processData.Timeout is null)
+        {
+            errors.Add($"{prefix}.timeout cannot be null");
+        }
+
+        if (processData.Tags is null)
+        {
+            errors.Add($"{prefix}.tags cannot be null");
+        }
+    }
+
     private static void ValidateProcessData(ProcessData processData, string prefix, ICollection<string> errors)
     {
         if (processData.EnvironmentVariables is null)
@@ -315,22 +448,16 @@ public class Config : ProcessData
                 continue;
             }
 
-            if (info.InMemoryType is null &&
-                string.IsNullOrWhiteSpace(info.Name) &&
-                string.IsNullOrWhiteSpace(info.FilePath))
+            foreach (var error in GetAssemblyLoadInfoValidationErrors(info, $"{propertyName}[{i}]"))
             {
-                errors.Add($"{propertyName}[{i}] must specify name or filePath");
-            }
-
-            if (!string.IsNullOrWhiteSpace(info.FilePath) && string.IsNullOrWhiteSpace(info.Type))
-            {
-                errors.Add($"{propertyName}[{i}].type is required when filePath is specified");
+                errors.Add(error);
             }
         }
     }
 
     public static Config LoadConfiguration(string filePath)
     {
+        ArgumentNullException.ThrowIfNull(filePath);
         if (string.IsNullOrWhiteSpace(filePath))
         {
             throw new ArgumentException("A configuration file path is required.", nameof(filePath));

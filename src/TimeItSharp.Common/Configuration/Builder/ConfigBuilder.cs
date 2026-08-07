@@ -26,6 +26,7 @@ public sealed class ConfigBuilder
     /// <param name="configuration">Existing configuration instance</param>
     public ConfigBuilder(Config configuration)
     {
+        ArgumentNullException.ThrowIfNull(configuration);
         _configuration = configuration;
     }
 
@@ -39,7 +40,11 @@ public sealed class ConfigBuilder
     /// Build the configuration from the builder
     /// </summary>
     /// <returns>Config instance</returns>
-    public Config Build() => _configuration;
+    public Config Build()
+    {
+        EnsureConfigurationStructure();
+        return _configuration;
+    }
 
     #region Counts
 
@@ -78,12 +83,11 @@ public sealed class ConfigBuilder
     [Obsolete("This is a legacy settings, you should just add the exporter to the exporters list")]
     public ConfigBuilder WithDatadog(bool enabled)
     {
+        EnsureConfigurationStructure();
         _configuration.EnableDatadog = enabled;
-        if (enabled && _configuration.Exporters is not null &&
-            _configuration.Exporters.Find(e => e is not null &&
-                (e.Type == typeof(DatadogExporter).FullName || e.Name == "Datadog")) is null)
+        if (enabled)
         {
-            return WithExporter<DatadogExporter>();
+            WithExporter<DatadogExporter>();
         }
 
         return this;
@@ -99,6 +103,7 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder ClearScenarios()
     {
+        EnsureConfigurationStructure();
         _configuration.Scenarios.Clear();
         return this;
     }
@@ -110,7 +115,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithScenario(ScenarioBuilder scenarioBuilder)
     {
-        _configuration.Scenarios.Add(scenarioBuilder.Build());
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(scenarioBuilder);
+        var scenario = scenarioBuilder.Build();
+        if (scenario is null)
+        {
+            throw new ArgumentException("The scenario builder returned a null scenario.", nameof(scenarioBuilder));
+        }
+
+        _configuration.Scenarios.Add(scenario);
         return this;
     }
     
@@ -121,6 +134,8 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithScenario(Func<ScenarioBuilder, ScenarioBuilder> scenarioBuilderFunc)
     {
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(scenarioBuilderFunc);
         return WithScenario(scenarioBuilderFunc(new ScenarioBuilder()));
     }
 
@@ -144,6 +159,7 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithMetricsProcessName(string processName)
     {
+        ArgumentNullException.ThrowIfNull(processName);
         _configuration.MetricsProcessName = processName;
         return this;
     }
@@ -166,6 +182,7 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithName(string name)
     {
+        ArgumentNullException.ThrowIfNull(name);
         _configuration.Name = name;
         return this;
     }
@@ -177,10 +194,12 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithJsonExporterPath(string filePath)
     {
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(filePath);
         _configuration.JsonExporterFilePath = filePath;
-        if (!string.IsNullOrEmpty(filePath) && _configuration.Exporters.Find(e => e.Type == typeof(JsonExporter).FullName || e.Name == nameof(JsonExporter)) is null)
+        if (!string.IsNullOrEmpty(filePath))
         {
-            return WithExporter<JsonExporter>();
+            WithExporter<JsonExporter>();
         }
 
         return this;
@@ -284,522 +303,218 @@ public sealed class ConfigBuilder
 
     #region WithExporter
 
-    /// <summary>
-    /// Clears the exporters list
-    /// </summary>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Clears the exporters list.</summary>
     public ConfigBuilder ClearExporters()
     {
-        _configuration.Exporters?.Clear();
+        EnsureConfigurationStructure();
+        _configuration.Exporters.Clear();
         return this;
     }
-    
-    /// <summary>
-    /// Adds a exporter
-    /// </summary>
-    /// <param name="exporter">Assembly load info instance of the exporter</param>
-    /// <returns>Configuration builder instance</returns>
+
+    /// <summary>Adds an exporter declaration.</summary>
     public ConfigBuilder WithExporter(AssemblyLoadInfo exporter)
     {
-        if (_configuration.Exporters is null || exporter is null)
-        {
-            return this;
-        }
-
-        // Check if exporter is already there.
-        foreach (var existingExporter in _configuration.Exporters ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (existingExporter is not null && existingExporter.Name == exporter.Name &&
-                existingExporter.FilePath == exporter.FilePath &&
-                existingExporter.Type == exporter.Type)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Exporters!.Add(exporter);
-        return this;
+        EnsureConfigurationStructure();
+        return AddExtension(_configuration.Exporters, exporter, typeof(IExporter), "exporters");
     }
 
-    /// <summary>
-    /// Adds multiple exporters
-    /// </summary>
-    /// <param name="exporters">Assembly load info array</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds multiple exporter declarations.</summary>
     public ConfigBuilder WithExporter(params AssemblyLoadInfo[] exporters)
     {
-        if (_configuration.Exporters is not null)
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(exporters);
+        foreach (var exporter in exporters)
         {
-            _configuration.Exporters!.AddRange(exporters);
+            AddExtension(_configuration.Exporters, exporter, typeof(IExporter), "exporters");
         }
 
         return this;
     }
 
-    /// <summary>
-    /// Adds a known exporter by name
-    /// </summary>
-    /// <param name="exporterName">Exporter name</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds a built-in or custom exporter by name.</summary>
     public ConfigBuilder WithExporter(string exporterName)
     {
-        if (_configuration.Exporters is null)
-        {
-            return this;
-        }
-
-        // Check if exporter is already there.
-        foreach (var exporter in _configuration.Exporters ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (exporter is not null && exporter.Name == exporterName)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Exporters!.Add(new AssemblyLoadInfo
-        {
-            Name = exporterName
-        });
-
+        EnsureConfigurationStructure();
+        ValidateName(exporterName, nameof(exporterName));
+        AddExtension(
+            _configuration.Exporters,
+            new AssemblyLoadInfo { Name = exporterName },
+            typeof(IExporter),
+            "exporters");
         return this;
     }
 
-    /// <summary>
-    /// Adds a exporter
-    /// </summary>
-    /// <typeparam name="T">Type of exporter</typeparam>
-    /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithExporter<T>()
-        where T : IExporter
-    {
-        return WithExporter(typeof(T));
-    }
+    /// <summary>Adds a known exporter type.</summary>
+    public ConfigBuilder WithExporter<T>() where T : IExporter => WithExporter(typeof(T));
 
-    /// <summary>
-    /// Adds a exporter
-    /// </summary>
-    /// <param name="exporterType">Type of exporter</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds a known exporter type.</summary>
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithExporter(Type exporterType)
     {
-        if (_configuration.Exporters is null)
-        {
-            return this;
-        }
-
-        var exporterTypeLocation = exporterType.Assembly.Location;
-        if (string.IsNullOrEmpty(exporterTypeLocation))
-        {
-            exporterTypeLocation = exporterType.Assembly.GetName().Name + ".dll";
-        }
-
-        // Check if exporter is already there.
-        foreach (var exporter in _configuration.Exporters ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (exporter is null)
-            {
-                continue;
-            }
-
-            var isKnownBuiltInName =
-                (exporterType == typeof(ConsoleExporter) &&
-                 (string.Equals(exporter.Name, "Console", StringComparison.OrdinalIgnoreCase) ||
-                  string.Equals(exporter.Name, "ConsoleExporter", StringComparison.OrdinalIgnoreCase))) ||
-                (exporterType == typeof(JsonExporter) &&
-                 (string.Equals(exporter.Name, "Json", StringComparison.OrdinalIgnoreCase) ||
-                  string.Equals(exporter.Name, "JsonExporter", StringComparison.OrdinalIgnoreCase))) ||
-                (exporterType == typeof(DatadogExporter) &&
-                 (string.Equals(exporter.Name, "Datadog", StringComparison.OrdinalIgnoreCase) ||
-                  string.Equals(exporter.Name, "DatadogExporter", StringComparison.OrdinalIgnoreCase)));
-
-            if (exporter.InMemoryType == exporterType ||
-                string.Equals(exporter.Type, exporterType.FullName, StringComparison.Ordinal) ||
-                isKnownBuiltInName)
-            {
-                return this;
-            }
-        }
-        
-        _configuration.Exporters!.Add(new AssemblyLoadInfo
-        {
-            FilePath = exporterTypeLocation,
-            Type = exporterType.FullName,
-            InMemoryType = exporterType,
-        });
-
+        EnsureConfigurationStructure();
+        var info = CreateTypeLoadInfo<IExporter>(exporterType, nameof(exporterType));
+        AddExtension(_configuration.Exporters, info, typeof(IExporter), "exporters");
         if (exporterType == typeof(DatadogExporter))
         {
+            // Enabling is a property of selecting Datadog, not of whether the declaration was a
+            // duplicate. This also fixes aliases that were already present in a JSON config.
             _configuration.EnableDatadog = true;
         }
 
         return this;
     }
-    
-    /// <summary>
-    /// Adds multiple exporters
-    /// </summary>
-    /// <typeparam name="T1">Type of exporter</typeparam>
-    /// <typeparam name="T2">Type of exporter</typeparam>
-    /// <returns>Configuration builder instance</returns>
+
+    /// <summary>Adds two known exporter types.</summary>
     public ConfigBuilder WithExporters<T1, T2>()
         where T1 : IExporter
-        where T2 : IExporter
-    {
-        return WithExporter(typeof(T1)).WithExporter(typeof(T2));
-    }
-    
-    /// <summary>
-    /// Adds multiple exporters
-    /// </summary>
-    /// <typeparam name="T1">Type of exporter</typeparam>
-    /// <typeparam name="T2">Type of exporter</typeparam>
-    /// <typeparam name="T3">Type of exporter</typeparam>
-    /// <returns>Configuration builder instance</returns>
+        where T2 : IExporter => WithExporter(typeof(T1)).WithExporter(typeof(T2));
+
+    /// <summary>Adds three known exporter types.</summary>
     public ConfigBuilder WithExporters<T1, T2, T3>()
         where T1 : IExporter
         where T2 : IExporter
-        where T3 : IExporter
-    {
-        return WithExporter(typeof(T1)).WithExporter(typeof(T2)).WithExporter(typeof(T3));
-    }
+        where T3 : IExporter => WithExporter(typeof(T1)).WithExporter(typeof(T2)).WithExporter(typeof(T3));
 
     #endregion
 
     #region WithAssertor
-    
-    /// <summary>
-    /// Clears the assertors list
-    /// </summary>
-    /// <returns></returns>
+
+    /// <summary>Clears the assertors list.</summary>
     public ConfigBuilder ClearAssertors()
     {
-        _configuration.Assertors?.Clear();
+        EnsureConfigurationStructure();
+        _configuration.Assertors.Clear();
         return this;
     }
 
-    /// <summary>
-    /// Adds an assertor
-    /// </summary>
-    /// <param name="assertor">Assembly load info instance for the assertor</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds an assertor declaration.</summary>
     public ConfigBuilder WithAssertor(AssemblyLoadInfo assertor)
     {
-        if (_configuration.Assertors is null || assertor is null)
-        {
-            return this;
-        }
-
-        // Check if assertor is already there.
-        foreach (var existing in _configuration.Assertors ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (existing is not null && existing.Name == assertor.Name &&
-                existing.FilePath == assertor.FilePath &&
-                existing.Type == assertor.Type)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Assertors!.Add(assertor);
-        return this;
+        EnsureConfigurationStructure();
+        return AddExtension(_configuration.Assertors, assertor, typeof(IAssertor), "assertors");
     }
-    
-    /// <summary>
-    /// Adds multiple assertors
-    /// </summary>
-    /// <param name="assertors">Assembly load info array</param>
-    /// <returns>Configuration builder instance</returns>
+
+    /// <summary>Adds multiple assertor declarations.</summary>
     public ConfigBuilder WithAssertor(params AssemblyLoadInfo[] assertors)
     {
-        if (_configuration.Assertors is not null)
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(assertors);
+        foreach (var assertor in assertors)
         {
-            _configuration.Assertors!.AddRange(assertors);
+            AddExtension(_configuration.Assertors, assertor, typeof(IAssertor), "assertors");
         }
+
         return this;
     }
-    
-    /// <summary>
-    /// Adds a known assertor by name
-    /// </summary>
-    /// <param name="assertorName">Assertor name</param>
-    /// <returns>Configuration builder instance</returns>
+
+    /// <summary>Adds a built-in or custom assertor by name.</summary>
     public ConfigBuilder WithAssertor(string assertorName)
     {
-        if (_configuration.Assertors is null)
-        {
-            return this;
-        }
-
-        // Check if assertors is already there.
-        foreach (var exiting in _configuration.Assertors ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (exiting is not null && exiting.Name == assertorName)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Assertors!.Add(new AssemblyLoadInfo
-        {
-            Name = assertorName
-        });
-
+        EnsureConfigurationStructure();
+        ValidateName(assertorName, nameof(assertorName));
+        AddExtension(
+            _configuration.Assertors,
+            new AssemblyLoadInfo { Name = assertorName },
+            typeof(IAssertor),
+            "assertors");
         return this;
     }
 
-    /// <summary>
-    /// Add an assertor
-    /// </summary>
-    /// <typeparam name="T">Type of assertor</typeparam>
-    /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithAssertor<T>()
-        where T : IAssertor
-    {
-        return WithAssertor(typeof(T));
-    }
+    /// <summary>Adds a known assertor type.</summary>
+    public ConfigBuilder WithAssertor<T>() where T : IAssertor => WithAssertor(typeof(T));
 
-    /// <summary>
-    /// Add an assertor
-    /// </summary>
-    /// <param name="assertorType">Type of assertor</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds a known assertor type.</summary>
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithAssertor(Type assertorType)
     {
-        if (_configuration.Assertors is null)
-        {
-            return this;
-        }
-
-        var assertorTypeLocation = assertorType.Assembly.Location;
-        if (string.IsNullOrEmpty(assertorTypeLocation))
-        {
-            assertorTypeLocation = assertorType.Assembly.GetName().Name + ".dll";
-        }
-
-        // Check if assertors is already there.
-        foreach (var existing in _configuration.Assertors ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (existing is not null && (existing.FilePath == assertorTypeLocation || existing.InMemoryType == assertorType) &&
-                existing.Type == assertorType.FullName)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Assertors!.Add(new AssemblyLoadInfo
-        {
-            FilePath = assertorTypeLocation,
-            Type = assertorType.FullName,
-            InMemoryType = assertorType,
-        });
-
+        EnsureConfigurationStructure();
+        var info = CreateTypeLoadInfo<IAssertor>(assertorType, nameof(assertorType));
+        AddExtension(_configuration.Assertors, info, typeof(IAssertor), "assertors");
         return this;
     }
 
-    /// <summary>
-    /// Add multiple assertors
-    /// </summary>
-    /// <typeparam name="T1">Type of assertor</typeparam>
-    /// <typeparam name="T2">Type of assertor</typeparam>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds two known assertor types.</summary>
     public ConfigBuilder WithAssertors<T1, T2>()
         where T1 : IAssertor
-        where T2 : IAssertor
-    {
-        return WithAssertor(typeof(T1)).WithAssertor(typeof(T2));
-    }
-    
-    /// <summary>
-    /// Add multiple assertors
-    /// </summary>
-    /// <typeparam name="T1">Type of assertor</typeparam>
-    /// <typeparam name="T2">Type of assertor</typeparam>
-    /// <typeparam name="T3">Type of assertor</typeparam>
-    /// <returns>Configuration builder instance</returns>
+        where T2 : IAssertor => WithAssertor(typeof(T1)).WithAssertor(typeof(T2));
+
+    /// <summary>Adds three known assertor types.</summary>
     public ConfigBuilder WithAssertors<T1, T2, T3>()
         where T1 : IAssertor
         where T2 : IAssertor
-        where T3 : IAssertor
-    {
-        return WithAssertor(typeof(T1)).WithAssertor(typeof(T2)).WithAssertor(typeof(T3));
-    }
+        where T3 : IAssertor => WithAssertor(typeof(T1)).WithAssertor(typeof(T2)).WithAssertor(typeof(T3));
 
     #endregion
 
     #region WithService
-    
-    /// <summary>
-    /// Clears the services list
-    /// </summary>
-    /// <returns>Configuration builder instance</returns>
+
+    /// <summary>Clears the services list.</summary>
     public ConfigBuilder ClearServices()
     {
-        _configuration.Services?.Clear();
+        EnsureConfigurationStructure();
+        _configuration.Services.Clear();
         return this;
     }
 
-    /// <summary>
-    /// Adds a service
-    /// </summary>
-    /// <param name="service">Assembly load info instance of the service</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds a service declaration.</summary>
     public ConfigBuilder WithService(AssemblyLoadInfo service)
     {
-        if (_configuration.Services is null || service is null)
-        {
-            return this;
-        }
-
-        // Check if service is already there.
-        foreach (var existing in _configuration.Services ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (existing is not null && existing.Name == service.Name &&
-                existing.FilePath == service.FilePath &&
-                existing.Type == service.Type)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Services!.Add(service);
-        return this;
+        EnsureConfigurationStructure();
+        return AddExtension(_configuration.Services, service, typeof(IService), "services");
     }
 
-    /// <summary>
-    /// Adds a service
-    /// </summary>
-    /// <param name="services">Assembly load info array</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds multiple service declarations.</summary>
     public ConfigBuilder WithService(params AssemblyLoadInfo[] services)
     {
-        if (_configuration.Services is not null)
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(services);
+        foreach (var service in services)
         {
-            _configuration.Services!.AddRange(services);
+            AddExtension(_configuration.Services, service, typeof(IService), "services");
         }
+
         return this;
     }
-    
-    /// <summary>
-    /// Adds a known service by name
-    /// </summary>
-    /// <param name="serviceName">Service name</param>
-    /// <returns>Configuration builder instance</returns>
+
+    /// <summary>Adds a built-in or custom service by name.</summary>
     public ConfigBuilder WithService(string serviceName)
     {
-        if (_configuration.Services is null)
-        {
-            return this;
-        }
-
-        // Check if service is already there.
-        foreach (var exiting in _configuration.Services ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (exiting is not null && exiting.Name == serviceName)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Services!.Add(new AssemblyLoadInfo
-        {
-            Name = serviceName
-        });
-
+        EnsureConfigurationStructure();
+        ValidateName(serviceName, nameof(serviceName));
+        AddExtension(
+            _configuration.Services,
+            new AssemblyLoadInfo { Name = serviceName },
+            typeof(IService),
+            "services");
         return this;
     }
-    
-    /// <summary>
-    /// Add a service
-    /// </summary>
-    /// <typeparam name="T">Type of service</typeparam>
-    /// <returns>Configuration builder instance</returns>
-    public ConfigBuilder WithService<T>()
-        where T : IService
-    {
-        return WithService(typeof(T));
-    }
 
-    /// <summary>
-    /// Add a service
-    /// </summary>
-    /// <param name="serviceType">Type of service</param>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds a known service type.</summary>
+    public ConfigBuilder WithService<T>() where T : IService => WithService(typeof(T));
+
+    /// <summary>Adds a known service type.</summary>
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
     public ConfigBuilder WithService(Type serviceType)
     {
-        if (_configuration.Services is null)
-        {
-            return this;
-        }
-
-        var serviceTypeLocation = serviceType.Assembly.Location;
-        if (string.IsNullOrEmpty(serviceTypeLocation))
-        {
-            serviceTypeLocation = serviceType.Assembly.GetName().Name + ".dll";
-        }
-
-        // Check if services is already there.
-        foreach (var existing in _configuration.Services ?? Enumerable.Empty<AssemblyLoadInfo>())
-        {
-            if (existing is null)
-            {
-                continue;
-            }
-
-            var isKnownBuiltInName = serviceType == typeof(DatadogProfilerService) &&
-                (string.Equals(existing.Name, "DatadogProfiler", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(existing.Name, "DatadogProfilerService", StringComparison.OrdinalIgnoreCase));
-            if (existing.InMemoryType == serviceType ||
-                string.Equals(existing.Type, serviceType.FullName, StringComparison.Ordinal) ||
-                isKnownBuiltInName)
-            {
-                return this;
-            }
-        }
-
-        _configuration.Services!.Add(new AssemblyLoadInfo
-        {
-            FilePath = serviceTypeLocation,
-            Type = serviceType.FullName,
-            InMemoryType = serviceType,
-        });
-
+        EnsureConfigurationStructure();
+        var info = CreateTypeLoadInfo<IService>(serviceType, nameof(serviceType));
+        AddExtension(_configuration.Services, info, typeof(IService), "services");
         return this;
     }
 
-    /// <summary>
-    /// Add a service
-    /// </summary>
-    /// <typeparam name="T1">Type of service</typeparam>
-    /// <typeparam name="T2">Type of service</typeparam>
-    /// <returns>Configuration builder instance</returns>
+    /// <summary>Adds two known service types.</summary>
     public ConfigBuilder WithServices<T1, T2>()
         where T1 : IService
-        where T2 : IService
-    {
-        return WithService(typeof(T1)).WithService(typeof(T2));
-    }
-    
-    /// <summary>
-    /// Add a service
-    /// </summary>
-    /// <typeparam name="T1">Type of service</typeparam>
-    /// <typeparam name="T2">Type of service</typeparam>
-    /// <typeparam name="T3">Type of service</typeparam>
-    /// <returns>Configuration builder instance</returns>
+        where T2 : IService => WithService(typeof(T1)).WithService(typeof(T2));
+
+    /// <summary>Adds three known service types.</summary>
     public ConfigBuilder WithServices<T1, T2, T3>()
         where T1 : IService
         where T2 : IService
-        where T3 : IService
-    {
-        return WithService(typeof(T1)).WithService(typeof(T2)).WithService(typeof(T3));
-    }
+        where T3 : IService => WithService(typeof(T1)).WithService(typeof(T2)).WithService(typeof(T3));
 
     #endregion
-    
+
     #region ProcessData
 
     /// <summary>
@@ -842,8 +557,12 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithEnvironmentVariables(Dictionary<string, string> environmentVariables)
     {
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(environmentVariables);
         foreach (var kv in environmentVariables)
         {
+            ValidateName(kv.Key, "environmentVariables key");
+            ArgumentNullException.ThrowIfNull(kv.Value);
             _configuration.EnvironmentVariables[kv.Key] = kv.Value;
         }
 
@@ -858,6 +577,9 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithEnvironmentVariable(string name, string value)
     {
+        EnsureConfigurationStructure();
+        ValidateName(name, nameof(name));
+        ArgumentNullException.ThrowIfNull(value);
         _configuration.EnvironmentVariables[name] = value;
         return this;
     }
@@ -869,7 +591,14 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithPathValidations(params string[] pathValidations)
     {
-        _configuration.PathValidations.AddRange(pathValidations);
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(pathValidations);
+        foreach (var pathValidation in pathValidations)
+        {
+            ValidateRequiredText(pathValidation, "pathValidation");
+            _configuration.PathValidations.Add(pathValidation);
+        }
+
         return this;
     }
 
@@ -880,6 +609,8 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithPathValidations(string pathValidation)
     {
+        EnsureConfigurationStructure();
+        ValidateRequiredText(pathValidation, nameof(pathValidation));
         _configuration.PathValidations.Add(pathValidation);
         return this;
     }
@@ -891,7 +622,15 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithTimeout(TimeoutBuilder timeoutBuilder)
     {
-        _configuration.Timeout = timeoutBuilder.Build();
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(timeoutBuilder);
+        var timeout = timeoutBuilder.Build();
+        if (timeout is null)
+        {
+            throw new ArgumentException("The timeout builder returned a null timeout.", nameof(timeoutBuilder));
+        }
+
+        _configuration.Timeout = timeout;
         return this;
     }
 
@@ -902,6 +641,8 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithTimeout(Func<TimeoutBuilder, TimeoutBuilder> timeoutBuilderFunc)
     {
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(timeoutBuilderFunc);
         return WithTimeout(timeoutBuilderFunc(new TimeoutBuilder(_configuration.Timeout)));
     }
     
@@ -912,8 +653,12 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithTags(Dictionary<string, string> tags)
     {
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(tags);
         foreach (var kv in tags)
         {
+            ValidateName(kv.Key, "tags key");
+            ArgumentNullException.ThrowIfNull(kv.Value);
             _configuration.Tags[kv.Key] = kv.Value;
         }
 
@@ -928,6 +673,9 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithTags(string key, string value)
     {
+        EnsureConfigurationStructure();
+        ValidateName(key, nameof(key));
+        ArgumentNullException.ThrowIfNull(value);
         _configuration.Tags[key] = value;
         return this;
     }
@@ -939,8 +687,12 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithTags(Dictionary<string, object> tags)
     {
+        EnsureConfigurationStructure();
+        ArgumentNullException.ThrowIfNull(tags);
         foreach (var kv in tags)
         {
+            ValidateName(kv.Key, "tags key");
+            ArgumentNullException.ThrowIfNull(kv.Value);
             _configuration.Tags[kv.Key] = kv.Value;
         }
 
@@ -955,8 +707,125 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder WithTags(string key, IConvertible value)
     {
+        EnsureConfigurationStructure();
+        ValidateName(key, nameof(key));
+        ArgumentNullException.ThrowIfNull(value);
         _configuration.Tags[key] = value;
         return this;
     }
     #endregion
+
+    private void EnsureConfigurationStructure()
+    {
+        _configuration.ValidateStructure();
+    }
+
+    private ConfigBuilder AddExtension(
+        List<AssemblyLoadInfo> extensions,
+        AssemblyLoadInfo extension,
+        Type extensionContract,
+        string propertyName)
+    {
+        ArgumentNullException.ThrowIfNull(extensions);
+        ArgumentNullException.ThrowIfNull(extension);
+        ArgumentNullException.ThrowIfNull(extensionContract);
+
+        var errors = Config.GetAssemblyLoadInfoValidationErrors(
+            extension,
+            $"{propertyName}[{extensions.Count}]");
+        if (errors.Count > 0)
+        {
+            throw new ArgumentException(string.Join(Environment.NewLine, errors), nameof(extension));
+        }
+
+        if (extension.InMemoryType is { } inMemoryType && !extensionContract.IsAssignableFrom(inMemoryType))
+        {
+            throw new ArgumentException(
+                $"{propertyName} entry type '{inMemoryType.FullName ?? inMemoryType.Name}' does not implement {extensionContract.FullName}.",
+                nameof(extension));
+        }
+
+        if (!string.IsNullOrWhiteSpace(extension.Name) &&
+            BuiltInExtensionAliases.TryResolve(extensionContract, extension.Name, out var builtInType) &&
+            extension.InMemoryType is not null &&
+            extension.InMemoryType != builtInType)
+        {
+            throw new ArgumentException(
+                $"{propertyName} entry '{extension.Name}' does not match its in-memory type.",
+                nameof(extension));
+        }
+
+        if (!extensions.Any(existing =>
+                ExtensionIdentity.AreEquivalent(existing, extension, extensionContract, _configuration.Path)))
+        {
+            extensions.Add(extension);
+        }
+
+        if (extensionContract == typeof(IExporter) &&
+            (extension.InMemoryType == typeof(DatadogExporter) ||
+             BuiltInExtensionAliases.IsAlias(typeof(DatadogExporter), extension.Name)))
+        {
+            _configuration.EnableDatadog = true;
+        }
+
+        return this;
+    }
+
+    [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]
+    private static AssemblyLoadInfo CreateTypeLoadInfo<T>(Type extensionType, string parameterName)
+        where T : class, INamedExtension
+    {
+        ArgumentNullException.ThrowIfNull(extensionType);
+        if (!typeof(T).IsAssignableFrom(extensionType))
+        {
+            throw new ArgumentException(
+                $"Type '{extensionType.FullName ?? extensionType.Name}' must implement {typeof(T).FullName}.",
+                parameterName);
+        }
+
+        if (extensionType.IsAbstract || extensionType.IsInterface || extensionType.IsEnum)
+        {
+            throw new ArgumentException(
+                $"Type '{extensionType.FullName ?? extensionType.Name}' cannot be used as an extension.",
+                parameterName);
+        }
+
+        var typeName = extensionType.FullName;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            throw new ArgumentException("An extension type must have a full name.", parameterName);
+        }
+
+        var typeLocation = extensionType.Assembly.Location;
+        if (string.IsNullOrEmpty(typeLocation))
+        {
+            typeLocation = extensionType.Assembly.GetName().Name + ".dll";
+        }
+
+        return new AssemblyLoadInfo
+        {
+            FilePath = typeLocation,
+            Type = typeName,
+            InMemoryType = extensionType,
+        };
+    }
+
+    private static void ValidateName(string name, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(name, parameterName);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("A name is required.", parameterName);
+        }
+    }
+
+    private static void ValidateRequiredText(string value, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(value, parameterName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("A non-empty value is required.", parameterName);
+        }
+    }
+
 }

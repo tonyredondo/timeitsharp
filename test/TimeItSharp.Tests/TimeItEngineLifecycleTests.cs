@@ -71,6 +71,29 @@ public sealed class TimeItEngineLifecycleTests
     }
 
     [Fact]
+    public async Task AfterAll_runs_when_before_all_fails()
+    {
+        BeforeAllFailingService.BeforeAllCalls = 0;
+        BeforeAllFailingService.AfterAllCalls = 0;
+        BeforeAllFailingService.FinishCalls = 0;
+        var config = new Config
+        {
+            Count = 1,
+            EnableMetrics = false,
+            ProcessName = "echo",
+        };
+        config.Scenarios.Add(new Scenario { Name = "scenario" });
+        config.Services.Add(new AssemblyLoadInfo { InMemoryType = typeof(BeforeAllFailingService) });
+
+        var exitCode = await TimeItEngine.RunAsync(config);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(1, BeforeAllFailingService.BeforeAllCalls);
+        Assert.Equal(1, BeforeAllFailingService.AfterAllCalls);
+        Assert.Equal(1, BeforeAllFailingService.FinishCalls);
+    }
+
+    [Fact]
     public void Callback_failures_do_not_skip_later_callbacks()
     {
         var callbacks = new TimeItCallbacks();
@@ -94,6 +117,36 @@ public sealed class TimeItEngineLifecycleTests
         };
 
         Assert.Throws<ArgumentException>(() => config.Validate());
+    }
+
+    public sealed class BeforeAllFailingService : IService
+    {
+        public static int BeforeAllCalls;
+        public static int AfterAllCalls;
+        public static int FinishCalls;
+
+        public string Name => nameof(BeforeAllFailingService);
+
+        public void Initialize(InitOptions options, TimeItCallbacks callbacks)
+        {
+            callbacks.BeforeAllScenariosStarts += OnBeforeAll;
+            callbacks.AfterAllScenariosFinishes += OnAfterAll;
+            callbacks.OnFinish += OnFinish;
+        }
+
+        public object? GetExecutionServiceData() => null;
+
+        public object? GetScenarioServiceData() => null;
+
+        private static void OnBeforeAll(IReadOnlyList<Scenario> scenarios)
+        {
+            BeforeAllCalls++;
+            throw new InvalidOperationException("Before-all failed for test.");
+        }
+
+        private static void OnAfterAll(IReadOnlyList<ScenarioResult> results) => AfterAllCalls++;
+
+        private static void OnFinish() => FinishCalls++;
     }
 
     public sealed class CallbackFailingService : IService

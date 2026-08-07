@@ -9,11 +9,10 @@
     </PropertyGroup>
 
     <PropertyGroup>
+        <!-- The CI smoke test passes an explicit RID and self-contained=true. Keeping the
+             publish settings here also lets consumers reproduce the trimmed single-file case. -->
         <PublishTrimmed>true</PublishTrimmed>
         <PublishSingleFile>true</PublishSingleFile>
-        <!-- This sample deliberately exercises reflection-based loading and vendored tracing
-             under trimming; the relevant dependency warnings are expected for this smoke test. -->
-        <NoWarn>$(NoWarn);IL2026;IL2104</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <TrimmerRootAssembly Include="TimeItSharp.StartupHook"/>

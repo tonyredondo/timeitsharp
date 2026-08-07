@@ -8,14 +8,21 @@
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageIcon>icon.png</PackageIcon>
     <DefineConstants>$(DefineConstants);NOCONSTANTS</DefineConstants>
-    <NoWarn>NETSDK1138,0436,IL3000</NoWarn>
+    <!-- NU5100 is expected for native binaries intentionally delivered as contentFiles;
+         they are loaded by path, not as managed references. -->
+    <NoWarn>NETSDK1138,0436,IL3000,NU5100</NoWarn>
     <InternalsAssemblyUseEmptyMethodBodies>false</InternalsAssemblyUseEmptyMethodBodies>
     <PackageOutputPath>..\..\artifacts</PackageOutputPath>
+    <!-- Datadog.Trace.BenchmarkDotNet 2.61.0 is the supported profiler contract.
+         Do not replace this with a v3 bundle: its native ABI and loader contract differ. -->
+    <DatadogTraceBenchmarkDotNetVersion>2.61.0</DatadogTraceBenchmarkDotNetVersion>
+    <DatadogProfilerPackageRoot>$(NuGetPackageRoot)datadog.trace.benchmarkdotnet\$(DatadogTraceBenchmarkDotNetVersion)</DatadogProfilerPackageRoot>
   </PropertyGroup>
 
   <PropertyGroup>
+    <!-- Trimming is exercised by the sample and CI. AOT is not promised because the
+         netcoreapp3.1 startup hook and extension loading are not AOT-compatible. -->
     <IsTrimmable>true</IsTrimmable>
-    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,7 +34,7 @@
     <PackageReference Include="CliWrap" Version="3.10.0" />
     <!-- Keep the BenchmarkDotNet integration and tracer on the same latest stable v2 line.
          Its content files provide the profiler/tracer assets used by the CLI package. -->
-    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="2.61.0" />
+    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="$(DatadogTraceBenchmarkDotNetVersion)" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Spectre.Console" Version="0.53.1" />
     <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.8.0">
@@ -41,6 +48,21 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
+    <None Include="Package\TimeItSharp.Common.props" Pack="true" PackagePath="build\TimeItSharp.Common.props" />
+    <None Include="Package\TimeItSharp.Common.targets" Pack="true" PackagePath="build\TimeItSharp.Common.targets" />
+
+    <!-- Re-publish the exact v2 package content files from a Common package. A
+         transitive PackageReference alone does not guarantee native content files
+         reach a clean consumer. -->
+    <None Include="$(DatadogProfilerPackageRoot)\content\datadog\**\*"
+          Condition="Exists('$(DatadogProfilerPackageRoot)\content\datadog')"
+          Pack="true"
+          PackagePath="contentFiles\any\any\datadog\%(RecursiveDir)%(Filename)%(Extension)"
+          PackageCopyToOutput="true"
+          CopyToOutputDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true"
+          Link="datadog\%(RecursiveDir)%(Filename)%(Extension)"
+          TargetPath="datadog\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
@@ -48,4 +70,18 @@
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </ProjectReference>
   </ItemGroup>
+
+  <!-- Include the hook in TimeItSharp.Common for consumers that restore only this
+       package. The normal pack flow builds project references first; the no-build
+       pack mode is also supported after the solution has been built. It must remain
+       a file next to the app so Assembly.Location works for a single-file consumer. -->
+  <Target Name="IncludeTimeItSharpStartupHookInPackage" BeforeTargets="_GetPackageFiles">
+    <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)\..\TimeItSharp.StartupHook\bin\$(Configuration)\netcoreapp3.1\TimeItSharp.StartupHook.dll')">
+      <None Include="$(MSBuildProjectDirectory)\..\TimeItSharp.StartupHook\bin\$(Configuration)\netcoreapp3.1\TimeItSharp.StartupHook.dll"
+            Pack="true"
+            PackagePath="contentFiles\any\any\TimeItSharp.StartupHook.dll"
+            PackageCopyToOutput="true"
+            ExcludeFromSingleFile="true" />
+    </ItemGroup>
+  </Target>
 </Project>

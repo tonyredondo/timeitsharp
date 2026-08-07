@@ -1,0 +1,8 @@
+<Project>
+  <!-- Keep the startup hook and v2 Datadog native assets outside single-file bundles.
+       TimeItSharp.Common discovers them through their on-disk locations. -->
+  <PropertyGroup>
+    <TimeItSharpStartupHookFile Condition="'$(TimeItSharpStartupHookFile)' == ''">$(MSBuildThisFileDirectory)..\contentFiles\any\any\TimeItSharp.StartupHook.dll</TimeItSharpStartupHookFile>
+    <TimeItSharpDatadogAssetsDirectory Condition="'$(TimeItSharpDatadogAssetsDirectory)' == ''">$(MSBuildThisFileDirectory)..\contentFiles\any\any\datadog</TimeItSharpDatadogAssetsDirectory>
+  </PropertyGroup>
+</Project>

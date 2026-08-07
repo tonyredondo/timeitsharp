@@ -42,16 +42,20 @@ jobs:
       - name: Run TimeItSharp engine sample (${{ matrix.tfm }})
         run: dotnet run --project test/TimeItSharp.FluentConfiguration.Sample -c Release --no-build --framework ${{ matrix.tfm }}
 
-      - name: Run tests
+      - name: Run tests (solution, including CLI parser)
         if: matrix.tfm == 'net10.0'
-        run: dotnet test test/TimeItSharp.Tests/TimeItSharp.Tests.csproj -c Release --no-build --no-restore
+        run: dotnet test TimeItSharp.sln -c Release --no-build --no-restore
 
-      - name: Publish trimmed sample
+      - name: Publish trimmed single-file sample (linux-x64)
         if: matrix.tfm == 'net10.0'
         run: |
+          # PublishTrimmed requires an explicit RID/self-contained publish. The
+          # runtime-specific assets are restored and built as part of this publish.
           dotnet publish test/TimeItSharp.FluentConfiguration.Sample/TimeItSharp.FluentConfiguration.Sample.csproj \
-            -c Release --framework net8.0 --no-build --no-restore \
-            -p:PublishDir=$RUNNER_TEMP/timeitsharp-sample/
+            -c Release --framework net8.0 --runtime linux-x64 --self-contained true \
+            -p:PublishTrimmed=true -p:PublishSingleFile=true \
+            -p:PublishDir="$RUNNER_TEMP/timeitsharp-sample/"
+          test -x "$RUNNER_TEMP/timeitsharp-sample/TimeItSharp.FluentConfiguration.Sample"
           "$RUNNER_TEMP/timeitsharp-sample/TimeItSharp.FluentConfiguration.Sample"
 
       - name: Audit package vulnerabilities
@@ -73,12 +77,69 @@ jobs:
       - name: Pack and verify the tool
         if: matrix.tfm == 'net10.0'
         run: |
+          rm -f artifacts/*.nupkg
           dotnet pack TimeItSharp.sln -c Release --no-build -o artifacts
           dotnet tool install --tool-path "$RUNNER_TEMP/timeitsharp-tool" --add-source artifacts TimeItSharp --version 0.4.8
-          "$RUNNER_TEMP/timeitsharp-tool/dotnet-timeit" --version
+          tool="$RUNNER_TEMP/timeitsharp-tool/dotnet-timeit"
+          "$tool" --version
+
+          # Exercise both explicit command forms. Keep metrics and Datadog disabled so this
+          # smoke test is deterministic and cannot contact an external backend.
+          "$tool" --command "echo hello.json" --count 1 --warmup 0 --metrics false > "$RUNNER_TEMP/timeit-command.log"
+          grep -F "Cmd:" "$RUNNER_TEMP/timeit-command.log"
+          "$tool" --count 1 --warmup 0 --metrics false -- echo --config foo.json > "$RUNNER_TEMP/timeit-terminator.log"
+          grep -F "Cmd:" "$RUNNER_TEMP/timeit-terminator.log"
+
+          malformed="$RUNNER_TEMP/timeit-malformed.json"
+          printf '{not-json\n' > "$malformed"
+          if "$tool" --config "$malformed" --metrics false > "$RUNNER_TEMP/timeit-malformed.log" 2>&1; then
+            echo 'Malformed JSON was unexpectedly accepted.' >&2
+            exit 1
+          fi
+          grep -F "An error occurred" "$RUNNER_TEMP/timeit-malformed.log"
+
+      - name: Verify Datadog v2.61 profiler package contract
+        if: matrix.tfm == 'net10.0'
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          package = Path('artifacts/TimeItSharp.0.4.8.nupkg')
+          with zipfile.ZipFile(package) as archive:
+              names = set(archive.namelist())
+          expected = {
+              f'tools/net10.0/any/datadog/{rid}/{name}'
+              for rid in ('linux-x64', 'linux-musl-x64', 'linux-arm64')
+              for name in ('Datadog.Profiler.Native.so', 'Datadog.Trace.ClrProfiler.Native.so', 'loader.conf')
+          }
+          missing = sorted(expected - names)
+          if missing:
+              raise SystemExit(f'Missing profiler assets: {missing}')
+          if any('ApiWrapper' in name or 'Datadog.Trace.Bundle' in name for name in names):
+              raise SystemExit('Found incompatible Datadog v3/API wrapper assets')
+          print('Datadog v2.61 profiler assets verified')
+          PY
 
       - uses: actions/upload-artifact@v4
         if: matrix.tfm == 'net10.0'
         with:
           name: Nugets
           path: artifacts/*.nupkg
+
+
+  common-package-consumer:
+    name: Common package consumer (trimmed single-file)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.300
+      - uses: actions/download-artifact@v4
+        with:
+          name: Nugets
+          path: artifacts
+      - name: Restore, publish, and run a clean Common package consumer
+        run: TIMEIT_CONSUMER_RUNTIME=linux-x64 test/verify-common-package.sh artifacts 0.4.8

@@ -27,9 +27,13 @@ internal sealed class ScenarioProcessor
     private readonly IReadOnlyList<IService> _services;
     private readonly TimeItCallbacks.CallbacksTriggers _callbacksTriggers;
 
-    // Capture the host environment once. Per-scenario variables are copied into a fresh
-    // dictionary below, so command-specific PATH changes never mutate this snapshot or the host.
-    private static readonly IDictionary EnvironmentVariables = Environment.GetEnvironmentVariables();
+    internal bool HasLifecycleErrors { get; private set; }
+
+    // Capture the host environment for this engine run. Each ScenarioProcessor is created per
+    // RunAsync invocation, so repeated runs in a long-lived host observe the current environment
+    // without ever mutating Environment or sharing a mutable dictionary between runs.
+    private readonly IReadOnlyDictionary<string, string?> _environmentVariables;
+    private readonly IReadOnlyList<string> _knownSecretValues;
 
     private TimeSpan _remainingDuration;
     
@@ -45,6 +49,20 @@ internal sealed class ScenarioProcessor
         _assertors = assertors;
         _services = services;
         _callbacksTriggers = callbacksTriggers;
+        var environmentVariables = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (DictionaryEntry environmentVariable in Environment.GetEnvironmentVariables())
+        {
+            if (environmentVariable.Key?.ToString() is { Length: > 0 } key)
+            {
+                environmentVariables[key] = environmentVariable.Value?.ToString();
+            }
+        }
+
+        _environmentVariables = environmentVariables;
+        _knownSecretValues = Utils.GetSensitiveEnvironmentValues(configuration.EnvironmentVariables)
+            .Concat(Utils.GetTemplateSecretValues(templateVariables))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         _remainingDuration = configuration.MaximumDurationInMinutes > 0
             ? TimeSpan.FromMinutes(configuration.MaximumDurationInMinutes)
             : TimeSpan.Zero;
@@ -143,7 +161,10 @@ internal sealed class ScenarioProcessor
 
         if (_configuration.EnableMetrics)
         {
-            var startupHookAssemblyLocation = typeof(StartupHook).Assembly.Location;
+            // Resolve the hook by its packaged on-disk contract rather than touching a netcoreapp3.1
+            // type from a trimmed/single-file host. Loading that legacy assembly only in the target
+            // process avoids a host-side System.Runtime binding failure.
+            var startupHookAssemblyLocation = GetStartupHookAssemblyLocation();
 
             // Add the .NET startup hook to collect metrics
             if (startupHookAssemblyLocation is { Length: > 0 } startupHookLocation)
@@ -205,10 +226,78 @@ internal sealed class ScenarioProcessor
 
     public async Task<ScenarioResult?> ProcessScenarioAsync(int index, Scenario scenario, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(scenario);
+
+        // A pre-cancelled run does not start a scenario. Once ScenarioStart has completed, every
+        // path below produces one result and one ScenarioFinish notification, including
+        // cancellation and callback failures.
         var scenarioStartArgs = new TimeItCallbacks.ScenarioStartArg(scenario);
-        _callbacksTriggers.ScenarioStart(scenarioStartArgs);
+        var scenarioStarted = false;
+        ScenarioResult? result = null;
+        try
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+
+            scenarioStarted = true;
+            _callbacksTriggers.ScenarioStart(scenarioStartArgs);
+            result = await ProcessScenarioCoreAsync(index, scenario, scenarioStartArgs, cancellationToken)
+                .ConfigureAwait(false);
+            if (result is null)
+            {
+                result = CreateFailedScenarioResult(scenario, "Execution cancelled.", []);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            HasLifecycleErrors = true;
+            result = CreateFailedScenarioResult(scenario, "Execution cancelled.");
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            HasLifecycleErrors = true;
+            result = CreateFailedScenarioResult(scenario, ex.Message);
+        }
+        finally
+        {
+            // A service may request extra runs by assigning ParentService. It must never leak to
+            // another scenario, even when a command, callback, or cancellation throws.
+            scenario.ParentService = null;
+            if (scenarioStarted)
+            {
+                result ??= CreateFailedScenarioResult(scenario, cancellationToken.IsCancellationRequested
+                    ? "Execution cancelled."
+                    : "Scenario execution failed.");
+                try
+                {
+                    _callbacksTriggers.ScenarioFinish(result);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+                {
+                    HasLifecycleErrors = true;
+                    result.Status = Status.Failed;
+                    result.Error = string.IsNullOrEmpty(result.Error)
+                        ? ex.Message
+                        : result.Error + Environment.NewLine + ex.Message;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<ScenarioResult?> ProcessScenarioCoreAsync(
+        int index,
+        Scenario scenario,
+        TimeItCallbacks.ScenarioStartArg scenarioStartArgs,
+        CancellationToken cancellationToken)
+    {
         Stopwatch? watch = null;
-        AnsiConsole.MarkupLine("[dodgerblue1]Scenario:[/] {0}", scenario.Name);
+        AnsiConsole.MarkupLine(
+            "[dodgerblue1]Scenario:[/] {0}",
+            Utils.EscapeMarkup(Utils.SanitizeText(scenario.Name, _knownSecretValues)));
 
         if (scenario.PathValidations.Count > 0)
         {
@@ -228,7 +317,10 @@ internal sealed class ScenarioProcessor
             }
         }
 
-        AnsiConsole.MarkupLine("  [purple_1]Cmd:[/] {0} {1}", scenario.ProcessName ?? string.Empty, scenario.ProcessArguments ?? string.Empty);
+        AnsiConsole.MarkupLine(
+            "  [purple_1]Cmd:[/] {0} {1}",
+            Utils.EscapeMarkup(Utils.SanitizeText(scenario.ProcessName, _knownSecretValues)),
+            Utils.EscapeMarkup(Utils.SanitizeText(scenario.ProcessArguments, _knownSecretValues)));
         watch = Stopwatch.StartNew();
         if (_configuration.WarmUpCount > 0)
         {
@@ -256,7 +348,7 @@ internal sealed class ScenarioProcessor
         watch.Stop();
         if (cancellationToken.IsCancellationRequested)
         {
-            return null;
+            return CreateFailedScenarioResult(scenario, "Execution cancelled.", dataPoints);
         }
 
         watch.Stop();
@@ -264,7 +356,9 @@ internal sealed class ScenarioProcessor
 
         foreach (var repeat in scenarioStartArgs.GetRepeats())
         {
-            AnsiConsole.Markup("  [green3]Run for '{0}'[/]", repeat.ServiceAskingForRepeat.Name);
+            AnsiConsole.Markup(
+                "  [green3]Run for '{0}'[/]",
+                Utils.EscapeMarkup(Utils.SanitizeText(repeat.ServiceAskingForRepeat.Name, _knownSecretValues)));
             scenario.ParentService = repeat.ServiceAskingForRepeat;
             watch.Restart();
             await RunScenarioAsync(repeat.Count, index, scenario, TimeItPhase.ExtraRun, false,
@@ -273,8 +367,7 @@ internal sealed class ScenarioProcessor
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
             {
-                scenario.ParentService = null;
-                return null;
+                return CreateFailedScenarioResult(scenario, "Execution cancelled.", dataPoints);
             }
 
             AnsiConsole.MarkupLine("    Duration: {0}", watch.Elapsed.ToDurationString());
@@ -304,10 +397,21 @@ internal sealed class ScenarioProcessor
                 !anyPassedDataPoint)
             {
 #if NET7_0_OR_GREATER
-                durations.Add(item.Duration.TotalNanoseconds);
+                var duration = item.Duration.TotalNanoseconds;
 #else
-                durations.Add(Utils.FromTimeSpanToNanoseconds(item.Duration));
+                var duration = Utils.FromTimeSpanToNanoseconds(item.Duration);
 #endif
+                if (!double.IsFinite(duration))
+                {
+                    continue;
+                }
+
+                durations.Add(duration);
+                if (item.Metrics is null)
+                {
+                    continue;
+                }
+
                 foreach (var kv in item.Metrics)
                 {
                     if (!double.IsFinite(kv.Value))
@@ -334,8 +438,9 @@ internal sealed class ScenarioProcessor
                 dataPoints);
         }
 
-        // Get outliers
-        var previousDurations = durations;
+        // Get outliers. Keep a non-empty fallback on every iteration: a very small sample can
+        // legitimately have every value rejected by RemoveOutliers.
+        var previousDurations = durations.ToList();
         var newDurations = new List<double>();
         var outliers = new List<double>();
         var threshold = 0.4d;
@@ -343,25 +448,29 @@ internal sealed class ScenarioProcessor
         var isBimodal = false;
         while (threshold < 2.0d)
         {
-            newDurations = Utils.RemoveOutliers(durations, threshold).ToList();
+            var candidate = Utils.RemoveOutliers(durations, threshold).Where(double.IsFinite).ToList();
+            newDurations = candidate;
             outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
             isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, 11);
             var outliersPercent = ((double)outliers.Count / durations.Count) * 100;
             if (outliersPercent < 20 && !isBimodal)
             {
-                // outliers must be not more than 20% of the data
-                // but also we need to ensure that we have some data left, if not we use previous result
-                if (newDurations.Count == 0)
-                {
-                    newDurations = previousDurations;
-                    outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
-                    isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, 11);
-                }
                 break;
             }
 
+            if (candidate.Count > 0)
+            {
+                previousDurations = candidate;
+            }
+
             threshold += 0.1;
-            previousDurations = newDurations;
+        }
+
+        if (newDurations.Count == 0)
+        {
+            newDurations = previousDurations.Count > 0 ? previousDurations : durations.ToList();
+            outliers = durations.Where(d => !newDurations.Contains(d)).ToList();
+            isBimodal = Utils.IsBimodal(CollectionsMarshal.AsSpan(newDurations), out peakCount, 11);
         }
 
         var mean = newDurations.Mean();
@@ -379,22 +488,27 @@ internal sealed class ScenarioProcessor
 
         // Calculate metrics stats
         var metricsStats = new Dictionary<string, double>();
-        foreach (var key in metricsData.Keys)
+        foreach (var key in metricsData.Keys.ToArray())
         {
             var originalMetricsValue = metricsData[key];
-            var previousMetricsValue = originalMetricsValue;
+            if (originalMetricsValue.Count == 0)
+            {
+                continue;
+            }
+
+            var previousMetricsValue = originalMetricsValue.ToList();
             var metricsValue = new List<double>();
             var metricsOutliers = new List<double>();
             var metricsThreshold = 0.4d;
             while (metricsThreshold < 3.0d)
             {
-                metricsValue = Utils.RemoveOutliers(originalMetricsValue, metricsThreshold).ToList();
+                metricsValue = Utils.RemoveOutliers(originalMetricsValue, metricsThreshold).Where(double.IsFinite).ToList();
                 metricsOutliers = originalMetricsValue.Where(d => !metricsValue.Contains(d)).ToList();
                 var outliersPercent = ((double)metricsOutliers.Count / originalMetricsValue.Count) * 100;
                 if (outliersPercent < 20)
                 {
-                    // outliers must be not more than 20% of the data
-                    // but also we need to ensure that we have some data left, if not we use previous result
+                    // Outliers must be not more than 20% of the data. Keep a non-empty sample
+                    // when every value was rejected.
                     if (metricsValue.Count == 0)
                     {
                         metricsValue = previousMetricsValue;
@@ -403,10 +517,20 @@ internal sealed class ScenarioProcessor
                     break;
                 }
 
+                if (metricsValue.Count > 0)
+                {
+                    previousMetricsValue = metricsValue;
+                }
+
                 metricsThreshold += 0.1;
-                previousMetricsValue = metricsValue;
             }
-            
+
+            if (metricsValue.Count == 0)
+            {
+                metricsValue = previousMetricsValue.Count > 0 ? previousMetricsValue : originalMetricsValue;
+                metricsOutliers = originalMetricsValue.Where(d => !metricsValue.Contains(d)).ToList();
+            }
+
             metricsData[key] = metricsValue;
             var mMean = metricsValue.Mean();
             var mMedian = metricsValue.Median();
@@ -438,7 +562,6 @@ internal sealed class ScenarioProcessor
         scenarioResult.AdditionalMetrics = firstResult.AdditionalMetrics;
         scenarioResult.Tags = firstResult.Tags;
         scenarioResult.Metrics = firstResult.Metrics;
-        _callbacksTriggers.ScenarioFinish(scenarioResult);
         return scenarioResult;
         
         ScenarioResult CreateScenarioResult(AssertResponse response)
@@ -501,14 +624,28 @@ internal sealed class ScenarioProcessor
         AnsiConsole.Markup(" ");
         for (var i = 0; i < count; i++)
         {
-            var currentRun = await RunCommandAsync(index, scenario, phase, i, cancellationToken).ConfigureAwait(false);
             if (cancellationToken.IsCancellationRequested)
             {
                 AnsiConsole.Markup("[red]cancelled[/]");
                 break;
             }
 
+            var currentRun = await RunCommandAsync(index, scenario, phase, i, cancellationToken).ConfigureAwait(false);
+            // A command that completed before cancellation remains a useful datapoint. A command
+            // interrupted by the token is not included in statistics or the completed count.
+            if (cancellationToken.IsCancellationRequested &&
+                string.Equals(currentRun.Error, "Execution cancelled.", StringComparison.Ordinal))
+            {
+                AnsiConsole.Markup("[red]cancelled[/]");
+                break;
+            }
+
             dataPoints.Add(currentRun);
+            if (cancellationToken.IsCancellationRequested)
+            {
+                AnsiConsole.Markup("[red]cancelled[/]");
+                break;
+            }
             AnsiConsole.Markup(currentRun.Status == Status.Failed ? "[red]x[/]" : "[green].[/]");
             if (_configuration.DebugMode)
             {
@@ -626,7 +763,7 @@ internal sealed class ScenarioProcessor
             catch (Exception ex)
             {
                 AnsiConsole.WriteLine();
-                AnsiConsole.MarkupLine("    [red]Error: {0}[/]", ex.Message);
+                AnsiConsole.WriteException(Utils.SanitizeException(ex, _knownSecretValues));
                 break;
             }
         }
@@ -655,37 +792,47 @@ internal sealed class ScenarioProcessor
         var timeoutCmdString = scenario.Timeout.ProcessName ?? string.Empty;
         var timeoutCmdArguments = scenario.Timeout.ProcessArguments ?? string.Empty;
 
-        var cmdEnvironmentVariables = new Dictionary<string, string?>();
-        foreach (DictionaryEntry osEnv in EnvironmentVariables)
-        {
-            if (osEnv.Key?.ToString() is { Length: > 0 } keyString)
-            {
-                cmdEnvironmentVariables[keyString] = osEnv.Value?.ToString();
-            }
-        }
+        // Start from this run's immutable environment snapshot. The dictionary is always copied
+        // so adding a scenario PATH or metric variable cannot mutate the host or another command.
+        var cmdEnvironmentVariables = new Dictionary<string, string?>(_environmentVariables, StringComparer.Ordinal);
 
         foreach (var envVar in scenario.EnvironmentVariables)
         {
             cmdEnvironmentVariables[envVar.Key] = envVar.Value;
         }
 
+        // Datadog CI visibility logs are scoped to the measured child. Never set this on the
+        // host process, where it would leak into later engine runs in a long-lived host.
+        if (_configuration.EnableDatadog)
+        {
+            cmdEnvironmentVariables["DD_CIVISIBILITY_LOGS_ENABLED"] = "true";
+        }
+
+        string? metricsFilePath = null;
         if (cmdEnvironmentVariables.ContainsKey(Constants.StartupHookEnvironmentVariable))
         {
-            var metricsPath = Path.GetTempFileName();
-            cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = metricsPath;
+            metricsFilePath = Path.GetTempFileName();
+            cmdEnvironmentVariables[Constants.TimeItMetricsTemporalPathEnvironmentVariable] = metricsFilePath;
         }
 
         // Make binaries in the working directory available only to this command.
         if (!string.IsNullOrWhiteSpace(workingDirectory))
         {
-            var pathKey = cmdEnvironmentVariables.Keys.FirstOrDefault(
-                key => string.Equals(key, "PATH", StringComparison.OrdinalIgnoreCase)) ?? "PATH";
+            var isWindows = OperatingSystem.IsWindows();
+            // Environment variable names are case-insensitive on Windows but case-sensitive on
+            // Unix. Never rewrite a lower-case `path` entry on Unix and compare path entries with
+            // the host filesystem's semantics.
+            var pathKey = isWindows
+                ? cmdEnvironmentVariables.Keys.FirstOrDefault(
+                    key => string.Equals(key, "PATH", StringComparison.OrdinalIgnoreCase)) ?? "PATH"
+                : "PATH";
             var currentPath = cmdEnvironmentVariables.TryGetValue(pathKey, out var path)
                 ? path
-                : Environment.GetEnvironmentVariable("PATH");
+                : Environment.GetEnvironmentVariable(pathKey);
             var pathEntries = currentPath?.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
                 ?? Array.Empty<string>();
-            if (!pathEntries.Any(entry => string.Equals(entry, workingDirectory, StringComparison.OrdinalIgnoreCase)))
+            var pathComparison = isWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!pathEntries.Any(entry => string.Equals(entry, workingDirectory, pathComparison)))
             {
                 cmdEnvironmentVariables[pathKey] = string.IsNullOrEmpty(currentPath)
                     ? workingDirectory
@@ -723,11 +870,14 @@ internal sealed class ScenarioProcessor
             {
                 AnsiConsole.Markup("    [aqua]Running:[/] ");
             }
-            AnsiConsole.WriteLine("{0} {1}", cmdString, cmdArguments);
+            AnsiConsole.WriteLine(
+                "{0} {1}",
+                Utils.SanitizeText(cmdString, _knownSecretValues),
+                Utils.SanitizeText(cmdArguments, _knownSecretValues));
             if (!string.IsNullOrWhiteSpace(workingDirectory))
             {
                 AnsiConsole.Markup("    [aqua]Working Folder:[/] ");
-                AnsiConsole.WriteLine(workingDirectory);
+                AnsiConsole.WriteLine(Utils.SanitizeText(workingDirectory, _knownSecretValues));
             }
 
             AnsiConsole.WriteLine(new string('-', 80));
@@ -742,9 +892,25 @@ internal sealed class ScenarioProcessor
         {
             ShouldContinue = true,
             Scenario = scenario,
+            Start = DateTime.UtcNow,
         };
-        
-        _callbacksTriggers.ExecutionStart(dataPoint, phase, ref cmd);
+
+        try
+        {
+            _callbacksTriggers.ExecutionStart(dataPoint, phase, ref cmd);
+        }
+        catch
+        {
+            dataPoint.End = DateTime.UtcNow;
+            dataPoint.Duration = dataPoint.End - dataPoint.Start;
+            DeleteMetricsFile(metricsFilePath);
+            // Start was attempted even though one handler failed. Give End handlers their
+            // symmetric cleanup opportunity, but preserve the original Start exception.
+            TryExecutionEnd(dataPoint, phase);
+            DeleteMetricsFile(metricsFilePath);
+            throw;
+        }
+
         if (cmdTimeout <= 0)
         {
             BufferedCommandResult? cmdResult = null;
@@ -784,20 +950,34 @@ internal sealed class ScenarioProcessor
                 dataPoint.Error = ex.Message;
             }
 
-            ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+            try
+            {
+                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+            }
+            catch
+            {
+                DeleteMetricsFile(metricsFilePath);
+                TryExecutionEnd(dataPoint, phase);
+                DeleteMetricsFile(metricsFilePath);
+                throw;
+            }
         }
         else
         {
             BufferedCommandResult? cmdResult = null;
-            CancellationTokenSource? timeoutCts = null;
-            var cmdCts = new CancellationTokenSource();
+            using var cmdCts = new CancellationTokenSource();
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmdCts.Token);
+            using var timeoutCts = string.IsNullOrEmpty(timeoutCmdString)
+                ? null
+                : new CancellationTokenSource();
             dataPoint.Start = DateTime.UtcNow;
             CommandTask<BufferedCommandResult>? cmdTask = null;
+            Task<bool>? timeoutTask = null;
+            var targetActive = true;
+            var targetGate = new object();
 
             try
             {
-                dataPoint.Start = DateTime.UtcNow;
                 cmdTask = cmd.ExecuteBufferedAsync(linkedCts.Token);
             }
             catch (Win32Exception wEx)
@@ -827,11 +1007,29 @@ internal sealed class ScenarioProcessor
 
             if (cmdTask is not null)
             {
-                if (!string.IsNullOrEmpty(timeoutCmdString))
+                Action cancelTarget = () =>
                 {
-                    timeoutCts = new CancellationTokenSource();
-                    _ = RunCommandTimeoutAsync(TimeSpan.FromSeconds(cmdTimeout), timeoutCmdString, timeoutCmdArguments,
-                        workingDirectory, cmdTask.ProcessId, () => cmdCts.Cancel(), timeoutCts.Token, cancellationToken);
+                    lock (targetGate)
+                    {
+                        if (targetActive && !cancellationToken.IsCancellationRequested)
+                        {
+                            cmdCts.Cancel();
+                        }
+                    }
+                };
+
+                if (timeoutCts is not null)
+                {
+                    timeoutTask = RunCommandTimeoutAsync(
+                        TimeSpan.FromSeconds(cmdTimeout),
+                        timeoutCmdString,
+                        timeoutCmdArguments,
+                        workingDirectory,
+                        cmdTask.ProcessId,
+                        cancelTarget,
+                        timeoutCts.Token,
+                        cancellationToken,
+                        cmdEnvironmentVariables);
                 }
                 else
                 {
@@ -842,7 +1040,6 @@ internal sealed class ScenarioProcessor
                 {
                     cmdResult = await cmdTask.ConfigureAwait(false);
                     dataPoint.End = DateTime.UtcNow;
-                    timeoutCts?.Cancel();
                     dataPoint.Duration = cmdResult.RunTime;
                     dataPoint.Start = dataPoint.End - dataPoint.Duration;
                     dataPoint.StandardOutput = cmdResult.StandardOutput;
@@ -863,14 +1060,9 @@ internal sealed class ScenarioProcessor
                 {
                     dataPoint.End = DateTime.UtcNow;
                     dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        dataPoint.Error = "Execution cancelled.";
-                    }
-                    else
-                    {
-                        dataPoint.Error = "Process timeout.";
-                    }
+                    dataPoint.Error = cancellationToken.IsCancellationRequested
+                        ? "Execution cancelled."
+                        : "Process timeout.";
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
@@ -878,15 +1070,43 @@ internal sealed class ScenarioProcessor
                     dataPoint.Duration = dataPoint.End - dataPoint.Start;
                     dataPoint.Error = ex.Message;
                 }
+                finally
+                {
+                    lock (targetGate)
+                    {
+                        targetActive = false;
+                    }
+
+                    timeoutCts?.Cancel();
+                    if (timeoutTask is not null)
+                    {
+                        try
+                        {
+                            await timeoutTask.ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            // The helper is supplementary and must not mask the target result.
+                        }
+                    }
+                }
             }
 
-            ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+            try
+            {
+                ExecuteAssertions(index, scenario.Name, phase, dataPoint, cmdResult);
+            }
+            catch
+            {
+                DeleteMetricsFile(metricsFilePath);
+                TryExecutionEnd(dataPoint, phase);
+                DeleteMetricsFile(metricsFilePath);
+                throw;
+            }
         }
 
         // Write metrics
-        if (cmdEnvironmentVariables.TryGetValue(Constants.TimeItMetricsTemporalPathEnvironmentVariable,
-                out var metricsFilePath) &&
-            !string.IsNullOrEmpty(metricsFilePath) &&
+        if (!string.IsNullOrEmpty(metricsFilePath) &&
             IsSafeMetricsFilePath(metricsFilePath) &&
             File.Exists(metricsFilePath))
         {
@@ -1083,7 +1303,16 @@ internal sealed class ScenarioProcessor
             dataPoint.Metrics = metrics;
         }
 
-        _callbacksTriggers.ExecutionEnd(dataPoint, phase);
+        DeleteMetricsFile(metricsFilePath);
+        try
+        {
+            _callbacksTriggers.ExecutionEnd(dataPoint, phase);
+        }
+        catch
+        {
+            DeleteMetricsFile(metricsFilePath);
+            throw;
+        }
 
         if ((executionId == 0 && _configuration.ShowStdOutForFirstRun) || _configuration.DebugMode)
         {
@@ -1141,8 +1370,46 @@ internal sealed class ScenarioProcessor
             End = now,
             Duration = TimeSpan.Zero,
         };
-        _callbacksTriggers.ScenarioFinish(result);
         return result;
+    }
+
+    private void TryExecutionEnd(DataPoint dataPoint, TimeItPhase phase)
+    {
+        try
+        {
+            _callbacksTriggers.ExecutionEnd(dataPoint, phase);
+        }
+        catch
+        {
+            // Preserve the original command/assertion/start failure. The scenario lifecycle
+            // wrapper records the failed result and still invokes ScenarioFinish.
+        }
+    }
+
+    private static string? GetStartupHookAssemblyLocation()
+    {
+        var candidate = Path.Combine(AppContext.BaseDirectory, "TimeItSharp.StartupHook.dll");
+        return File.Exists(candidate) ? candidate : null;
+    }
+
+    private static void DeleteMetricsFile(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (IsSafeMetricsFilePath(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            // Metrics are supplementary. Cleanup must not mask the command/callback error.
+        }
     }
 
     private static bool IsSafeMetricsFilePath(string path)
@@ -1185,30 +1452,46 @@ internal sealed class ScenarioProcessor
         }
     }
 
-    private async Task RunCommandTimeoutAsync(TimeSpan timeout, string timeoutCmd, string timeoutArgument,
-        string workingDirectory, int targetPid, Action? targetCancellation, CancellationToken timeoutCancellationToken, CancellationToken applicationCancellationToken)
+    private async Task<bool> RunCommandTimeoutAsync(
+        TimeSpan timeout,
+        string timeoutCmd,
+        string timeoutArgument,
+        string workingDirectory,
+        int targetPid,
+        Action? targetCancellation,
+        CancellationToken timeoutCancellationToken,
+        CancellationToken applicationCancellationToken,
+        IReadOnlyDictionary<string, string?> environmentVariables)
     {
         try
         {
-            using var linkedCts =
-                CancellationTokenSource.CreateLinkedTokenSource(timeoutCancellationToken, applicationCancellationToken);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                timeoutCancellationToken,
+                applicationCancellationToken);
             await Task.Delay(timeout, linkedCts.Token).ConfigureAwait(false);
             if (linkedCts.Token.IsCancellationRequested)
             {
-                return;
+                return false;
             }
 
             var targetPidString = targetPid.ToString();
             var templateVariables = _templateVariables.Clone();
             templateVariables.Add("PID", targetPidString);
 
-            timeoutCmd = templateVariables.Expand(timeoutCmd);
-            timeoutCmd = timeoutCmd.Replace("%pid%", targetPidString);
+            timeoutCmd = templateVariables.Expand(timeoutCmd).Replace("%pid%", targetPidString);
+            timeoutArgument = templateVariables.Expand(timeoutArgument).Replace("%pid%", targetPidString);
 
-            timeoutArgument = templateVariables.Expand(timeoutArgument);
-            timeoutArgument = timeoutArgument.Replace("%pid%", targetPidString);
+            if (!Path.IsPathRooted(timeoutCmd) && !string.IsNullOrWhiteSpace(workingDirectory))
+            {
+                var commandInWorkingDirectory = Path.Combine(workingDirectory, timeoutCmd);
+                if (File.Exists(commandInWorkingDirectory))
+                {
+                    timeoutCmd = commandInWorkingDirectory;
+                }
+            }
 
             var cmd = Cli.Wrap(timeoutCmd)
+                .WithEnvironmentVariables(new Dictionary<string, string?>(environmentVariables))
                 .WithWorkingDirectory(workingDirectory)
                 .WithValidation(CommandResultValidation.None);
             if (!string.IsNullOrEmpty(timeoutArgument))
@@ -1216,30 +1499,41 @@ internal sealed class ScenarioProcessor
                 cmd = cmd.WithArguments(timeoutArgument);
             }
 
-            var cmdResult = await cmd.ExecuteBufferedAsync(applicationCancellationToken).ConfigureAwait(false);
+            var cmdResult = await cmd.ExecuteBufferedAsync(linkedCts.Token).ConfigureAwait(false);
             if (cmdResult.ExitCode != 0)
             {
-                AnsiConsole.MarkupLine($"[red]{cmdResult.StandardError}[/]");
-                AnsiConsole.MarkupLine(cmdResult.StandardOutput);
+                if (!string.IsNullOrWhiteSpace(cmdResult.StandardError))
+                {
+                    AnsiConsole.WriteLine(Utils.SanitizeOutput(cmdResult.StandardError, _knownSecretValues));
+                }
+
+                if (!string.IsNullOrWhiteSpace(cmdResult.StandardOutput))
+                {
+                    AnsiConsole.WriteLine(Utils.SanitizeOutput(cmdResult.StandardOutput, _knownSecretValues));
+                }
+
+                return false;
             }
-        }
-        catch (TaskCanceledException)
-        {
-            // Do nothing
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine($"[red]{ex.Message}[/]");
-        }
-        finally
-        {
+
+            // Only a helper that actually ran after the delay may cancel the target. The active
+            // gate in RunCommandAsync prevents a race with normal target completion.
             targetCancellation?.Invoke();
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            AnsiConsole.WriteException(Utils.SanitizeException(ex, _knownSecretValues));
+            return false;
         }
     }
 
     private AssertResponse ScenarioAssertion(ScenarioResult scenarioResult)
     {
-        if (_assertors is null || _assertors.Count == 0)
+        if (_assertors.Count == 0)
         {
             return new AssertResponse(Status.Passed);
         }
@@ -1249,11 +1543,6 @@ internal sealed class ScenarioProcessor
         HashSet<string>? messagesHashSet = null;
         foreach (var assertor in _assertors)
         {
-            if (assertor is null)
-            {
-                continue;
-            }
-
             var result = assertor.ScenarioAssertion(scenarioResult);
             shouldContinue = shouldContinue && result.ShouldContinue;
             if (result.Status == Status.Failed)
@@ -1279,7 +1568,7 @@ internal sealed class ScenarioProcessor
 
     private AssertResponse ExecutionAssertion(in AssertionData data)
     {
-        if (_assertors is null || _assertors.Count == 0)
+        if (_assertors.Count == 0)
         {
             return new AssertResponse(Status.Passed);
         }
@@ -1289,11 +1578,6 @@ internal sealed class ScenarioProcessor
         HashSet<string>? messagesHashSet = null;
         foreach (var assertor in _assertors)
         {
-            if (assertor is null)
-            {
-                continue;
-            }
-
             var result = assertor.ExecutionAssertion(in data);
             shouldContinue = shouldContinue && result.ShouldContinue;
             if (result.Status == Status.Failed)

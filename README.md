@@ -19,16 +19,30 @@ The command form accepts a quoted executable/argument string, including paths co
 spaces. Configuration files are validated before any process is started; malformed counts,
 statistics, scenarios, and extension entries are reported together.
 
+TimeItSharp classifies a positional value with these rules:
+
+* An existing JSON file (or a missing single `.json` path) is configuration mode.
+* A command containing multiple tokens is command mode, so `echo hello.json` and
+  `echo --config foo.json` never attempt to load a configuration.
+* Use `--config <path>` to force configuration mode, or `--command <line>` to force command
+  mode (including an executable whose name ends in `.json`).
+* `--` ends TimeItSharp's options. Everything after it is passed to the process command, even
+  values such as `--config` or `foo.json`.
+
 ```bash
 dotnet timeit config.json --count 100 --warmup 10 --metrics false
-# For command mode, put options before the optional '--' separator:
-dotnet timeit --count 100 --warmup 10 -- "[command] [arguments]"
+dotnet timeit --config config.json --count 100
+dotnet timeit --command "echo hello.json" --count 1 --warmup 0
+# Put TimeItSharp options before '--'; command arguments after it are not consumed by TimeItSharp.
+dotnet timeit --count 1 --warmup 0 -- echo hello.json
 # Values are split at the first '=' so additional '=' characters are preserved.
 dotnet timeit config.json --variable "TOKEN=a=b=c"
 ```
 
 #### CLI options
 ```text
+  --config <path>                Force configuration-file mode
+  --command <line>               Force process-command mode
   --variable <key=value>         Variables used to expand configuration values
   --count <count>                Number of iterations to run
   --warmup <warmup>              Number of iterations to warm up
@@ -42,8 +56,26 @@ dotnet timeit config.json --variable "TOKEN=a=b=c"
 ```
 
 CLI options also override matching values in a JSON configuration when explicitly supplied.
+In legacy positional mode, a path ending in `.json` is always treated as configuration (even if
+it names an executable); use `--command <line>` or `-- <line>` when the executable itself has
+that suffix. Malformed or missing `.json` paths are never executed as commands.
 Environment variables and exported Datadog metadata redact names containing passwords,
 secrets, tokens, API keys, private keys, or authentication values.
+
+#### Datadog profiler and package consumers
+
+The profiler integration is pinned to `Datadog.Trace.BenchmarkDotNet` **2.61.0**. It uses
+only that package's `datadog/<rid>` assets (`linux-x64`, `linux-musl-x64`, `linux-arm64`,
+`win-x64`, and `win-x86`) and its `loader.conf`; assets from the Datadog v3 bundle are not
+compatible. Linux musl ARM64 is reported as unsupported because v2.61.0 does not ship a
+`linux-musl-arm64` asset. The profiler reports configured environment/asset status only—an
+actual native attach must be verified by the target runtime.
+
+`TimeItSharp.Common` packages its startup hook and Datadog native assets for clean NuGet
+consumers. The hook is kept outside a single-file bundle. Trimmed single-file publishing is
+supported as a smoke-test scenario, but native AOT is not supported because the
+`netcoreapp3.1` startup hook and extension loading use runtime features that AOT cannot
+preserve automatically.
 
 
 #### Default Configuration when running a command
@@ -364,7 +396,7 @@ ExecuteService.AfterAllScenariosFinishes: ProcessId: 58714, ProcessName: echo, D
 
 The json file '/Users/tony.redondo/repos/github/tonyredondo/timeitsharp/src/TimeItSharp/bin/Release/net9.0/jsonexporter_991684479.json' was exported.
 The Datadog exported ran successfully.
-The Datadog profiler could not be attached to the .NET processes.
+Datadog profiler status was reported for the target runtime; native attach is not verified by TimeItSharp.
 *** onFinish ***
 ExecuteService.OnFinish: ProcessId: 58728, ProcessName: echo, Duration: 00:00:00.0022280, ExitCode: 0
 ```

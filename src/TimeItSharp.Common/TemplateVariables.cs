@@ -18,8 +18,19 @@ public sealed class TemplateVariables
 
     public int Length => _variables.Count;
 
+    // Exporters use this read-only view to identify values introduced by sensitive template
+    // variables. Keeping the dictionary private preserves the builder API.
+    internal IEnumerable<KeyValuePair<string, string>> EntriesForSanitization => _variables;
+
     public void Add(string name, string value)
     {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(value);
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("A template variable name is required.", nameof(name));
+        }
+
         var key = CreateVariable(name);
         if (!_variables.TryAdd(key, value))
         {

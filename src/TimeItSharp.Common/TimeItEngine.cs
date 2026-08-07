@@ -1,6 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
-using System.Runtime.Loader;
 using Spectre.Console;
 using TimeItSharp.Common.Assertors;
 using TimeItSharp.Common.Configuration;
@@ -39,6 +37,7 @@ public static class TimeItEngine
     [RequiresUnreferencedCode("")]
     public static Task<int> RunAsync(ConfigBuilder configBuilder, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
+        ArgumentNullException.ThrowIfNull(configBuilder);
         return RunAsync(configBuilder.Build(), options, cancellationToken);
     }
 
@@ -55,27 +54,31 @@ public static class TimeItEngine
     {
         ArgumentNullException.ThrowIfNull(config);
         // Validate before cloning: Clone assumes all collections and nested process data are
-        // present, and a malformed JSON document should result in a useful configuration
-        // error instead of an unrelated NullReferenceException.
+        // present, and malformed input should result in a useful configuration error.
         config.Validate();
         config = config.Clone();
         options ??= new TimeItOptions(new TemplateVariables());
         cancellationToken ??= CancellationToken.None;
         var templateVariables = options.TemplateVariables ?? new TemplateVariables();
+        var knownSecretValues = Utils.GetSensitiveEnvironmentValues(config.EnvironmentVariables)
+            .Concat(Utils.GetTemplateSecretValues(templateVariables))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         var statesByType = options.StatesByType;
         var timeitCallbacks = new TimeItCallbacks();
         var callbacksTriggers = timeitCallbacks.GetTriggers();
-        // The trigger object exists even when extension loading or initialization fails. Finish
-        // callbacks must still run so services can release resources they acquired earlier.
         var callbacksInitialized = true;
         var scenariosResults = new List<ScenarioResult>();
         var scenarioWithErrors = 0;
-        var callbacksStarted = false;
         var exporterErrors = 0;
+        var initializedExporters = new HashSet<IExporter>();
         var lifecycleErrors = false;
-        var afterAllScenariosCalled = false;
+        var beforeAllAttempted = false;
+        var beforeAllCompleted = false;
+        var afterAllAttempted = false;
+        var scenariosCleaned = false;
         ScenarioProcessor? processor = null;
-        var engineExitCode = 0;
+        var engineExitCode = 1;
 
         try
         {
@@ -87,18 +90,17 @@ public static class TimeItEngine
 
             // Keep extension loading and initialization inside the lifecycle guard. A custom
             // service can subscribe callbacks and then fail during initialization; those
-            // callbacks still need a chance to finish in the finally block.
+            // callbacks still get a chance to finish in the finally block.
             var exportersInfo = GetFromAssemblyLoadInfoList(
                 config.Exporters,
-                () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() });
+                () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() },
+                config.Path);
             var exporters = exportersInfo.Select(i => i.Instance).ToList();
 
             var assertorsInfo = GetFromAssemblyLoadInfoList(
                 config.Assertors,
-                () => new List<IAssertor> { new DefaultAssertor() });
-            // Enabled can depend on InitOptions (for example, a custom assertor may read a
-            // configuration flag in Initialize), so initialize every loaded assertor before
-            // selecting the instances that participate in scenario processing.
+                () => new List<IAssertor> { new DefaultAssertor() },
+                config.Path);
             foreach (var assertor in assertorsInfo)
             {
                 var state = statesByType.GetValueOrDefault(assertor.Instance.GetType());
@@ -112,12 +114,34 @@ public static class TimeItEngine
 
             var servicesInfo = GetFromAssemblyLoadInfoList<IService>(
                 config.Services,
-                () => new List<IService> { new NoopService() });
+                () => new List<IService> { new NoopService() },
+                config.Path);
             var services = servicesInfo.Select(i => i.Instance).ToList();
             foreach (var service in servicesInfo)
             {
                 var state = statesByType.GetValueOrDefault(service.Instance.GetType());
                 service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state), timeitCallbacks);
+            }
+
+            // Initialize exporters before any scenario lifecycle callback. Datadog creates its
+            // session/module here so the benchmark spans contain the target processes; export
+            // later reuses the same initialized instances and never initializes twice.
+            foreach (var exporterInfo in exportersInfo)
+            {
+                try
+                {
+                    var state = statesByType.GetValueOrDefault(exporterInfo.Instance.GetType());
+                    exporterInfo.Instance.Initialize(new InitOptions(config, exporterInfo.LoadInfo, templateVariables, state));
+                    initializedExporters.Add(exporterInfo.Instance);
+                }
+                catch (Exception ex)
+                {
+                    exporterErrors++;
+                    AnsiConsole.MarkupLine(
+                        "[red]Error initializing exporter '{0}':[/]",
+                        Utils.EscapeMarkup(Utils.SanitizeText(exporterInfo.Instance.Name, knownSecretValues)));
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
             }
 
             processor = new ScenarioProcessor(config, templateVariables, assertors, services, callbacksTriggers);
@@ -135,9 +159,18 @@ public static class TimeItEngine
             }
 
             AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
-            AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
-            AnsiConsole.MarkupLine("[bold aqua]Assertors:[/] {0}", string.Join(", ", assertors.Select(e => e.Name)));
-            AnsiConsole.MarkupLine("[bold aqua]Services:[/] {0}", string.Join(", ", services.Select(e => e.Name)));
+            AnsiConsole.MarkupLine(
+                "[bold aqua]Exporters:[/] {0}",
+                Utils.EscapeMarkup(string.Join(", ", exporters.Select(e =>
+                    Utils.SanitizeText(e.Name, knownSecretValues)))));
+            AnsiConsole.MarkupLine(
+                "[bold aqua]Assertors:[/] {0}",
+                Utils.EscapeMarkup(string.Join(", ", assertors.Select(e =>
+                    Utils.SanitizeText(e.Name, knownSecretValues)))));
+            AnsiConsole.MarkupLine(
+                "[bold aqua]Services:[/] {0}",
+                Utils.EscapeMarkup(string.Join(", ", services.Select(e =>
+                    Utils.SanitizeText(e.Name, knownSecretValues)))));
             AnsiConsole.WriteLine();
 
             if (config is { Count: > 0, Scenarios.Count: > 0 })
@@ -147,46 +180,84 @@ public static class TimeItEngine
                     config.Scenarios = config.Scenarios.OrderByDescending(s => s.IsBaseline).ToList();
                 }
 
-                callbacksStarted = true;
-                callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
-                for (var i = 0; i < config.Scenarios.Count; i++)
-                {
-                    var scenario = config.Scenarios[i];
-
-                    processor.PrepareScenario(scenario);
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    var result = await processor.ProcessScenarioAsync(
-                        i,
-                        scenario,
-                        cancellationToken: cancellationToken.Value).ConfigureAwait(false);
-
-                    if (result is null || cancellationToken.Value.IsCancellationRequested)
-                    {
-                        scenarioWithErrors++;
-                        break;
-                    }
-
-                    if (result.Status != Status.Passed)
-                    {
-                        scenarioWithErrors++;
-                    }
-
-                    scenariosResults.Add(result);
-                }
-
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
                 try
                 {
-                    afterAllScenariosCalled = true;
-                    callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
+                    beforeAllAttempted = true;
+                    callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
+                    beforeAllCompleted = true;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     lifecycleErrors = true;
-                    AnsiConsole.MarkupLine("[red]Error running AfterAllScenariosFinishes:[/]");
-                    AnsiConsole.WriteLine(ex.ToString());
+                    AnsiConsole.MarkupLine("[red]Error running BeforeAllScenariosStarts:[/]");
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+
+                if (beforeAllCompleted)
+                {
+                    for (var i = 0; i < config.Scenarios.Count; i++)
+                    {
+                        if (cancellationToken.Value.IsCancellationRequested)
+                        {
+                            scenarioWithErrors++;
+                            break;
+                        }
+
+                        var scenario = config.Scenarios[i];
+                        ScenarioResult? result = null;
+                        try
+                        {
+                            processor.PrepareScenario(scenario);
+                            GC.Collect();
+                            GC.WaitForPendingFinalizers();
+                            result = await processor.ProcessScenarioAsync(
+                                i,
+                                scenario,
+                                cancellationToken: cancellationToken.Value).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            lifecycleErrors = true;
+                            scenarioWithErrors++;
+                            AnsiConsole.MarkupLine(
+                                "[red]Error processing scenario '{0}':[/]",
+                                Utils.EscapeMarkup(Utils.SanitizeText(scenario.Name, knownSecretValues)));
+                            AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                        }
+
+                        // Add the result before checking cancellation. A command may have
+                        // completed successfully and then requested cancellation from End.
+                        if (result is not null)
+                        {
+                            scenariosResults.Add(result);
+                            if (result.Status != Status.Passed)
+                            {
+                                scenarioWithErrors++;
+                            }
+                        }
+
+                        if (processor.HasLifecycleErrors)
+                        {
+                            lifecycleErrors = true;
+                        }
+
+                        if (result is null)
+                        {
+                            scenarioWithErrors++;
+                            break;
+                        }
+
+                        if (cancellationToken.Value.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                CleanScenarios();
+                if (beforeAllAttempted)
+                {
+                    RunAfterAll();
                 }
 
                 var results = new TimeitResult
@@ -197,10 +268,13 @@ public static class TimeItEngine
 
                 foreach (var exporter in exportersInfo)
                 {
+                    if (!initializedExporters.Contains(exporter.Instance))
+                    {
+                        continue;
+                    }
+
                     try
                     {
-                        var state = statesByType.GetValueOrDefault(exporter.Instance.GetType());
-                        exporter.Instance.Initialize(new InitOptions(config, exporter.LoadInfo, templateVariables, state));
                         if (exporter.Instance.Enabled)
                         {
                             exporter.Instance.Export(results);
@@ -209,45 +283,38 @@ public static class TimeItEngine
                     catch (Exception ex)
                     {
                         exporterErrors++;
-                        AnsiConsole.MarkupLine("[red]Error running exporter '{0}':[/]", exporter.Instance.Name);
-                        AnsiConsole.WriteLine(ex.ToString());
+                        AnsiConsole.MarkupLine(
+                            "[red]Error running exporter '{0}':[/]",
+                            Utils.EscapeMarkup(Utils.SanitizeText(exporter.Instance.Name, knownSecretValues)));
+                        AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
                     }
                 }
             }
 
-            engineExitCode = cancellationToken.Value.IsCancellationRequested || scenarioWithErrors > 0 || exporterErrors > 0 ? 1 : 0;
+            engineExitCode = cancellationToken.Value.IsCancellationRequested ||
+                scenarioWithErrors > 0 || exporterErrors > 0 || lifecycleErrors ? 1 : 0;
         }
         finally
         {
-            if (processor is not null)
+            // If an unexpected exception interrupted the scenario loop, preserve the same order
+            // as the successful path: ScenarioFinish (inside processor), CleanScenario, AfterAll,
+            // then OnFinish. Each phase is attempted at most once.
+            CleanScenarios();
+            if (beforeAllAttempted)
             {
-                foreach (var scenario in config.Scenarios)
-                {
-                    try
-                    {
-                        processor.CleanScenario(scenario);
-                    }
-                    catch (Exception ex)
-                    {
-                        lifecycleErrors = true;
-                        AnsiConsole.MarkupLine("[red]Error cleaning scenario:[/]");
-                        AnsiConsole.WriteLine(ex.ToString());
-                    }
-                }
+                RunAfterAll();
             }
 
-            if (callbacksStarted && !afterAllScenariosCalled)
+            foreach (var scenario in config.Scenarios)
             {
-                try
+                DatadogMetadata.Release(scenario);
+            }
+
+            foreach (var result in scenariosResults)
+            {
+                if (result.Scenario is { } scenario)
                 {
-                    afterAllScenariosCalled = true;
-                    callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
-                }
-                catch (Exception ex)
-                {
-                    lifecycleErrors = true;
-                    AnsiConsole.MarkupLine("[red]Error running AfterAllScenariosFinishes:[/]");
-                    AnsiConsole.WriteLine(ex.ToString());
+                    DatadogMetadata.Release(scenario);
                 }
             }
 
@@ -257,16 +324,59 @@ public static class TimeItEngine
                 {
                     callbacksTriggers.Finish();
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     lifecycleErrors = true;
                     AnsiConsole.MarkupLine("[red]Error running OnFinish:[/]");
-                    AnsiConsole.WriteLine(ex.ToString());
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
                 }
             }
         }
 
         return lifecycleErrors ? 1 : engineExitCode;
+
+        void CleanScenarios()
+        {
+            if (scenariosCleaned || processor is null)
+            {
+                return;
+            }
+
+            scenariosCleaned = true;
+            foreach (var scenario in config.Scenarios)
+            {
+                try
+                {
+                    processor.CleanScenario(scenario);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    AnsiConsole.MarkupLine("[red]Error cleaning scenario:[/]");
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+            }
+        }
+
+        void RunAfterAll()
+        {
+            if (afterAllAttempted)
+            {
+                return;
+            }
+
+            afterAllAttempted = true;
+            try
+            {
+                callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                lifecycleErrors = true;
+                AnsiConsole.MarkupLine("[red]Error running AfterAllScenariosFinishes:[/]");
+                AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+            }
+        }
     }
 
     private static void ExpandAssemblyLoadInfoValues(
@@ -297,135 +407,13 @@ public static class TimeItEngine
         }
     }
 
-    [RequiresUnreferencedCode("Calls System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String)")]
+    [RequiresUnreferencedCode("Loads configured extensions by name or assembly path.")]
     private static List<(T Instance, AssemblyLoadInfo? LoadInfo)> GetFromAssemblyLoadInfoList<T>(
         IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
-        Func<List<T>>? defaultListFunc = null)
+        Func<List<T>>? defaultListFunc = null,
+        string? baseDirectory = null)
         where T : class, INamedExtension
     {
-        if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
-        {
-            return (defaultListFunc?.Invoke() ?? new List<T>())
-                .Select(i => (i, (AssemblyLoadInfo?)null))
-                .ToList();
-        }
-
-        var resultList = new List<(T, AssemblyLoadInfo?)>();
-        var loadContext = AssemblyLoadContext.Default;
-        foreach (var assemblyLoadInfo in assemblyLoadInfos)
-        {
-            if (assemblyLoadInfo is null)
-            {
-                throw new InvalidOperationException($"A {typeof(T).Name} extension entry cannot be null.");
-            }
-
-            try
-            {
-                T? instance = default;
-                if (assemblyLoadInfo.InMemoryType is { } inMemoryType)
-                {
-                    instance = Activator.CreateInstance(inMemoryType) as T;
-                }
-                else if (!string.IsNullOrWhiteSpace(assemblyLoadInfo.FilePath))
-                {
-                    if (string.IsNullOrWhiteSpace(assemblyLoadInfo.Type))
-                    {
-                        throw new InvalidOperationException("An extension type is required when filePath is specified.");
-                    }
-
-                    var assemblyPath = Path.GetFullPath(assemblyLoadInfo.FilePath);
-                    if (!File.Exists(assemblyPath))
-                    {
-                        throw new FileNotFoundException("Extension assembly not found.", assemblyPath);
-                    }
-
-                    var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
-                    if (assembly.GetType(assemblyLoadInfo.Type, throwOnError: true) is not { } type)
-                    {
-                        throw new TypeLoadException($"Type '{assemblyLoadInfo.Type}' was not found in '{assemblyPath}'.");
-                    }
-
-                    instance = Activator.CreateInstance(type) as T;
-                }
-                else if (!string.IsNullOrWhiteSpace(assemblyLoadInfo.Name))
-                {
-                    Exception? activationError = null;
-                    foreach (var assembly in loadContext.Assemblies)
-                    {
-                        TypeInfo[] definedTypes;
-                        try
-                        {
-                            definedTypes = assembly.DefinedTypes.ToArray();
-                        }
-                        catch (ReflectionTypeLoadException ex)
-                        {
-                            definedTypes = ex.Types
-                                .Where(type => type is not null)
-                                .Select(type => type!.GetTypeInfo())
-                                .ToArray();
-                        }
-
-                        foreach (var typeInfo in definedTypes)
-                        {
-                            if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum ||
-                                !typeof(T).IsAssignableFrom(typeInfo.AsType()))
-                            {
-                                continue;
-                            }
-
-                            try
-                            {
-                                if (Activator.CreateInstance(typeInfo.AsType()) is T candidate &&
-                                    string.Equals(candidate.Name, assemblyLoadInfo.Name, StringComparison.Ordinal))
-                                {
-                                    instance = candidate;
-                                    break;
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-                            {
-                                // An unrelated extension type can have unavailable dependencies or a
-                                // constructor that is not usable in this process. Continue searching,
-                                // then report the activation failure if no matching name is found.
-                                activationError ??= ex;
-                            }
-                        }
-
-                        if (instance is not null)
-                        {
-                            break;
-                        }
-                    }
-
-                    if (instance is null && activationError is not null)
-                    {
-                        throw new InvalidOperationException(
-                            $"Could not create {typeof(T).Name} extension named '{assemblyLoadInfo.Name}'.",
-                            activationError);
-                    }
-                }
-                else
-                {
-                    throw new InvalidOperationException("An extension entry must specify name, filePath/type, or an in-memory type.");
-                }
-
-                if (instance is null)
-                {
-                    throw new InvalidOperationException(
-                        $"Could not create {typeof(T).Name} extension '{assemblyLoadInfo.Name ?? assemblyLoadInfo.Type}'.");
-                }
-
-                resultList.Add((instance, assemblyLoadInfo));
-            }
-            catch (Exception ex) when (ex is not InvalidOperationException && ex is not FileNotFoundException)
-            {
-                throw new InvalidOperationException(
-                    $"Could not load {typeof(T).Name} extension '{assemblyLoadInfo.Name ?? assemblyLoadInfo.Type ?? assemblyLoadInfo.FilePath}'.",
-                    ex);
-            }
-        }
-
-        return resultList;
+        return ExtensionResolver.Resolve(assemblyLoadInfos, defaultListFunc, baseDirectory);
     }
-
 }

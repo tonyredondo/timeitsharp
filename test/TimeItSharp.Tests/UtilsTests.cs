@@ -39,6 +39,39 @@ public sealed class UtilsTests
     }
 
     [Fact]
+    public void Sanitizer_redacts_aliases_without_classifying_path_as_pat()
+    {
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("GITHUB_PAT"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("JWT"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("SAS_TOKEN"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("DATABASE_URL"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("api-key"));
+        Assert.False(Utils.IsSensitiveEnvironmentVariable("PATH"));
+        Assert.False(Utils.IsSensitiveEnvironmentVariable("COMPAT_PATH"));
+
+        var sanitized = Utils.SanitizeText(
+            "--password direct-secret --token=token-secret DATABASE_URL=postgres://u:p@h/db",
+            ["direct-secret", "token-secret"]);
+        Assert.DoesNotContain("direct-secret", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("token-secret", sanitized, StringComparison.Ordinal);
+        Assert.Contains(Utils.RedactedValue, sanitized, StringComparison.Ordinal);
+
+        var authorization = Utils.SanitizeText("Authorization: Bearer header-secret");
+        Assert.DoesNotContain("header-secret", authorization, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sanitizer_bounds_output_and_redacts_known_values()
+    {
+        var output = Utils.SanitizeOutput(string.Join("\n", Enumerable.Repeat("secret-value", 500)), ["secret-value"]);
+
+        Assert.DoesNotContain("secret-value", output, StringComparison.Ordinal);
+        Assert.True(output.Split('\n').Length <= Utils.MaxExportLogLines + 1);
+        Assert.All(output.Split('\n'), line => Assert.True(line.Length <= Utils.MaxExportLogLineLength ||
+            line == "[OUTPUT TRUNCATED]"));
+    }
+
+    [Fact]
     public void CalculateIQR_handles_two_samples()
     {
         Assert.Equal(8, Utils.CalculateIQR([2, 10]));

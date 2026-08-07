@@ -99,7 +99,7 @@ public sealed class ExecuteService : IService
             {
                 AnsiConsole.WriteLine(
                     "ExecuteService.{0}: ProcessId: {1}, ProcessName: {2}, Duration: {3}, ExitCode: {4}", optionName, processId,
-                    command.TargetFilePath,
+                    Utils.SanitizeText(command.TargetFilePath),
                     result.RunTime, result.ExitCode);
             }
         }
@@ -110,8 +110,7 @@ public sealed class ExecuteService : IService
                 ex = ex.InnerException;
             }
 
-            AnsiConsole.WriteLine(
-                "ExecuteService.{0}: Error executing process: {1}", optionName, ex.Message);
+            AnsiConsole.WriteException(Utils.SanitizeException(ex));
         }
     }
 

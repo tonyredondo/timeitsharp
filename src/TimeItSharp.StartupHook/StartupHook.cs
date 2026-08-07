@@ -55,10 +55,56 @@ public sealed class StartupHook
                 frequencyInMs = parsedFrequencyInMs;
             }
 
-            _metricsWriter = new RuntimeMetricsWriter(new BinaryFileStorage(metricsPath), TimeSpan.FromMilliseconds(frequencyInMs));
-            _metricsWriter.PushEvents();
-            AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
-            _mainMethodStartTime = Clock.UtcNow;
+            BinaryFileStorage? storage = null;
+            RuntimeMetricsWriter? writer = null;
+            var processExitSubscribed = false;
+            try
+            {
+                storage = new BinaryFileStorage(metricsPath);
+                writer = new RuntimeMetricsWriter(storage, TimeSpan.FromMilliseconds(frequencyInMs));
+                writer.PushEvents();
+                AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
+                processExitSubscribed = true;
+                _metricsWriter = writer;
+                _mainMethodStartTime = Clock.UtcNow;
+            }
+            catch
+            {
+                // Runtime metrics are supplementary. An invalid/replaced metrics path or an
+                // unavailable event source must never prevent the profiled process from starting.
+                // Dispose both layers when setup fails after opening the file.
+                if (processExitSubscribed)
+                {
+                    try
+                    {
+                        AppDomain.CurrentDomain.ProcessExit -= CurrentDomainOnProcessExit;
+                    }
+                    catch
+                    {
+                        // Best effort only; preserve process startup.
+                    }
+                }
+
+                try
+                {
+                    writer?.Dispose();
+                }
+                catch
+                {
+                    // Best effort only; preserve process startup.
+                }
+
+                try
+                {
+                    storage?.Dispose();
+                }
+                catch
+                {
+                    // Best effort only; preserve process startup.
+                }
+
+                _metricsWriter = null;
+            }
         }
     }
 

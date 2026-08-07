@@ -4,7 +4,7 @@ using System.CommandLine;
 using System.CommandLine.Binding;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
-using System.Text;
+using TimeItSharp.Cli;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
 using TimeItSharp.Common.Exporters;
@@ -13,7 +13,12 @@ using TimeItSharp.Common.Services;
 var version = typeof(Program).Assembly.GetName().Version!;
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeItSharp v{0}[/]", $"{version.Major}.{version.Minor}.{version.Build}");
 
-var argument = new Argument<string>("configuration file or process name", "The JSON configuration file or executable command");
+var argument = new Argument<string[]>("configuration file or process name", "The JSON configuration file or executable command")
+{
+    Arity = ArgumentArity.ZeroOrMore,
+};
+var configurationPath = new Option<string?>("--config", "Explicitly select a JSON configuration file");
+var command = new Option<string?>("--command", "Explicitly select a process command");
 var templateVariables = new Option<TemplateVariables>(
     "--variable",
     isDefault: true,
@@ -66,6 +71,8 @@ var debugMode = new Option<bool>("--debug", () => false, "Run timeit in debug mo
 var root = new RootCommand
 {
     argument,
+    configurationPath,
+    command,
     templateVariables,
     count,
     warmup,
@@ -80,7 +87,36 @@ var root = new RootCommand
 
 root.SetHandler(async (context) =>
 {
-    var argumentValue = GetValueForHandlerParameter(argument, context) ?? string.Empty;
+    var positionalArguments = GetValueForHandlerParameter(argument, context) ?? Array.Empty<string>();
+    var positionalArgument = CliInputParser.JoinCommandArguments(positionalArguments);
+    var configurationPathValue = GetValueForHandlerParameter(configurationPath, context);
+    var commandValue = GetValueForHandlerParameter(command, context);
+    if (commandValue is not null && positionalArguments.Length != 0)
+    {
+        commandValue = string.IsNullOrEmpty(commandValue)
+            ? positionalArgument
+            : $"{commandValue} {positionalArgument}";
+    }
+
+    CliInput cliInput;
+    try
+    {
+        if (configurationPathValue is not null && positionalArguments.Length != 0)
+        {
+            throw new ArgumentException("--config cannot be combined with a positional command.");
+        }
+
+        cliInput = CliInputParser.Classify(positionalArgument, configurationPathValue, commandValue);
+    }
+    catch (Exception ex)
+    {
+        AnsiConsole.MarkupLine("[red]An error occurred while parsing the TimeItSharp input:[/]");
+        AnsiConsole.WriteException(Utils.SanitizeException(ex));
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    var argumentValue = cliInput.Value;
     var templateVariablesValue = GetValueForHandlerParameter(templateVariables, context) ?? new TemplateVariables();
     var countValue = GetValueForHandlerParameter(count, context);
     var warmupValue = GetValueForHandlerParameter(warmup, context);
@@ -106,8 +142,7 @@ root.SetHandler(async (context) =>
     Config? loadedConfig = null;
     Exception? configurationLoadError = null;
     var fileExists = File.Exists(argumentValue);
-    var hasJsonExtension = string.Equals(Path.GetExtension(argumentValue), ".json", StringComparison.OrdinalIgnoreCase);
-    var isConfigurationFile = hasJsonExtension || (fileExists && LooksLikeJsonConfiguration(argumentValue));
+    var isConfigurationFile = cliInput.IsConfiguration;
     if (isConfigurationFile)
     {
         try
@@ -121,7 +156,7 @@ root.SetHandler(async (context) =>
             configurationLoadError = ex;
         }
     }
-    else if (!fileExists)
+    else if (!fileExists && !cliInput.IsExplicit)
     {
         AnsiConsole.MarkupLine("Configuration file not found, trying to run as a process name...");
     }
@@ -228,7 +263,9 @@ root.SetHandler(async (context) =>
         }
         else
         {
-            var (processName, processArgs) = ParseProcessCommand(argumentValue);
+            var processCommand = CliInputParser.ParseProcessCommand(argumentValue);
+            var processName = processCommand.ProcessName;
+            var processArgs = processCommand.ProcessArguments;
             var finalCount = countValue ?? 10;
             var configBuilder = ConfigBuilder.Create()
                 .WithName(argumentValue)
@@ -283,14 +320,15 @@ root.SetHandler(async (context) =>
     catch (Exception ex)
     {
         AnsiConsole.MarkupLine("[red]An error occurred while running TimeItSharp:[/]");
-        AnsiConsole.WriteLine(ex.ToString());
+        AnsiConsole.WriteException(Utils.SanitizeException(ex));
         exitCode = 1;
     }
 
     Environment.ExitCode = exitCode;
 });
 
-var invocationExitCode = await root.InvokeAsync(args);
+var normalizedArguments = CliInputParser.NormalizeArguments(args);
+var invocationExitCode = await root.InvokeAsync(normalizedArguments);
 if (Environment.ExitCode == 0)
 {
     Environment.ExitCode = invocationExitCode;
@@ -366,163 +404,4 @@ static bool IsExtension(AssemblyLoadInfo? info, Type extensionType, IReadOnlyCol
            (info.InMemoryType == extensionType ||
             string.Equals(info.Type, extensionType.FullName, StringComparison.Ordinal) ||
             (info.Name is not null && names.Contains(info.Name, StringComparer.OrdinalIgnoreCase)));
-}
-
-static (string ProcessName, string ProcessArguments) ParseProcessCommand(string commandLine)
-{
-    if (string.IsNullOrWhiteSpace(commandLine))
-    {
-        throw new ArgumentException("A process name or command is required.", nameof(commandLine));
-    }
-
-    var index = 0;
-    while (index < commandLine.Length && char.IsWhiteSpace(commandLine[index]))
-    {
-        index++;
-    }
-
-    var processName = new StringBuilder();
-    char quote = '\0';
-    while (index < commandLine.Length)
-    {
-        var current = commandLine[index];
-        if (quote != '\0')
-        {
-            if (current == quote)
-            {
-                quote = '\0';
-                index++;
-                continue;
-            }
-
-            // Preserve normal backslashes (important for Windows paths), while accepting the
-            // conventional escaped quote and escaped backslash forms.
-            if (current == '\\' && index + 1 < commandLine.Length &&
-                (commandLine[index + 1] == quote || commandLine[index + 1] == '\\'))
-            {
-                processName.Append(commandLine[index + 1]);
-                index += 2;
-                continue;
-            }
-
-            processName.Append(current);
-            index++;
-            continue;
-        }
-
-        if (char.IsWhiteSpace(current))
-        {
-            break;
-        }
-
-        if (current == '"' ||
-            (current == '\'' && (index == 0 || char.IsWhiteSpace(commandLine[index - 1]))))
-        {
-            quote = current;
-            index++;
-            continue;
-        }
-
-        // An apostrophe inside an unquoted word is ordinary data (for example, "don't").
-        if (current == '\'')
-        {
-            processName.Append(current);
-            index++;
-            continue;
-        }
-
-        if (current == '\\' && index + 1 < commandLine.Length &&
-            (commandLine[index + 1] is '\'' or '"'))
-        {
-            processName.Append(commandLine[index + 1]);
-            index += 2;
-            continue;
-        }
-
-        processName.Append(current);
-        index++;
-    }
-
-    if (quote != '\0')
-    {
-        throw new ArgumentException("The process command contains an unterminated quote.", nameof(commandLine));
-    }
-
-    if (processName.Length == 0)
-    {
-        throw new ArgumentException("A process name is required.", nameof(commandLine));
-    }
-
-    while (index < commandLine.Length && char.IsWhiteSpace(commandLine[index]))
-    {
-        index++;
-    }
-
-    var processArguments = index < commandLine.Length ? commandLine[index..].TrimEnd() : string.Empty;
-    EnsureBalancedQuotes(processArguments, commandLine);
-    return (processName.ToString(), processArguments);
-}
-
-static bool LooksLikeJsonConfiguration(string filePath)
-{
-    try
-    {
-        using var stream = File.OpenRead(filePath);
-        var buffer = new byte[4096];
-        var read = stream.Read(buffer, 0, buffer.Length);
-        var index = 0;
-        if (read >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
-        {
-            index = 3;
-        }
-
-        while (index < read && char.IsWhiteSpace((char)buffer[index]))
-        {
-            index++;
-        }
-
-        return index < read && buffer[index] == (byte)'{';
-    }
-    catch (IOException)
-    {
-        return false;
-    }
-    catch (UnauthorizedAccessException)
-    {
-        return false;
-    }
-}
-
-static void EnsureBalancedQuotes(string text, string commandLine)
-{
-    char quote = '\0';
-    for (var index = 0; index < text.Length; index++)
-    {
-        var current = text[index];
-        if (current == '\\' && quote == '"' && index + 1 < text.Length &&
-            (text[index + 1] == quote || text[index + 1] == '\\'))
-        {
-            index++;
-            continue;
-        }
-
-        if (quote == '\0' && current == '"')
-        {
-            quote = current;
-        }
-        else if (quote == '\0' && current == '\'' &&
-                 (index == 0 || char.IsWhiteSpace(text[index - 1])))
-        {
-            quote = current;
-        }
-        else if (quote != '\0' && current == quote)
-        {
-            quote = '\0';
-        }
-    }
-
-    if (quote != '\0')
-    {
-        throw new ArgumentException("The process command contains an unterminated quote.", nameof(commandLine));
-    }
 }
