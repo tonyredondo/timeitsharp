@@ -739,7 +739,7 @@ overhead; los valores de secretos se descubren con presupuesto de recorrido. Las
 de JSON/Datadog se registran antes de operaciones de filesystem y se incluyen en la redacción de
 excepciones. Los nombres de conexión/DSN reconocidos, controles ANSI/OSC y excepciones de getters
 se filtran en los sinks integrados. La validación local final pasó: build Release de la solución,
-125 pruebas Common, 58 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
+132 pruebas Common, 60 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
 timeout, callback output, consumo transitivo y aislamiento de assets Datadog v2/v3. `NU1903` de
 `Datadog.Trace` 2.61.0 continúa siendo el advisory exacto documentado; el attach real del profiler
 Linux permanece como aserción específica de CI.
@@ -808,8 +808,15 @@ startup hook externo, de modo que wrappers y consumidores con Bundle v3 no mezcl
 detección musl compara basenames mapeados exactos y Windows anuncia únicamente el bitness compatible
 con el loader seleccionado.
 
-Validación final sobre el HEAD combinado: build Release net6.0–net10.0 con 0 errores; 125/125 pruebas
-Common y 58/58 CLI; tres `.nupkg`; consumer Common trimmed/single-file con startup hook y métricas;
+El audit de cierre añadió regresiones para impedir que `--command <ruta> -- <args>` vuelva a sondear
+un nombre combinado del filesystem, disponer extensiones creadas antes de un fallo posterior de
+resolución y degradar a fallo los outcomes aún abiertos si otro cierre falla. Los snapshots de
+secretos verifican que `Count` coincida con la enumeración real y fallan cerrados ante iteradores
+parciales; la normalización elimina también Unicode Default-Ignorable —incluyendo CGJ y variation
+selectors— sin eliminar acentos combinantes ordinarios.
+
+Validación final sobre el HEAD combinado: build Release net6.0–net10.0 con 0 errores; 132/132 pruebas
+Common y 60/60 CLI; tres `.nupkg`; consumer Common trimmed/single-file con startup hook y métricas;
 consumer mediante paquete wrapper; aislamiento y hashes v2 frente a Bundle v3; XML, YAML, shell y
 `git diff --check`. Permanece únicamente el advisory aceptado `NU1903` de Datadog.Trace 2.61.0
 (`GHSA-38wr-vpc7-2mp4`) y el attach nativo real Linux se ejecuta de forma platform-gated en CI.
