@@ -74,7 +74,7 @@ public sealed class CliInputParserTests
     {
         var value = CliInputParser.JoinCommandArguments(new[] { "echo", "hello.json" });
 
-        Assert.Equal("echo hello.json", value);
+        Assert.Equal("\"echo\" \"hello.json\"", value);
         Assert.Equal(CliInputKind.Command, CliInputParser.Classify(value).Kind);
     }
 
@@ -84,18 +84,21 @@ public sealed class CliInputParserTests
         var path = Path.Combine(Path.GetTempPath(), "timeitsharp missing executable");
         var normalized = CliInputParser.NormalizeArguments(new[] { "--", path, "--flag" });
 
-        Assert.Equal($"--command=\"{path}\" --flag", normalized[0]);
+        Assert.Equal($"--command=\"{path}\" \"--flag\"", normalized[0]);
         var command = CliInputParser.ParseProcessCommand(normalized[0]["--command=".Length..]);
         Assert.Equal(path, command.ProcessName);
-        Assert.Equal("--flag", command.ProcessArguments);
+        Assert.Equal("\"--flag\"", command.ProcessArguments);
     }
 
     [Fact]
-    public void OptionTerminatorCanAppendArgumentsToACompleteCommandValue()
+    public void OptionTerminatorPreservesEveryDiscreteArgumentBoundary()
     {
         var normalized = CliInputParser.NormalizeArguments(new[] { "--", "echo hello.json", "--flag" });
 
-        Assert.Equal(new[] { "--command=echo hello.json --flag" }, normalized);
+        Assert.Equal(new[] { "--command=\"echo hello.json\" \"--flag\"" }, normalized);
+        var command = CliInputParser.ParseProcessCommand(normalized[0]["--command=".Length..]);
+        Assert.Equal("echo hello.json", command.ProcessName);
+        Assert.Equal("\"--flag\"", command.ProcessArguments);
     }
 
     [Fact]
@@ -103,11 +106,22 @@ public sealed class CliInputParserTests
     {
         var normalized = CliInputParser.NormalizeArguments(new[] { "--count", "1", "--", "echo", "hello.json" });
 
-        Assert.Equal(new[] { "--count", "1", "--command=echo hello.json" }, normalized);
+        Assert.Equal(new[] { "--count", "1", "--command=\"echo\" \"hello.json\"" }, normalized);
         var command = CliInputParser.Classify(normalized[2]["--command=".Length..], commandTerminated: true);
         Assert.Equal(CliInputKind.Command, command.Kind);
-        Assert.Equal("echo hello.json", command.Value);
+        Assert.Equal("\"echo\" \"hello.json\"", command.Value);
         Assert.True(command.IsExplicit);
+    }
+
+    [Fact]
+    public void OptionTerminatorQuotesEvenSimpleArgvValues()
+    {
+        var normalized = CliInputParser.NormalizeArguments(new[] { "--", "echo", "hello", string.Empty });
+
+        Assert.Equal(new[] { "--command=\"echo\" \"hello\" \"\"" }, normalized);
+        var command = CliInputParser.ParseProcessCommand(normalized[0]["--command=".Length..]);
+        Assert.Equal("echo", command.ProcessName);
+        Assert.Equal("\"hello\" \"\"", command.ProcessArguments);
     }
 
     [Fact]
@@ -115,7 +129,7 @@ public sealed class CliInputParserTests
     {
         var normalized = CliInputParser.NormalizeArguments(new[] { "--", "echo hello.json" });
 
-        Assert.Equal(new[] { "--command=echo hello.json" }, normalized);
+        Assert.Equal(new[] { "--command=\"echo hello.json\"" }, normalized);
     }
 
     [Fact]
@@ -123,7 +137,7 @@ public sealed class CliInputParserTests
     {
         var normalized = CliInputParser.NormalizeArguments(new[] { "--", "echo", "--config", "foo.json" });
 
-        Assert.Equal(new[] { "--command=echo --config foo.json" }, normalized);
+        Assert.Equal(new[] { "--command=\"echo\" \"--config\" \"foo.json\"" }, normalized);
     }
 
     [Fact]
@@ -136,6 +150,38 @@ public sealed class CliInputParserTests
 
         Assert.Equal(CliInputKind.Configuration, input.Kind);
         Assert.Equal(path, input.Value);
+    }
+
+    [Fact]
+    public void MissingRelativeJsonPathWithDirectoryAndSpacesRemainsConfiguration()
+    {
+        var path = Path.Combine("missing directory", $"config {Guid.NewGuid():N}.json");
+
+        var input = CliInputParser.Classify(path);
+
+        Assert.Equal(CliInputKind.Configuration, input.Kind);
+        Assert.Equal(path, input.Value);
+    }
+
+    [Fact]
+    public void OptionTerminatorDoesNotDependOnWhetherACombinedExecutableExists()
+    {
+        var firstToken = Path.Combine(Path.GetTempPath(), $"timeitsharp-{Guid.NewGuid():N}-echo");
+        var combinedPath = firstToken + " hello";
+        File.WriteAllText(combinedPath, string.Empty);
+        try
+        {
+            var normalized = CliInputParser.NormalizeArguments(new[] { "--", firstToken, "hello" });
+            var command = CliInputParser.ParseProcessCommand(normalized[0]["--command=".Length..]);
+
+            Assert.Equal($"--command=\"{firstToken}\" \"hello\"", normalized[0]);
+            Assert.Equal(firstToken, command.ProcessName);
+            Assert.Equal("\"hello\"", command.ProcessArguments);
+        }
+        finally
+        {
+            File.Delete(combinedPath);
+        }
     }
 
     [Fact]
@@ -158,12 +204,12 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
-    public void ApostropheInsideAnUnquotedWordCanJoinAQuotedSpan()
+    public void EmbeddedApostrophesAroundWhitespaceRemainLiteral()
     {
         var process = CliInputParser.ParseProcessCommand("echo foo'bar baz'");
 
         Assert.Equal("echo", process.ProcessName);
-        Assert.Equal("foo\"bar baz\"", process.ProcessArguments);
+        Assert.Equal("foo'bar baz'", process.ProcessArguments);
     }
 
     [Fact]
@@ -176,12 +222,12 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
-    public void SingleQuoteGroupingCanHaveAnUnquotedSuffix()
+    public void EmbeddedApostrophesWithAnUnquotedSuffixRemainLiteral()
     {
         var process = CliInputParser.ParseProcessCommand("echo foo'bar baz'qux");
 
         Assert.Equal("echo", process.ProcessName);
-        Assert.Equal("foo\"bar baz\"qux", process.ProcessArguments);
+        Assert.Equal("foo'bar baz'qux", process.ProcessArguments);
     }
 
     [Fact]
@@ -191,6 +237,42 @@ public sealed class CliInputParserTests
 
         Assert.Equal("echo", process.ProcessName);
         Assert.Equal("don't say \"hi\"", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void PairedApostrophesInANameRemainLiteral()
+    {
+        var process = CliInputParser.ParseProcessCommand("echo O'Brien's");
+
+        Assert.Equal("O'Brien's", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void UnquotedUncExecutableKeepsItsLeadingBackslashes()
+    {
+        var process = CliInputParser.ParseProcessCommand(@"\\server\share\tool.exe --version");
+
+        Assert.Equal(@"\\server\share\tool.exe", process.ProcessName);
+        Assert.Equal("--version", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void QuotedUncExecutableKeepsDoubledAndTrailingBackslashes()
+    {
+        var process = CliInputParser.ParseProcessCommand("\"\\\\server\\share name\\app.exe\" --version");
+
+        Assert.Equal(@"\\server\share name\app.exe", process.ProcessName);
+        Assert.Equal("--version", process.ProcessArguments);
+    }
+
+    [Fact]
+    public void AdjacentContractionsAndPossessivesRemainLiteral()
+    {
+        var contractions = CliInputParser.ParseProcessCommand("echo don't won't");
+        var possessives = CliInputParser.ParseProcessCommand("echo James' team Chris' work");
+
+        Assert.Equal("don't won't", contractions.ProcessArguments);
+        Assert.Equal("James' team Chris' work", possessives.ProcessArguments);
     }
 
     [Fact]
@@ -249,7 +331,15 @@ public sealed class CliInputParserTests
     {
         var normalized = CliInputParser.NormalizeArguments(new[] { "--command", "echo", "--", "a b", "c" });
 
-        Assert.Equal(new[] { "--command=echo \"a b\" c" }, normalized);
+        Assert.Equal(new[] { "--command=echo \"a b\" \"c\"" }, normalized);
+    }
+
+    [Fact]
+    public void MissingCommandValueDoesNotConsumeTheNextOption()
+    {
+        var normalized = CliInputParser.NormalizeArguments(new[] { "--command", "--count", "1", "--", "app" });
+
+        Assert.Equal(new[] { "--command=\"app\"", "--count", "1" }, normalized);
     }
 
     [Fact]
@@ -269,11 +359,11 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
-    public void SingleQuoteGroupingCanFollowAnUnquotedToken()
+    public void EmbeddedApostrophesInAnUnquotedTokenRemainLiteral()
     {
         var process = CliInputParser.ParseProcessCommand("echo foo'bar baz'");
 
-        Assert.Equal("foo\"bar baz\"", process.ProcessArguments);
+        Assert.Equal("foo'bar baz'", process.ProcessArguments);
     }
 
     [Fact]

@@ -87,19 +87,11 @@ var root = new RootCommand
 
 root.SetHandler(async (context) =>
 {
+    var invocationCancellationToken = context.GetCancellationToken();
     var positionalArguments = GetValueForHandlerParameter(argument, context) ?? Array.Empty<string>();
     var positionalArgument = CliInputParser.JoinCommandArguments(positionalArguments);
     var configurationPathValue = GetValueForHandlerParameter(configurationPath, context);
     var commandValue = GetValueForHandlerParameter(command, context);
-    if (commandValue is not null && positionalArguments.Length != 0)
-    {
-        // Values before a standalone `--` are the command's executable/leading arguments;
-        // terminated values follow them. Appending in the opposite order turns
-        // `echo -- --config foo.json` into `--config foo.json echo`.
-        commandValue = string.IsNullOrEmpty(commandValue)
-            ? positionalArgument
-            : $"{positionalArgument} {commandValue}";
-    }
 
     CliInput cliInput;
     try
@@ -107,6 +99,11 @@ root.SetHandler(async (context) =>
         if (configurationPathValue is not null && positionalArguments.Length != 0)
         {
             throw new ArgumentException("--config cannot be combined with a positional command.");
+        }
+
+        if (commandValue is not null && positionalArguments.Length != 0)
+        {
+            throw new ArgumentException("--command cannot be mixed with unnamed values; put process arguments after --.");
         }
 
         cliInput = CliInputParser.Classify(positionalArgument, configurationPathValue, commandValue);
@@ -268,7 +265,8 @@ root.SetHandler(async (context) =>
             // extension is loaded or process is started. The engine validates again for library
             // callers that do not go through this CLI.
             configBuilder.Build().Validate();
-            exitCode = await TimeItEngine.RunAsync(configBuilder, timeitOptions).ConfigureAwait(false);
+            exitCode = await TimeItEngine.RunAsync(
+                configBuilder, timeitOptions, invocationCancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -323,7 +321,8 @@ root.SetHandler(async (context) =>
             }
 
             configBuilder.Build().Validate();
-            exitCode = await TimeItEngine.RunAsync(configBuilder, timeitOptions).ConfigureAwait(false);
+            exitCode = await TimeItEngine.RunAsync(
+                configBuilder, timeitOptions, invocationCancellationToken).ConfigureAwait(false);
         }
     }
     catch (Exception ex)

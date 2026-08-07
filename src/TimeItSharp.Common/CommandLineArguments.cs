@@ -48,16 +48,15 @@ internal static class CommandLineArguments
                 continue;
             }
 
-            if (quote == '\"')
+            if (quote == '"')
             {
-                if (current == '\"')
+                if (current == '\\')
+                {
+                    AppendBackslashRun(text, ref index, value, ref quote);
+                }
+                else if (current == '"')
                 {
                     quote = '\0';
-                }
-                else if (current == '\\' && index + 1 < text.Length &&
-                         (text[index + 1] == '\"' || text[index + 1] == '\\'))
-                {
-                    value.Append(text[++index]);
                 }
                 else
                 {
@@ -74,37 +73,27 @@ internal static class CommandLineArguments
             }
 
             tokenStarted = true;
-            if (current == '\"')
+            if (current == '"')
             {
                 quote = current;
             }
             else if (current == '\'')
             {
-                var closingQuote = text.IndexOf('\'', index + 1);
-                var closingQuoteIsBoundary = closingQuote >= 0 &&
-                    (closingQuote + 1 >= text.Length || char.IsWhiteSpace(text[closingQuote + 1]) ||
-                     text[closingQuote + 1] is ',' or ';');
-                var startsQuote = index == 0 || char.IsWhiteSpace(text[index - 1]) ||
-                                  text[index - 1] is '=' or '"' || closingQuoteIsBoundary;
-                if (startsQuote)
+                if (ShouldStartSingleQuote(text, index, value.Length == 0))
                 {
-                    if (closingQuote < 0 && index > 0 && text[index - 1] == '=')
-                    {
-                        throw new ArgumentException("The process arguments contain an unterminated quote.", nameof(text));
-                    }
-
                     quote = current;
                 }
                 else
                 {
+                    // Apostrophes in ordinary words are data, not quote delimiters. This keeps
+                    // contractions and names such as "don't" and "O'Brien" intact even when a
+                    // later argument happens to be single quoted.
                     value.Append(current);
                 }
             }
-            else if (current == '\\' && index + 1 < text.Length &&
-                     (text[index + 1] == '\"' || text[index + 1] == '\'' ||
-                      char.IsWhiteSpace(text[index + 1])))
+            else if (current == '\\')
             {
-                value.Append(text[++index]);
+                AppendBackslashRun(text, ref index, value, ref quote);
             }
             else
             {
@@ -119,6 +108,56 @@ internal static class CommandLineArguments
 
         AddTokenIfStarted(arguments, value, ref tokenStarted);
         return arguments;
+    }
+
+    private static void AppendBackslashRun(
+        string text,
+        ref int index,
+        StringBuilder value,
+        ref char quote)
+    {
+        var start = index;
+        while (index < text.Length && text[index] == '\\')
+        {
+            index++;
+        }
+
+        var count = index - start;
+        if (index >= text.Length)
+        {
+            value.Append('\\', count);
+            index--;
+            return;
+        }
+
+        var next = text[index];
+        if (next == '"')
+        {
+            // Match the CommandLineToArgvW/CRT convention used by QuoteTokenForCommandLine:
+            // pairs become literal backslashes; an odd remainder escapes the quote.
+            value.Append('\\', count / 2);
+            if ((count & 1) != 0)
+            {
+                value.Append('"');
+            }
+            else
+            {
+                quote = quote == '"' ? '\0' : '"';
+            }
+
+            return;
+        }
+
+        value.Append('\\', count);
+        index--;
+    }
+
+    private static bool ShouldStartSingleQuote(string text, int index, bool atTokenBoundary)
+    {
+        // Embedded apostrophes are always literal. Single-quote grouping starts only in an
+        // unambiguous quote position; this preserves adjacent contractions and possessives.
+        return atTokenBoundary ||
+               (index > 0 && (text[index - 1] == '=' || text[index - 1] == '"'));
     }
 
     private static void AddTokenIfStarted(List<string> arguments, StringBuilder value, ref bool tokenStarted)

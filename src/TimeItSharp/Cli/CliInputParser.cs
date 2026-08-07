@@ -144,19 +144,16 @@ public static class CliInputParser
 
         var normalized = new List<string>(args.Take(separator));
         var commandTokens = args.Skip(separator + 1).ToArray();
-        // A command passed as one quoted shell argument is already a complete command line and
-        // must not receive another pair of quotes ("echo hello.json" would otherwise become one
-        // executable token). Multiple argv tokens are joined while quoting tokens that contain
-        // spaces so their boundaries survive the second parser.
+        // Values following -- are discrete argv values, even when there is only one. Serialize
+        // every boundary explicitly so later command parsing cannot reinterpret them based on
+        // whitespace or files that happen to exist in the current directory.
         // If --command was already supplied, append the terminated argv values to that command
         // instead of emitting a second --command option. System.CommandLine quite correctly
         // rejects duplicate scalar options, but `--command app -- arg` is a useful and documented
         // spelling that must retain both pieces.
         var commandIndex = normalized.FindIndex(value => string.Equals(value, "--command", StringComparison.Ordinal) ||
                                                           value.StartsWith("--command=", StringComparison.Ordinal));
-        var suffix = commandIndex >= 0
-            ? JoinArgumentValues(commandTokens)
-            : JoinCommandArguments(commandTokens);
+        var suffix = JoinArgumentValues(commandTokens);
         if (commandIndex >= 0)
         {
             var commandValue = string.Equals(normalized[commandIndex], "--command", StringComparison.Ordinal)
@@ -164,7 +161,8 @@ public static class CliInputParser
                 : normalized[commandIndex][("--command=".Length)..];
             if (string.Equals(normalized[commandIndex], "--command", StringComparison.Ordinal))
             {
-                if (commandIndex + 1 < normalized.Count)
+                if (commandIndex + 1 < normalized.Count &&
+                    !normalized[commandIndex + 1].StartsWith("-", StringComparison.Ordinal))
                 {
                     commandValue = normalized[commandIndex + 1];
                     normalized.RemoveAt(commandIndex + 1);
@@ -208,25 +206,10 @@ public static class CliInputParser
             return arguments[0];
         }
 
-        // Some callers pass the legacy complete command string as the first argv value and
-        // append process arguments after the option terminator. Do not quote that value as an
-        // executable unless it is an existing path (where whitespace really belongs to the path).
-        // This keeps both `-- "echo hello.json" --flag` and `-- echo hello.json --flag` useful.
-        var first = arguments[0];
-        var firstTrimmed = first.Trim();
-        var looksLikePath = Path.IsPathRooted(firstTrimmed) ||
-                            firstTrimmed.StartsWith("./", StringComparison.Ordinal) ||
-                            firstTrimmed.StartsWith("../", StringComparison.Ordinal) ||
-                            firstTrimmed.StartsWith(".\\", StringComparison.Ordinal) ||
-                            (firstTrimmed.Length >= 2 && firstTrimmed[1] == ':' &&
-                             (firstTrimmed[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'));
-        if (first.Any(char.IsWhiteSpace) && !File.Exists(firstTrimmed) && !looksLikePath)
-        {
-            var remainder = JoinCommandArguments(arguments.Skip(1).ToArray());
-            return string.IsNullOrEmpty(remainder) ? first : $"{first} {remainder}";
-        }
-
-        return string.Join(" ", arguments.Select(QuoteTokenForCommandLine));
+        // Multiple positional values are discrete argv values. The single-value case above is
+        // the documented legacy complete-command-string form; no File.Exists-dependent guessing
+        // is allowed once the caller supplied more than one argv value.
+        return string.Join(" ", arguments.Select(token => QuoteTokenForCommandLine(token, forceQuotes: true)));
     }
 
     /// <summary>
@@ -334,21 +317,7 @@ public static class CliInputParser
 
             if (quote == '"')
             {
-                if (current == '"')
-                {
-                    quote = '\0';
-                }
-                else if (current == '\\' && index + 1 < commandLine.Length &&
-                         (commandLine[index + 1] == '"' || commandLine[index + 1] == '\\'))
-                {
-                    token.Append(commandLine[++index]);
-                }
-                else
-                {
-                    token.Append(current);
-                }
-
-                index++;
+                AppendDoubleQuotedCharacter(commandLine, token, ref index, ref quote);
                 continue;
             }
 
@@ -373,11 +342,10 @@ public static class CliInputParser
 
             if (current == '\'')
             {
-                // Apostrophes at a token boundary (and after an assignment operator) are always
-                // quote delimiters. Within a word, use shell-like concatenation when a matching
-                // closing delimiter exists; otherwise retain contractions such as "don't".
+                // Apostrophes at a token boundary, after an assignment, or after a quoted span
+                // delimit a single-quoted value. Within an ordinary word they are literal data.
                 if (token.Length == 0 || commandLine[index - 1] == '=' ||
-                    HasClosingSingleQuote(commandLine, index))
+                    commandLine[index - 1] == '"')
                 {
                     quote = current;
                     tokenStarted = true;
@@ -393,8 +361,7 @@ public static class CliInputParser
             }
 
             if (current == '\\' && index + 1 < commandLine.Length &&
-                (commandLine[index + 1] == '\'' || commandLine[index + 1] == '"' ||
-                 commandLine[index + 1] == '\\' || char.IsWhiteSpace(commandLine[index + 1])))
+                (commandLine[index + 1] == '\'' || commandLine[index + 1] == '"'))
             {
                 token.Append(commandLine[++index]);
                 tokenStarted = true;
@@ -419,6 +386,53 @@ public static class CliInputParser
 
         endIndex = index;
         return token.ToString();
+    }
+
+    private static void AppendDoubleQuotedCharacter(
+        string text,
+        StringBuilder token,
+        ref int index,
+        ref char quote)
+    {
+        var current = text[index];
+        if (current == '"')
+        {
+            quote = '\0';
+            index++;
+            return;
+        }
+
+        if (current != '\\')
+        {
+            token.Append(current);
+            index++;
+            return;
+        }
+
+        var runStart = index;
+        while (index < text.Length && text[index] == '\\')
+        {
+            index++;
+        }
+
+        var count = index - runStart;
+        if (index < text.Length && text[index] == '"')
+        {
+            token.Append('\\', count / 2);
+            if ((count & 1) != 0)
+            {
+                token.Append('"');
+            }
+            else
+            {
+                quote = '\0';
+            }
+
+            index++;
+            return;
+        }
+
+        token.Append('\\', count);
     }
 
     private static List<string> TokenizeCommandLine(string commandLine)
@@ -447,20 +461,8 @@ public static class CliInputParser
 
             if (quote == '"')
             {
-                if (current == '"')
-                {
-                    quote = '\0';
-                }
-                else if (current == '\\' && index + 1 < commandLine.Length &&
-                         (commandLine[index + 1] == '"' || commandLine[index + 1] == '\\'))
-                {
-                    token.Append(commandLine[++index]);
-                }
-                else
-                {
-                    token.Append(current);
-                }
-
+                AppendDoubleQuotedCharacter(commandLine, token, ref index, ref quote);
+                index--;
                 continue;
             }
 
@@ -485,7 +487,8 @@ public static class CliInputParser
 
             if (current == '\'')
             {
-                if (token.Length == 0 || HasClosingSingleQuote(commandLine, index))
+                if (token.Length == 0 || commandLine[index - 1] == '=' ||
+                    commandLine[index - 1] == '"')
                 {
                     quote = current;
                     tokenStarted = true;
@@ -500,8 +503,7 @@ public static class CliInputParser
             }
 
             if (current == '\\' && index + 1 < commandLine.Length &&
-                (commandLine[index + 1] == '\'' || commandLine[index + 1] == '"' ||
-                 commandLine[index + 1] == '\\'))
+                (commandLine[index + 1] == '\'' || commandLine[index + 1] == '"'))
             {
                 token.Append(commandLine[++index]);
                 tokenStarted = true;
@@ -525,41 +527,6 @@ public static class CliInputParser
         return tokens;
     }
 
-    private static bool HasClosingSingleQuote(string text, int index)
-    {
-        var backslashes = 0;
-        for (var cursor = index + 1; cursor < text.Length; cursor++)
-        {
-            var current = text[cursor];
-            if (current == '\\')
-            {
-                backslashes++;
-                continue;
-            }
-
-            if (current == '\'' && (backslashes & 1) == 0)
-            {
-                var startsAnotherToken = cursor == 0 || char.IsWhiteSpace(text[cursor - 1]) ||
-                                         text[cursor - 1] == '=';
-                if (startsAnotherToken)
-                {
-                    // A quote at a token boundary starts a later quoted value (for example the
-                    // `'hi'` in `don't say 'hi'`), so it cannot close an apostrophe embedded in
-                    // the preceding word.
-                    return false;
-                }
-
-                // The first non-boundary apostrophe closes the embedded span, even when an
-                // unquoted suffix follows it (`foo'bar baz'qux`).
-                return true;
-            }
-
-            backslashes = 0;
-        }
-
-        return false;
-    }
-
     private static string NormalizeSingleQuotedArguments(string text)
     {
         if (!text.Contains('\'', StringComparison.Ordinal))
@@ -573,7 +540,7 @@ public static class CliInputParser
         // literal quotes.
         if (text.Contains('"', StringComparison.Ordinal))
         {
-            return string.Join(" ", TokenizeCommandLine(text).Select(QuoteTokenForCommandLine));
+            return string.Join(" ", TokenizeCommandLine(text).Select(token => QuoteTokenForCommandLine(token)));
         }
 
         var builder = new StringBuilder(text.Length);
@@ -640,7 +607,7 @@ public static class CliInputParser
 
             if (current == '\'' &&
                 (index == 0 || char.IsWhiteSpace(text[index - 1]) || text[index - 1] == '=' ||
-                 HasClosingSingleQuote(text, index)))
+                 text[index - 1] == '"'))
             {
                 inSingleQuote = true;
                 backslashRun = 0;
@@ -662,7 +629,7 @@ public static class CliInputParser
 
     private static string JoinArgumentValues(IEnumerable<string> arguments)
     {
-        return string.Join(" ", arguments.Select(QuoteTokenForCommandLine));
+        return string.Join(" ", arguments.Select(token => QuoteTokenForCommandLine(token, forceQuotes: true)));
     }
 
     private static bool LooksLikePath(string value)
@@ -672,6 +639,10 @@ public static class CliInputParser
                value.StartsWith("../", StringComparison.Ordinal) ||
                value.StartsWith(".\\", StringComparison.Ordinal) ||
                value.StartsWith("..\\", StringComparison.Ordinal) ||
+               value.Contains(Path.DirectorySeparatorChar) ||
+               value.Contains(Path.AltDirectorySeparatorChar) ||
+               // Recognize Windows relative paths while running on Unix as well.
+               value.Contains('\\', StringComparison.Ordinal) ||
                (value.Length >= 2 && value[1] == ':' &&
                 (value[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'));
     }
@@ -732,14 +703,14 @@ public static class CliInputParser
         }
     }
 
-    private static string QuoteTokenForCommandLine(string token)
+    private static string QuoteTokenForCommandLine(string token, bool forceQuotes = false)
     {
         if (token.Length == 0)
         {
             return "\"\"";
         }
 
-        var requiresQuotes = token.Any(character => char.IsWhiteSpace(character) || character is '"' or '\'');
+        var requiresQuotes = forceQuotes || token.Any(character => char.IsWhiteSpace(character) || character is '"' or '\'');
         if (!requiresQuotes)
         {
             return token;
