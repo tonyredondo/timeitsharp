@@ -33,6 +33,15 @@ public sealed class DatadogExporterTests
     }
 
     [Fact]
+    public void Session_working_directory_remains_rooted_when_the_path_is_redacted()
+    {
+        var workingDirectory = DatadogExporter.GetSessionWorkingDirectory([Environment.CurrentDirectory]);
+
+        Assert.True(Path.IsPathFullyQualified(workingDirectory));
+        Assert.NotEqual(Utils.RedactedValue, workingDirectory);
+    }
+
+    [Fact]
     public void Dispose_does_not_close_a_borrowed_ambient_session()
     {
         var getOrCreate = TestSessionType.GetMethod(

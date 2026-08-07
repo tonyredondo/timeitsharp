@@ -380,6 +380,13 @@ internal static class Utils
             return false;
         }
 
+        // PWD and OLDPWD are standard shell working-directory variables, not password aliases.
+        // Keep compound names such as DB_PWD sensitive through the substring rule below.
+        if (normalizedName is "PWD" or "OLDPWD")
+        {
+            return false;
+        }
+
         if (normalizedName is "PAT" or "JWT" or "SAS" or "DDTAGS" ||
             normalizedName.EndsWith("PAT", StringComparison.Ordinal) ||
             normalizedName.EndsWith("JWT", StringComparison.Ordinal) ||

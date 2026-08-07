@@ -27,6 +27,9 @@ public sealed class UtilsTests
         Assert.True(Utils.IsSensitiveEnvironmentVariable("client_secret"));
         Assert.True(Utils.IsSensitiveEnvironmentVariable("AUTH_TOKEN"));
         Assert.False(Utils.IsSensitiveEnvironmentVariable("PATH"));
+        Assert.False(Utils.IsSensitiveEnvironmentVariable("PWD"));
+        Assert.False(Utils.IsSensitiveEnvironmentVariable("OLDPWD"));
+        Assert.True(Utils.IsSensitiveEnvironmentVariable("DB_PWD"));
     }
 
     [Fact]

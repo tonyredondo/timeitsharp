@@ -739,7 +739,7 @@ overhead; los valores de secretos se descubren con presupuesto de recorrido. Las
 de JSON/Datadog se registran antes de operaciones de filesystem y se incluyen en la redacción de
 excepciones. Los nombres de conexión/DSN reconocidos, controles ANSI/OSC y excepciones de getters
 se filtran en los sinks integrados. La validación local final pasó: build Release de la solución,
-132 pruebas Common, 60 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
+133 pruebas Common, 60 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
 timeout, callback output, consumo transitivo y aislamiento de assets Datadog v2/v3. `NU1903` de
 `Datadog.Trace` 2.61.0 continúa siendo el advisory exacto documentado; el attach real del profiler
 Linux permanece como aserción específica de CI.
@@ -813,9 +813,11 @@ un nombre combinado del filesystem, disponer extensiones creadas antes de un fal
 resolución y degradar a fallo los outcomes aún abiertos si otro cierre falla. Los snapshots de
 secretos verifican que `Count` coincida con la enumeración real y fallan cerrados ante iteradores
 parciales; la normalización elimina también Unicode Default-Ignorable —incluyendo CGJ y variation
-selectors— sin eliminar acentos combinantes ordinarios.
+selectors— sin eliminar acentos combinantes ordinarios. `PWD` y `OLDPWD` se reconocen como variables
+de directorio —sin dejar de ocultar alias compuestos como `DB_PWD`— y el working directory entregado
+a CI Visibility permanece una ruta absoluta válida aun cuando su texto deba redactarse.
 
-Validación final sobre el HEAD combinado: build Release net6.0–net10.0 con 0 errores; 132/132 pruebas
+Validación final sobre el HEAD combinado: build Release net6.0–net10.0 con 0 errores; 133/133 pruebas
 Common y 60/60 CLI; tres `.nupkg`; consumer Common trimmed/single-file con startup hook y métricas;
 consumer mediante paquete wrapper; aislamiento y hashes v2 frente a Bundle v3; XML, YAML, shell y
 `git diff --check`. Permanece únicamente el advisory aceptado `NU1903` de Datadog.Trace 2.61.0

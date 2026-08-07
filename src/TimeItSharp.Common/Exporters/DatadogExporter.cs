@@ -87,7 +87,7 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
                 _ownsTestSession = _ambientTestSession is null;
                 _testSession = TestSession.InternalGetOrCreate(
                     Utils.SanitizeText(Environment.CommandLine, templateSecrets),
-                    Utils.SanitizeText(Environment.CurrentDirectory, templateSecrets),
+                    GetSessionWorkingDirectory(templateSecrets),
                     "time-it");
             }
             _testModule ??= _testSession.InternalCreateModule(
@@ -363,6 +363,21 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
         {
             throw new AggregateException("One or more Datadog resources could not be closed.", errors);
         }
+    }
+
+    internal static string GetSessionWorkingDirectory(IEnumerable<string> knownSecrets)
+    {
+        var currentDirectory = Environment.CurrentDirectory;
+        var sanitizedDirectory = Utils.SanitizeText(currentDirectory, knownSecrets);
+        if (!string.IsNullOrWhiteSpace(sanitizedDirectory) && Path.IsPathFullyQualified(sanitizedDirectory))
+        {
+            return sanitizedDirectory;
+        }
+
+        // CI Visibility converts this value to a URI relative to the CI source root. A fully
+        // redacted placeholder is intentionally relative and would make that conversion throw.
+        // Fall back to the filesystem root: it remains non-confidential and structurally valid.
+        return Path.GetPathRoot(currentDirectory) ?? Path.DirectorySeparatorChar.ToString();
     }
 
     private void RestoreAmbientContext()
