@@ -85,10 +85,8 @@ if (!string.IsNullOrWhiteSpace(marker))
     await File.WriteAllTextAsync(marker, $"attached={attached}{Environment.NewLine}{detail}");
 }
 Console.WriteLine("package-consumer-target");
-if (OperatingSystem.IsLinux() && !attached)
-{
-    Environment.ExitCode = 42;
-}
+// The parent consumer owns the attach assertion so it can print the complete probe diagnostics
+// without first converting the target process into an unrelated failed data point.
 EOF
 cat > "$work_dir/NuGet.config" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
