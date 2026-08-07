@@ -3,6 +3,7 @@ using TimeItSharp.Common.Assertors;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
 using TimeItSharp.Common.Exporters;
+using TimeItSharp.Common.Results;
 using TimeItSharp.Common.Services;
 
 namespace TimeItSharp.Tests;
@@ -57,22 +58,15 @@ public sealed class ExtensionResolutionTests
     }
 
     [Fact]
-    public void Resolver_rejects_null_and_ambiguous_entries_with_indices()
+    public void Resolver_rejects_null_entries_with_indices()
     {
         var nullException = Assert.Throws<InvalidOperationException>(() =>
             ExtensionResolver.Resolve<IExporter>(new AssemblyLoadInfo[] { null! }));
         Assert.Contains("index 0", nullException.Message);
-
-        var ambiguousException = Assert.Throws<InvalidOperationException>(() =>
-            ExtensionResolver.Resolve<IExporter>(new[]
-            {
-                new AssemblyLoadInfo { Name = "Json", FilePath = "some.dll", Type = typeof(JsonExporter).FullName },
-            }));
-        Assert.Contains("cannot be combined", ambiguousException.Message);
     }
 
     [Fact]
-    public void Config_validation_rejects_selector_combinations_and_type_only_entries()
+    public void Config_validation_rejects_incomplete_file_selectors()
     {
         var config = new Config
         {
@@ -87,8 +81,61 @@ public sealed class ExtensionResolutionTests
 
         Assert.False(config.TryValidate(out var errors));
         Assert.Contains(errors, error => error.Contains("exporters[0].filePath is required", StringComparison.Ordinal));
-        Assert.Contains(errors, error => error.Contains("assertors[0] name cannot be combined", StringComparison.Ordinal));
+        Assert.Contains(errors, error => error.Contains("assertors[0].filePath is required", StringComparison.Ordinal));
         Assert.Contains(errors, error => error.Contains("services[0].type is required", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Resolver_preserves_redundant_selector_precedence()
+    {
+        var inMemoryDeclaration = new AssemblyLoadInfo
+        {
+            Name = "Datadog",
+            InMemoryType = typeof(ConstructorNamedExporter),
+        };
+        var fileDeclaration = new AssemblyLoadInfo
+        {
+            Name = "Json",
+            FilePath = typeof(ConsoleExporter).Assembly.Location,
+            Type = typeof(ConsoleExporter).FullName,
+        };
+
+        var inMemory = Assert.Single(ExtensionResolver.Resolve<IExporter>(new[] { inMemoryDeclaration }));
+        var fromFile = Assert.Single(ExtensionResolver.Resolve<IExporter>(new[] { fileDeclaration }));
+
+        Assert.IsType<ConstructorNamedExporter>(inMemory.Instance);
+        Assert.IsType<ConsoleExporter>(fromFile.Instance);
+        Assert.Empty(Config.GetAssemblyLoadInfoValidationErrors(inMemoryDeclaration, "exporters[0]"));
+        Assert.Empty(Config.GetAssemblyLoadInfoValidationErrors(fileDeclaration, "exporters[0]"));
+        Assert.False(ConfigBuilder.Create().WithExporter(inMemoryDeclaration).Build().EnableDatadog);
+    }
+
+    [Fact]
+    public void Resolver_supports_constructor_initialized_names_without_duplicate_selected_activation()
+    {
+        ConstructorNamedExporter.ConstructionCount = 0;
+
+        var resolved = Assert.Single(ExtensionResolver.Resolve<IExporter>(new[]
+        {
+            new AssemblyLoadInfo { Name = ConstructorNamedExporter.ExtensionName },
+        }));
+
+        Assert.IsType<ConstructorNamedExporter>(resolved.Instance);
+        Assert.Equal(1, ConstructorNamedExporter.ConstructionCount);
+    }
+
+    [Fact]
+    public void Resolver_type_name_fast_path_does_not_construct_unrelated_extensions()
+    {
+        UnrelatedExporter.ConstructionCount = 0;
+
+        var resolved = Assert.Single(ExtensionResolver.Resolve<IExporter>(new[]
+        {
+            new AssemblyLoadInfo { Name = nameof(FastPathExporter) },
+        }));
+
+        Assert.IsType<FastPathExporter>(resolved.Instance);
+        Assert.Equal(0, UnrelatedExporter.ConstructionCount);
     }
 
     [Fact]
@@ -188,6 +235,44 @@ public sealed class ExtensionResolutionTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    public sealed class ConstructorNamedExporter : IExporter
+    {
+        public const string ExtensionName = "constructor-assigned-exporter";
+        public static int ConstructionCount;
+        private readonly string _name;
+
+        public ConstructorNamedExporter()
+        {
+            ConstructionCount++;
+            _name = ExtensionName;
+        }
+
+        public string Name => _name;
+        public bool Enabled => true;
+        public void Initialize(InitOptions options) { }
+        public void Export(TimeItSharp.Common.Results.TimeitResult results) { }
+    }
+
+    public sealed class FastPathExporter : IExporter
+    {
+        public string Name => nameof(FastPathExporter);
+        public bool Enabled => true;
+        public void Initialize(InitOptions options) { }
+        public void Export(TimeItSharp.Common.Results.TimeitResult results) { }
+    }
+
+    public sealed class UnrelatedExporter : IExporter
+    {
+        public static int ConstructionCount;
+
+        public UnrelatedExporter() => ConstructionCount++;
+
+        public string Name => "unrelated-exporter";
+        public bool Enabled => true;
+        public void Initialize(InitOptions options) { }
+        public void Export(TimeItSharp.Common.Results.TimeitResult results) { }
     }
 
 }

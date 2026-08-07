@@ -87,12 +87,6 @@ internal static class ExtensionResolver
             return CreateInstance<T>(inMemoryType, loadInfo, "in-memory type");
         }
 
-        if (!string.IsNullOrWhiteSpace(loadInfo.Name) &&
-            BuiltInExtensionAliases.TryResolve(typeof(T), loadInfo.Name, out var builtInType))
-        {
-            return CreateInstance<T>(builtInType, loadInfo, $"built-in alias '{loadInfo.Name}'");
-        }
-
         if (!string.IsNullOrWhiteSpace(loadInfo.FilePath))
         {
             var assemblyPath = ExtensionIdentity.NormalizePath(loadInfo.FilePath, baseDirectory);
@@ -106,12 +100,17 @@ internal static class ExtensionResolver
             return CreateInstance<T>(extensionType!, loadInfo, $"'{assemblyPath}'");
         }
 
+        if (!string.IsNullOrWhiteSpace(loadInfo.Name) &&
+            BuiltInExtensionAliases.TryResolve(typeof(T), loadInfo.Name, out var builtInType))
+        {
+            return CreateInstance<T>(builtInType, loadInfo, $"built-in alias '{loadInfo.Name}'");
+        }
+
         // Name resolution for custom extensions is intentionally exact. Built-in aliases are
-        // handled above and are case-insensitive by contract.
-        // Do not run constructors for every assignable extension merely to discover its Name.
-        // Probe the property on an uninitialized instance first, then activate only exact matches.
-        // Constructors remain the authoritative path for the selected extension and can still
-        // report their own failure without causing side effects in unrelated extensions.
+        // handled above and are case-insensitive by contract. First use discovery paths that do
+        // not run constructors. This avoids side effects for the common cases where Name is a
+        // constant/computed property or the requested name is the CLR type name.
+        var candidateTypes = new List<Type>();
         var matchingTypes = new List<Type>();
         foreach (var assembly in loadContext.Assemblies)
         {
@@ -137,6 +136,7 @@ internal static class ExtensionResolver
                     continue;
                 }
 
+                candidateTypes.Add(type);
                 if (string.Equals(typeInfo.Name, loadInfo.Name, StringComparison.Ordinal) ||
                     string.Equals(typeInfo.FullName, loadInfo.Name, StringComparison.Ordinal))
                 {
@@ -154,9 +154,8 @@ internal static class ExtensionResolver
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
                 {
-                    // A custom Name getter may depend on constructor state. Such an extension
-                    // must use FilePath+Type (or an in-memory type) rather than causing unrelated
-                    // constructors to run during name discovery.
+                    // The getter depends on constructor state. The compatibility fallback below
+                    // will activate candidates only if no side-effect-free match was found.
                 }
             }
         }
@@ -180,9 +179,31 @@ internal static class ExtensionResolver
                 activationError);
         }
 
+        // Historically, Name could be assigned by the constructor. There is no general way to
+        // observe such a value without activation, so retain that compatibility as a last resort.
+        // Stop at the first match and return that same instance: the selected constructor runs
+        // once, and constructors are not run at all when one of the fast paths above succeeds.
+        foreach (var candidateType in candidateTypes.Distinct())
+        {
+            try
+            {
+                var instance = CreateInstance<T>(candidateType, loadInfo, $"custom name '{loadInfo.Name}'");
+                if (string.Equals(instance.Name, loadInfo.Name, StringComparison.Ordinal))
+                {
+                    return instance;
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                // A candidate that cannot be activated (or whose Name cannot be read) is not a
+                // match. Do not let unrelated extensions prevent discovery of a later match.
+            }
+        }
+
         throw new InvalidOperationException(
             $"Could not find {typeof(T).Name} extension named '{loadInfo.Name}'.");
     }
+
 
     [RequiresUnreferencedCode("Creates extension instances through reflection.")]
     private static T CreateInstance<T>(Type extensionType, AssemblyLoadInfo loadInfo, string source)

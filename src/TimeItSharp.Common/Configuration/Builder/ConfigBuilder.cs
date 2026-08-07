@@ -95,10 +95,7 @@ public sealed class ConfigBuilder
             // exporter declaration behind that the modern declaration-based resolver would treat
             // as an explicit Datadog enablement.
             _configuration.Exporters.RemoveAll(extension =>
-                extension is not null &&
-                (extension.InMemoryType == typeof(DatadogExporter) ||
-                 BuiltInExtensionAliases.IsAlias(typeof(DatadogExporter), extension.Name) ||
-                 string.Equals(extension.Type, typeof(DatadogExporter).FullName, StringComparison.Ordinal)));
+                extension is not null && SelectsExtensionType(extension, typeof(DatadogExporter)));
         }
 
         return this;
@@ -114,8 +111,9 @@ public sealed class ConfigBuilder
     /// <returns>Configuration builder instance</returns>
     public ConfigBuilder ClearScenarios()
     {
-        EnsureConfigurationStructure();
-        _configuration.Scenarios.Clear();
+        // Clear methods are repair operations: replace the collection so they also recover
+        // from null collections and malformed entries without validating those entries first.
+        _configuration.Scenarios = new();
         return this;
     }
 
@@ -317,8 +315,7 @@ public sealed class ConfigBuilder
     /// <summary>Clears the exporters list.</summary>
     public ConfigBuilder ClearExporters()
     {
-        EnsureConfigurationStructure();
-        _configuration.Exporters.Clear();
+        _configuration.Exporters = new();
         _configuration.EnableDatadog = false;
         return this;
     }
@@ -394,8 +391,7 @@ public sealed class ConfigBuilder
     /// <summary>Clears the assertors list.</summary>
     public ConfigBuilder ClearAssertors()
     {
-        EnsureConfigurationStructure();
-        _configuration.Assertors.Clear();
+        _configuration.Assertors = new();
         return this;
     }
 
@@ -463,8 +459,7 @@ public sealed class ConfigBuilder
     /// <summary>Clears the services list.</summary>
     public ConfigBuilder ClearServices()
     {
-        EnsureConfigurationStructure();
-        _configuration.Services.Clear();
+        _configuration.Services = new();
         return this;
     }
 
@@ -757,16 +752,6 @@ public sealed class ConfigBuilder
                 nameof(extension));
         }
 
-        if (!string.IsNullOrWhiteSpace(extension.Name) &&
-            BuiltInExtensionAliases.TryResolve(extensionContract, extension.Name, out var builtInType) &&
-            extension.InMemoryType is not null &&
-            extension.InMemoryType != builtInType)
-        {
-            throw new ArgumentException(
-                $"{propertyName} entry '{extension.Name}' does not match its in-memory type.",
-                nameof(extension));
-        }
-
         if (!extensions.Any(existing =>
                 ExtensionIdentity.AreEquivalent(existing, extension, extensionContract, _configuration.Path)))
         {
@@ -774,14 +759,27 @@ public sealed class ConfigBuilder
         }
 
         if (extensionContract == typeof(IExporter) &&
-            (extension.InMemoryType == typeof(DatadogExporter) ||
-             BuiltInExtensionAliases.IsAlias(typeof(DatadogExporter), extension.Name) ||
-             string.Equals(extension.Type, typeof(DatadogExporter).FullName, StringComparison.Ordinal)))
+            SelectsExtensionType(extension, typeof(DatadogExporter)))
         {
             _configuration.EnableDatadog = true;
         }
 
         return this;
+    }
+
+    private static bool SelectsExtensionType(AssemblyLoadInfo extension, Type extensionType)
+    {
+        if (extension.InMemoryType is not null)
+        {
+            return extension.InMemoryType == extensionType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(extension.FilePath))
+        {
+            return string.Equals(extension.Type, extensionType.FullName, StringComparison.Ordinal);
+        }
+
+        return BuiltInExtensionAliases.IsAlias(extensionType, extension.Name);
     }
 
     [UnconditionalSuppressMessage("SingleFile", "IL3000:Avoid accessing Assembly file path when publishing as a single file", Justification = "Case is being handled")]

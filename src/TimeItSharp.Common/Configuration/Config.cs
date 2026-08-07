@@ -7,6 +7,11 @@ public class Config : ProcessData
 {
     internal const int MaxIterations = 100_000;
     internal const int MaxScenarioEntries = 1_024;
+    // CancellationTokenSource.CancelAfter(TimeSpan) supports delays up to
+    // uint.MaxValue - 1 milliseconds. Keep the configured values within that range;
+    // command timeouts can also add ScenarioProcessor's short fallback grace period.
+    internal const int MaxTimeoutSeconds = 4_294_967;
+    internal const int MaxDurationMinutes = 71_582;
     private const int MaxConfigurationStringLength = 64 * 1024;
     private const int MaxConfigurationFileBytes = 16 * 1024 * 1024;
     private const int MaxOptionEntries = 1_024;
@@ -165,9 +170,6 @@ public class Config : ProcessData
         ValidateBoundedString(Path, "path", errors);
         ValidateBoundedString(FileName, "fileName", errors);
         ValidateBoundedString(Name, "name", errors);
-        ValidateBoundedString(ProcessName, "configuration.processName", errors);
-        ValidateBoundedString(ProcessArguments, "configuration.processArguments", errors);
-        ValidateBoundedString(WorkingDirectory, "configuration.workingDirectory", errors);
 
         if (EnableMetrics && MetricsFrequencyInMs <= 0)
         {
@@ -188,9 +190,9 @@ public class Config : ProcessData
         {
             errors.Add("maximumDurationInMinutes must be greater than zero");
         }
-        else if (MaximumDurationInMinutes > TimeSpan.MaxValue.TotalMinutes)
+        else if (MaximumDurationInMinutes > MaxDurationMinutes)
         {
-            errors.Add("maximumDurationInMinutes is too large");
+            errors.Add($"maximumDurationInMinutes cannot exceed {MaxDurationMinutes}");
         }
 
         if (EvaluationInterval <= 0)
@@ -366,36 +368,16 @@ public class Config : ProcessData
             errors.Add($"{propertyName}.name cannot be empty");
         }
 
-        if (hasInMemoryType)
-        {
-            // Fluent type registrations carry both the in-memory type and its assembly metadata
-            // for single-file/diagnostic scenarios. Name is still ambiguous and is rejected.
-            if (hasName)
-            {
-                errors.Add($"{propertyName} cannot combine name with inMemoryType");
-            }
-
-            if (hasFilePath != hasType)
-            {
-                errors.Add($"{propertyName}.type and filePath must be specified together when inMemoryType is set");
-            }
-
-            return errors;
-        }
-
-        if (!hasName && !hasFilePath && !hasType)
+        if (!hasName && !hasFilePath && !hasType && !hasInMemoryType)
         {
             // Preserve the established diagnostic for an entirely empty entry.
             errors.Add($"{propertyName} must specify name or filePath");
         }
-        else if (hasName)
-        {
-            if (hasFilePath || hasType)
-            {
-                errors.Add($"{propertyName} name cannot be combined with filePath or type");
-            }
-        }
-        else if (hasFilePath && !hasType)
+
+        // Selector precedence is intentionally backward compatible: inMemoryType wins over
+        // filePath+type, which wins over name. Redundant lower-priority selectors are accepted,
+        // but assembly metadata must still be structurally complete when supplied.
+        if (hasFilePath && !hasType)
         {
             errors.Add($"{propertyName}.type is required when filePath is specified");
         }
@@ -520,6 +502,10 @@ public class Config : ProcessData
             {
                 errors.Add($"{prefix}.timeout.maxDuration cannot be negative");
             }
+            else if (processData.Timeout.MaxDuration > MaxTimeoutSeconds)
+            {
+                errors.Add($"{prefix}.timeout.maxDuration cannot exceed {MaxTimeoutSeconds}");
+            }
         }
 
         if (processData.Tags is null)
@@ -614,9 +600,9 @@ public class Config : ProcessData
             // bypass the configuration size limit.
             fStream = File.OpenRead(filePath);
         }
-        catch (FileNotFoundException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            throw new FileNotFoundException("Configuration file not found.", filePath);
+            throw new FileNotFoundException("Configuration file not found.", filePath, ex);
         }
 
         using (fStream)

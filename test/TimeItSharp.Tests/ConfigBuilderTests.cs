@@ -113,4 +113,30 @@ public sealed class ConfigBuilderTests
         Assert.Single(builder.Build().Exporters);
     }
 
+    [Fact]
+    public void Clear_methods_repair_null_and_malformed_collections_without_prevalidation()
+    {
+        var config = new Config
+        {
+            Scenarios = null!,
+            Exporters = new List<AssemblyLoadInfo> { null! },
+            Assertors = null!,
+            Services = new List<AssemblyLoadInfo> { new() },
+            EnableDatadog = true,
+        };
+
+        var built = new ConfigBuilder(config)
+            .ClearScenarios()
+            .ClearExporters()
+            .ClearAssertors()
+            .ClearServices()
+            .Build();
+
+        Assert.Empty(built.Scenarios);
+        Assert.Empty(built.Exporters);
+        Assert.Empty(built.Assertors);
+        Assert.Empty(built.Services);
+        Assert.False(built.EnableDatadog);
+    }
+
 }

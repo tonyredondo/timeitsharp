@@ -161,6 +161,84 @@ public sealed class ConfigTests
         Assert.Throws<ArgumentException>(() => config.Validate());
     }
 
+    [Fact]
+    public void LoadConfiguration_missing_parent_directory_throws_FileNotFoundException()
+    {
+        var filePath = Path.Combine(
+            Path.GetTempPath(),
+            $"timeitsharp-missing-directory-{Guid.NewGuid():N}",
+            "config.json");
+
+        var exception = Assert.Throws<FileNotFoundException>(() => Config.LoadConfiguration(filePath));
+
+        Assert.Equal(filePath, exception.FileName);
+    }
+
+    [Fact]
+    public void Validation_reports_root_string_length_diagnostics_once()
+    {
+        var overlong = new string('x', (64 * 1024) + 1);
+        var config = new Config
+        {
+            Count = 1,
+            EnableMetrics = false,
+            ProcessName = overlong,
+            ProcessArguments = overlong,
+            WorkingDirectory = overlong,
+        };
+        config.Scenarios.Add(new Scenario { Name = "scenario" });
+
+        var errors = config.GetValidationErrors();
+
+        Assert.Equal(1, errors.Count(error => error == "configuration.processName cannot exceed 65536 characters"));
+        Assert.Equal(1, errors.Count(error => error == "configuration.processArguments cannot exceed 65536 characters"));
+        Assert.Equal(1, errors.Count(error => error == "configuration.workingDirectory cannot exceed 65536 characters"));
+    }
+
+    [Fact]
+    public void Validation_accepts_maximum_runtime_supported_deadlines()
+    {
+        var config = new Config
+        {
+            Count = 1,
+            EnableMetrics = false,
+            ProcessName = "echo",
+            MaximumDurationInMinutes = Config.MaxDurationMinutes,
+        };
+        config.Timeout.MaxDuration = Config.MaxTimeoutSeconds;
+        config.Scenarios.Add(new Scenario
+        {
+            Name = "scenario",
+            Timeout = new TimeItSharp.Common.Configuration.Timeout { MaxDuration = Config.MaxTimeoutSeconds },
+        });
+
+        Assert.True(config.TryValidate(out var errors));
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validation_rejects_deadlines_above_runtime_supported_CancelAfter_range()
+    {
+        var config = new Config
+        {
+            Count = 1,
+            EnableMetrics = false,
+            ProcessName = "echo",
+            MaximumDurationInMinutes = Config.MaxDurationMinutes + 1,
+        };
+        config.Timeout.MaxDuration = Config.MaxTimeoutSeconds + 1;
+        config.Scenarios.Add(new Scenario
+        {
+            Name = "scenario",
+            Timeout = new TimeItSharp.Common.Configuration.Timeout { MaxDuration = Config.MaxTimeoutSeconds + 1 },
+        });
+
+        Assert.False(config.TryValidate(out var errors));
+        Assert.Contains($"maximumDurationInMinutes cannot exceed {Config.MaxDurationMinutes}", errors);
+        Assert.Contains($"configuration.timeout.maxDuration cannot exceed {Config.MaxTimeoutSeconds}", errors);
+        Assert.Contains($"scenarios[0].timeout.maxDuration cannot exceed {Config.MaxTimeoutSeconds}", errors);
+    }
+
     private static string CreateTemporaryFile(string contents)
     {
         var filePath = Path.Combine(Path.GetTempPath(), $"timeitsharp-config-{Guid.NewGuid():N}.json");
