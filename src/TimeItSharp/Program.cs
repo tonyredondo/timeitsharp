@@ -17,8 +17,14 @@ var argument = new Argument<string[]>("configuration file or process name", "The
 {
     Arity = ArgumentArity.ZeroOrMore,
 };
-var configurationPath = new Option<string?>("--config", "Explicitly select a JSON configuration file");
-var command = new Option<string?>("--command", "Explicitly select a process command");
+var configurationPath = new Option<string?>("--config", "Explicitly select a JSON configuration file")
+{
+    Arity = ArgumentArity.ExactlyOne,
+};
+var command = new Option<string?>("--command", "Explicitly select a process command")
+{
+    Arity = ArgumentArity.ExactlyOne,
+};
 var templateVariables = new Option<TemplateVariables>(
     "--variable",
     isDefault: true,
@@ -96,6 +102,16 @@ root.SetHandler(async (context) =>
     CliInput cliInput;
     try
     {
+        if (string.Equals(configurationPathValue, CliInputParser.MissingOptionValue, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("--config requires exactly one value.");
+        }
+
+        if (string.Equals(commandValue, CliInputParser.MissingOptionValue, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("--command requires exactly one value.");
+        }
+
         if (configurationPathValue is not null && positionalArguments.Length != 0)
         {
             throw new ArgumentException("--config cannot be combined with a positional command.");

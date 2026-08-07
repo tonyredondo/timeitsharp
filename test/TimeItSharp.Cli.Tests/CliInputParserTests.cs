@@ -6,20 +6,18 @@ namespace TimeItSharp.Cli.Tests;
 public sealed class CliInputParserTests
 {
     [Fact]
-    public void JsonSuffixInCommandArgumentsDoesNotSelectConfigurationMode()
+    public void JsonSuffixOnACompleteLegacyValueSelectsConfigurationMode()
     {
-        var input = CliInputParser.Classify("echo hello.json");
+        var input = CliInputParser.Classify("echo path/hello.json");
 
-        Assert.Equal(CliInputKind.Command, input.Kind);
-        var process = CliInputParser.ParseProcessCommand(input.Value);
-        Assert.Equal("echo", process.ProcessName);
-        Assert.Equal("hello.json", process.ProcessArguments);
+        Assert.Equal(CliInputKind.Configuration, input.Kind);
+        Assert.Equal("echo path/hello.json", input.Value);
     }
 
     [Fact]
-    public void ConfigLikeSwitchInCommandArgumentsDoesNotSelectConfigurationMode()
+    public void ExplicitCommandOverridesAJsonSuffixInCommandArguments()
     {
-        var input = CliInputParser.Classify("echo --config foo.json");
+        var input = CliInputParser.Classify(null, commandValue: "echo --config foo.json");
 
         Assert.Equal(CliInputKind.Command, input.Kind);
         Assert.Equal("echo --config foo.json", input.Value);
@@ -45,6 +43,17 @@ public sealed class CliInputParserTests
         var input = CliInputParser.Classify(path);
 
         Assert.Equal(CliInputKind.Configuration, input.Kind);
+    }
+
+    [Fact]
+    public void MissingBareRelativeJsonPathWithSpacesRemainsConfiguration()
+    {
+        var path = $"missing config {Guid.NewGuid():N}.json";
+
+        var input = CliInputParser.Classify(path);
+
+        Assert.Equal(CliInputKind.Configuration, input.Kind);
+        Assert.Equal(path, input.Value);
     }
 
     [Fact]
@@ -181,6 +190,55 @@ public sealed class CliInputParserTests
         finally
         {
             File.Delete(combinedPath);
+        }
+    }
+
+    [Fact]
+    public void QuotedArgvSerializationIgnoresAnAmbientCompleteFilename()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var executable = $"capture-{Guid.NewGuid():N}";
+        var commandLine = $"\"{executable}\" \"arg\"";
+        File.WriteAllText(commandLine, string.Empty);
+        try
+        {
+            var process = CliInputParser.ParseProcessCommand(commandLine);
+
+            Assert.Equal(executable, process.ProcessName);
+            Assert.Equal("\"arg\"", process.ProcessArguments);
+        }
+        finally
+        {
+            File.Delete(commandLine);
+        }
+    }
+
+    [Fact]
+    public void QuotedArgvSerializationIgnoresAnAmbientPrefixFilename()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var executable = $"capture-{Guid.NewGuid():N}";
+        var ambientPrefix = $"\"{executable}\"";
+        File.WriteAllText(ambientPrefix, string.Empty);
+        try
+        {
+            var commandLine = $"{ambientPrefix} \"arg\"";
+            var process = CliInputParser.ParseProcessCommand(commandLine);
+
+            Assert.Equal(executable, process.ProcessName);
+            Assert.Equal("\"arg\"", process.ProcessArguments);
+        }
+        finally
+        {
+            File.Delete(ambientPrefix);
         }
     }
 

@@ -35,6 +35,7 @@ public static class CliInputParser
 {
     private const int MaximumCommandLineCharacters = 1024 * 1024;
     private const int MaximumExecutablePathProbes = 256;
+    internal const string MissingOptionValue = "\u001Ftimeitsharp-missing-option-value";
     /// <summary>
     /// Classifies a primary input as a configuration path or a process command.
     /// </summary>
@@ -89,17 +90,13 @@ public static class CliInputParser
             throw new ArgumentException("A configuration file, process name, or command is required.", nameof(argumentValue));
         }
 
-        // File.Exists must be checked against the complete argument before tokenizing. A path
-        // containing spaces is one shell argument, while "echo hello.json" is a command line.
-        // This preserves existing configuration paths with spaces without making a suffix in an
-        // argument select configuration mode.
+        // A .json suffix on the complete legacy value is the original configuration contract,
+        // even when the file is missing or the value contains spaces. Consequently a legacy
+        // command string such as "echo path/file.json" is configuration input; use --command or
+        // -- to select command mode explicitly. Existing extensionless JSON files remain inferred.
         var completeValue = argumentValue.Trim();
-        if (IsConfigurationPath(completeValue) &&
-            (File.Exists(completeValue) || LooksLikePath(completeValue)))
+        if (IsConfigurationPath(completeValue))
         {
-            // A missing absolute/relative path with spaces is still a legacy configuration
-            // input. Without this probe, tokenizing it first would turn the path prefix into an
-            // executable and hide the useful "configuration not found" diagnostic.
             return new CliInput(CliInputKind.Configuration, completeValue, IsExplicit: false);
         }
 
@@ -137,12 +134,25 @@ public static class CliInputParser
             }
         }
 
-        if (separator < 0)
+        var prefixCount = separator < 0 ? args.Count : separator;
+        var normalized = new List<string>(args.Take(prefixCount));
+        for (var index = 0; index < normalized.Count; index++)
         {
-            return args.ToArray();
+            if ((string.Equals(normalized[index], "--command", StringComparison.Ordinal) ||
+                 string.Equals(normalized[index], "--config", StringComparison.Ordinal)) &&
+                (index + 1 >= normalized.Count || normalized[index + 1].StartsWith("-", StringComparison.Ordinal)))
+            {
+                // Do not let a missing scalar value consume the next TimeItSharp option. The
+                // explicit empty value is validated by the handler, while --help remains help.
+                normalized[index] += "=" + MissingOptionValue;
+            }
         }
 
-        var normalized = new List<string>(args.Take(separator));
+        if (separator < 0)
+        {
+            return normalized.ToArray();
+        }
+
         var commandTokens = args.Skip(separator + 1).ToArray();
         // Values following -- are discrete argv values, even when there is only one. Serialize
         // every boundary explicitly so later command parsing cannot reinterpret them based on
@@ -159,6 +169,11 @@ public static class CliInputParser
             var commandValue = string.Equals(normalized[commandIndex], "--command", StringComparison.Ordinal)
                 ? string.Empty
                 : normalized[commandIndex][("--command=".Length)..];
+            if (string.Equals(commandValue, MissingOptionValue, StringComparison.Ordinal))
+            {
+                commandValue = string.Empty;
+            }
+
             if (string.Equals(normalized[commandIndex], "--command", StringComparison.Ordinal))
             {
                 if (commandIndex + 1 < normalized.Count &&
@@ -232,7 +247,11 @@ public static class CliInputParser
         // is not present in an argv value by the time this method runs, so recognize an existing
         // complete path before treating whitespace as the command/argument boundary.
         var completePath = commandLine.Trim();
-        if (File.Exists(completePath))
+        // NormalizeArguments starts an explicitly serialized argv command with a quote. Its quote
+        // characters are syntax, never part of an ambient executable filename, so filesystem
+        // probing must not reinterpret the serialized command as one complete or prefixed path.
+        var isSerializedArgv = completePath.StartsWith("\"", StringComparison.Ordinal);
+        if (!isSerializedArgv && File.Exists(completePath))
         {
             return new ProcessCommand(completePath, string.Empty);
         }
@@ -240,7 +259,9 @@ public static class CliInputParser
         // The outer shell removes quotes from `--command "path with spaces --arg"`. Recover the
         // executable boundary by choosing the longest existing file prefix before tokenizing.
         // This keeps the documented quoted-option form equivalent to retaining inner quotes.
-        var firstNonWhitespace = commandLine.IndexOfAny([' ', '\t', '\r', '\n']);
+        var firstNonWhitespace = isSerializedArgv
+            ? -1
+            : commandLine.IndexOfAny([' ', '\t', '\r', '\n']);
         var longestPath = string.Empty;
         var longestPathIndex = -1;
         var pathProbeCount = 0;
@@ -645,21 +666,6 @@ public static class CliInputParser
     private static string JoinArgumentValues(IEnumerable<string> arguments)
     {
         return string.Join(" ", arguments.Select(token => QuoteTokenForCommandLine(token, forceQuotes: true)));
-    }
-
-    private static bool LooksLikePath(string value)
-    {
-        return Path.IsPathRooted(value) ||
-               value.StartsWith("./", StringComparison.Ordinal) ||
-               value.StartsWith("../", StringComparison.Ordinal) ||
-               value.StartsWith(".\\", StringComparison.Ordinal) ||
-               value.StartsWith("..\\", StringComparison.Ordinal) ||
-               value.Contains(Path.DirectorySeparatorChar) ||
-               value.Contains(Path.AltDirectorySeparatorChar) ||
-               // Recognize Windows relative paths while running on Unix as well.
-               value.Contains('\\', StringComparison.Ordinal) ||
-               (value.Length >= 2 && value[1] == ':' &&
-                (value[0] is >= 'A' and <= 'Z' or >= 'a' and <= 'z'));
     }
 
     /// <summary>
