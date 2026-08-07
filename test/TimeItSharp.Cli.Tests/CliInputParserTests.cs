@@ -213,6 +213,30 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
+    public void ExplicitCommandPrefixWithTerminatedArgIgnoresAmbientCombinedFilename()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var executable = $"./capture-{Guid.NewGuid():N}";
+        var commandLine = $"{executable} \"arg\"";
+        File.WriteAllText(commandLine, string.Empty);
+        try
+        {
+            var process = CliInputParser.ParseProcessCommand(commandLine);
+
+            Assert.Equal(executable, process.ProcessName);
+            Assert.Equal("\"arg\"", process.ProcessArguments);
+        }
+        finally
+        {
+            File.Delete(commandLine);
+        }
+    }
+
+    [Fact]
     public void ExplicitExecutablePathWithSpacesStillUsesLongestExistingPrefix()
     {
         var executable = Path.Combine(Path.GetTempPath(),

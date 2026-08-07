@@ -250,8 +250,11 @@ public static class CliInputParser
         // NormalizeArguments starts an explicitly serialized argv command with a quote. Its quote
         // characters are syntax, never part of an ambient executable filename, so filesystem
         // probing must not reinterpret the serialized command as one complete or prefixed path.
+        // The same applies when an explicit --command prefix has quoted argv appended after --.
+        var containsQuoteBoundary = completePath.IndexOfAny(['"', '\'']) >= 0;
         var isSerializedArgv = completePath.StartsWith("\"", StringComparison.Ordinal);
-        var canProbeExplicitPath = !isSerializedArgv && IsExplicitPathCandidate(completePath);
+        var canProbeExplicitPath = !isSerializedArgv && !containsQuoteBoundary &&
+                                   IsExplicitPathCandidate(completePath);
         if (canProbeExplicitPath && File.Exists(completePath))
         {
             return new ProcessCommand(completePath, string.Empty);
