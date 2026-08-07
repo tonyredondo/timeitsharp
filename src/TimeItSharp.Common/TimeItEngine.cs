@@ -84,6 +84,7 @@ public static class TimeItEngine
         var resolvedExporters = new List<IExporter>();
         var initializedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
         var disposedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+        var successfullyDisposedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
         var lifecycleErrors = false;
         var beforeAllAttempted = false;
         var beforeAllCompleted = false;
@@ -449,6 +450,7 @@ public static class TimeItEngine
                 try
                 {
                     disposable.Dispose();
+                    successfullyDisposedExporters.Add(exporter);
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
@@ -457,8 +459,41 @@ public static class TimeItEngine
                     AnsiConsole.MarkupLine("[red]Error disposing exporter '{0}':[/]",
                         Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
                     AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                    if (outcomeAware)
+                    {
+                        RenotifyOpenOutcomeAwareExportersFalse();
+                    }
                 }
             }
+        }
+
+        void RenotifyOpenOutcomeAwareExportersFalse()
+        {
+            var seen = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+            foreach (var exporter in resolvedExporters)
+            {
+                if (!seen.Add(exporter) ||
+                    successfullyDisposedExporters.Contains(exporter) ||
+                    !initializedExporters.Contains(exporter) ||
+                    exporter is not IRunOutcomeAwareExporter outcomeAwareExporter)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    outcomeAwareExporter.SetRunOutcome(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    RecordExporterFinalizationError(exporter, ex);
+                }
+            }
+
+            // An exporter whose Dispose already completed successfully cannot safely be called
+            // again. Consequently, a later outcome-aware Dispose failure cannot revise the final
+            // close performed by that already-disposed exporter; reverse disposal minimizes this
+            // window for exporters declared earlier (including the primary Datadog exporter).
         }
 
         void CleanScenarios()

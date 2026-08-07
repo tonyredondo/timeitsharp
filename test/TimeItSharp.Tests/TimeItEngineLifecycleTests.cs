@@ -351,6 +351,23 @@ public sealed class TimeItEngineLifecycleTests
         Assert.Equal(new[] { "outcome:False", "dispose" }, OutcomeRecordingExporter.Events);
     }
 
+
+    [Fact]
+    public async Task Outcome_aware_dispose_failure_renotifies_still_open_exporters_with_failure()
+    {
+        OutcomeRecordingExporter.Reset();
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(OutcomeRecordingExporter) });
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(ThrowingOutcomeDisposeExporter) });
+
+        var exitCode = await TimeItEngine.RunAsync(config);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(
+            new[] { "outcome:True", "outcome:False", "dispose" },
+            OutcomeRecordingExporter.Events);
+    }
+
     [Fact]
     public async Task Outcome_setter_failure_renotifies_previous_exporters_with_failure()
     {
@@ -626,6 +643,22 @@ public sealed class TimeItEngineLifecycleTests
         public void Dispose()
         {
         }
+    }
+
+    public sealed class ThrowingOutcomeDisposeExporter : IExporter, IRunOutcomeAwareExporter, IDisposable
+    {
+        public string Name => nameof(ThrowingOutcomeDisposeExporter);
+        public bool Enabled => false;
+        public void Initialize(InitOptions options)
+        {
+        }
+        public void Export(TimeitResult results)
+        {
+        }
+        public void SetRunOutcome(bool succeeded)
+        {
+        }
+        public void Dispose() => throw new InvalidOperationException("outcome-aware dispose failed");
     }
 
 }
