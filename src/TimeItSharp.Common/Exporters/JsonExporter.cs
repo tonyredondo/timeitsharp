@@ -131,6 +131,10 @@ public sealed class JsonExporter : IExporter
                 {
                     File.SetUnixFileMode(fullOutputFile, destinationMode.Value);
                 }
+#else
+                // NET6 has no portable managed API for reading exact Unix permission bits, and
+                // native stat layouts differ across supported Unix platforms. Keep the atomic
+                // rename and the restrictive 0600 mode instead of using an unsafe layout guess.
 #endif
             }
 

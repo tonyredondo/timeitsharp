@@ -451,18 +451,36 @@ internal static class Utils
             return string.Empty;
         }
 
+        // Normalize terminal controls before recognizing security-sensitive structure. Otherwise
+        // CR or bidi/format controls can split a key such as Author\rization and bypass the
+        // Authorization/assignment expressions, while disappearing only at the terminal sink.
+        var safeInput = StripTerminalControls(value);
+        if (safeInput.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        IReadOnlyList<string>? knownSecrets = null;
+        if (knownSecretValues is not null &&
+            !TrySnapshotKnownSecrets(knownSecretValues, out knownSecrets))
+        {
+            // An incomplete secret set is unsafe: a value beyond the cap or after a throwing
+            // enumerator could otherwise be emitted verbatim.
+            return RedactedValue;
+        }
+
         // Assignment regexes are intentionally conservative, but a target can still emit a very
         // long chain such as A=A=A=.... Reject pathological metadata before regex backtracking or
         // nested assignment passes can consume unbounded CPU.
-        if (value.Length > MaxExportLogCharacters ||
-            value.Count(character => character is '=' or ':') > MaxSanitizationAssignmentSeparators)
+        if (safeInput.Length > MaxExportLogCharacters ||
+            safeInput.Count(character => character is '=' or ':') > MaxSanitizationAssignmentSeparators)
         {
             return RedactedValue;
         }
 
-        // Handle authorization headers before generic assignment redaction so the scheme and the
-        // credential token are replaced together.
-        var sanitized = AuthorizationValue.Replace(value, match =>
+        // Handle authorization headers before generic assignment redaction so the complete field
+        // value is removed independently of its authentication scheme.
+        var sanitized = AuthorizationValue.Replace(safeInput, match =>
             match.Groups["key"].Value + match.Groups["separator"].Value + RedactedValue);
 
         // Nested build arguments can hide more than one assignment (foo=Password=...). Repeat a
@@ -479,7 +497,7 @@ internal static class Utils
                 return match.Groups["key"].Value + match.Groups["separator"].Value + RedactedValue;
             }
 
-            var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecretValues, nestedAssignmentDepth);
+            var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecrets, nestedAssignmentDepth);
             return nestedValue is null
                 ? match.Value
                 : match.Groups["key"].Value + match.Groups["separator"].Value + nestedValue;
@@ -490,7 +508,7 @@ internal static class Utils
             var key = TrimMetadataKey(match.Groups["key"].Value);
             if (!IsSensitiveEnvironmentVariable(key))
             {
-                var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecretValues, nestedAssignmentDepth);
+                var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecrets, nestedAssignmentDepth);
                 return nestedValue is null
                     ? match.Value
                     : match.Groups["key"].Value + match.Groups["separator"].Value + nestedValue;
@@ -511,7 +529,7 @@ internal static class Utils
             var key = TrimMetadataKey(match.Groups["key"].Value);
             if (!IsSensitiveEnvironmentVariable(key))
             {
-                var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecretValues, nestedAssignmentDepth);
+                var nestedValue = SanitizeNestedAssignmentValue(match.Groups["value"].Value, knownSecrets, nestedAssignmentDepth);
                 return nestedValue is null
                     ? match.Value
                     : match.Groups["prefix"].Value + match.Groups["key"].Value +
@@ -544,10 +562,12 @@ internal static class Utils
         sanitized = UriUserInfo.Replace(sanitized, match =>
             match.Groups["prefix"].Value + RedactedValue + match.Groups["suffix"].Value);
 
-        if (knownSecretValues is not null)
+        if (knownSecrets is not null)
         {
-            foreach (var secret in EnumerateSafely(knownSecretValues, MaxResultCollectionItems)
-                         .Where(item => !string.IsNullOrEmpty(item) && item.Length <= MaxExportLogCharacters)
+            foreach (var secret in knownSecrets
+                         .Where(item => !string.IsNullOrEmpty(item))
+                         .Select(StripTerminalControls)
+                         .Where(item => item.Length > 0 && item.Length <= MaxExportLogCharacters)
                          .Distinct(StringComparer.Ordinal)
                          .OrderByDescending(item => item.Length))
             {
@@ -561,7 +581,7 @@ internal static class Utils
                 sanitized = ReplaceSecretBounded(
                     sanitized,
                     secret,
-                    Math.Min(MaxExportLogCharacters, Math.Max(value.Length, RedactedValue.Length)));
+                    Math.Min(MaxExportLogCharacters, Math.Max(safeInput.Length, RedactedValue.Length)));
                 if (sanitized == RedactedValue)
                 {
                     break;
@@ -575,6 +595,108 @@ internal static class Utils
         }
 
         return StripTerminalControls(sanitized);
+    }
+
+    private static bool TrySnapshotKnownSecrets(
+        IEnumerable<string> source, out IReadOnlyList<string>? snapshot)
+    {
+        snapshot = null;
+        int? reportedCount;
+        try
+        {
+            reportedCount = source switch
+            {
+                ICollection<string> collection => collection.Count,
+                IReadOnlyCollection<string> readOnlyCollection => readOnlyCollection.Count,
+                ICollection collection => collection.Count,
+                _ => null,
+            };
+        }
+        catch (Exception countError) when (countError is not OutOfMemoryException &&
+                                           countError is not StackOverflowException)
+        {
+            return false;
+        }
+
+        if (reportedCount is < 0 or > MaxResultCollectionItems)
+        {
+            return false;
+        }
+
+        IEnumerator<string> enumerator;
+        try
+        {
+            enumerator = source.GetEnumerator();
+        }
+        catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                  enumerationError is not StackOverflowException)
+        {
+            return false;
+        }
+
+        var values = new List<string>(reportedCount ?? 0);
+        var succeeded = true;
+        try
+        {
+            while (true)
+            {
+                bool moved;
+                try
+                {
+                    moved = enumerator.MoveNext();
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    succeeded = false;
+                    break;
+                }
+
+                if (!moved)
+                {
+                    break;
+                }
+
+                // Probe one item beyond the cap so unknown-count iterators cannot be silently
+                // truncated at exactly MaxResultCollectionItems.
+                if (values.Count >= MaxResultCollectionItems)
+                {
+                    succeeded = false;
+                    break;
+                }
+
+                try
+                {
+                    values.Add(enumerator.Current);
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    succeeded = false;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                enumerator.Dispose();
+            }
+            catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
+                                                  disposeError is not StackOverflowException)
+            {
+                succeeded = false;
+            }
+        }
+
+        if (!succeeded)
+        {
+            return false;
+        }
+
+        snapshot = values;
+        return true;
     }
 
     private static string ReplaceSecretBounded(string value, string secret, int maximumLength)

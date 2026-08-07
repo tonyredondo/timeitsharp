@@ -241,4 +241,88 @@ public sealed class UtilsTests
         Assert.True(copied < Utils.MaxResultCollectionItems);
     }
 
+    [Fact]
+    public void Sanitizer_removes_key_splitting_controls_before_structure_redaction()
+    {
+        var text = "Autho\rrization: Custom header-secret\n" +
+                   "pass\u202Eword=assignment-secret";
+
+        var sanitized = Utils.SanitizeText(text);
+
+        Assert.DoesNotContain("header-secret", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("assignment-secret", sanitized, StringComparison.Ordinal);
+        Assert.Equal(2, sanitized.Split(Utils.RedactedValue, StringSplitOptions.None).Length - 1);
+        Assert.Equal(Utils.RedactedValue, Utils.SanitizeText("abcd", ["ab\rcd"]));
+    }
+
+    [Fact]
+    public void Sanitizer_fails_closed_when_known_secret_count_exceeds_global_cap()
+    {
+        var secrets = new string[Utils.MaxResultCollectionItems + 1];
+        Array.Fill(secrets, "secret");
+
+        Assert.Equal(Utils.RedactedValue, Utils.SanitizeText("ordinary", secrets));
+        Assert.Equal(Utils.RedactedValue,
+            Utils.SanitizeText("ordinary", EnumerateTooManySecrets()));
+    }
+
+    [Fact]
+    public void Sanitizer_fails_closed_when_known_secret_enumerator_throws()
+    {
+        Assert.Equal(Utils.RedactedValue,
+            Utils.SanitizeText("ordinary", EnumerateThenThrow()));
+    }
+
+    [Fact]
+    public void Sanitizer_fails_closed_when_known_secret_dispose_throws()
+    {
+        Assert.Equal(Utils.RedactedValue,
+            Utils.SanitizeText("ordinary", new DisposeThrowingSecrets()));
+    }
+
+    private static IEnumerable<string> EnumerateTooManySecrets()
+    {
+        for (var index = 0; index <= Utils.MaxResultCollectionItems; index++)
+        {
+            yield return "secret";
+        }
+    }
+
+    private static IEnumerable<string> EnumerateThenThrow()
+    {
+        yield return "secret";
+        throw new InvalidOperationException("secret only in iterator exception");
+    }
+
+    private sealed class DisposeThrowingSecrets : IEnumerable<string>
+    {
+        public IEnumerator<string> GetEnumerator() => new Enumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private sealed class Enumerator : IEnumerator<string>
+        {
+            private bool _moved;
+
+            public string Current => "secret";
+
+            object System.Collections.IEnumerator.Current => Current;
+
+            public bool MoveNext()
+            {
+                if (_moved)
+                {
+                    return false;
+                }
+
+                _moved = true;
+                return true;
+            }
+
+            public void Reset() => throw new NotSupportedException();
+
+            public void Dispose() => throw new InvalidOperationException("secret in dispose error");
+        }
+    }
+
 }

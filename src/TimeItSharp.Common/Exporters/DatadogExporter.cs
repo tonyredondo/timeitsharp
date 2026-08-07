@@ -176,7 +176,6 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
             .ToArray();
         TimeitResult safeResults = new();
         IReadOnlyList<ScenarioResult> safeScenarios = Array.Empty<ScenarioResult>();
-        var originalScenarios = new List<ScenarioResult>();
         var exportErrors = new List<Exception>();
         TestSuite? testSuite = null;
 
@@ -186,15 +185,6 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
             // module/suite creation. A custom result getter must never strand the CI session.
             safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables, knownSecrets);
             safeScenarios = safeResults.Scenarios ?? Array.Empty<ScenarioResult>();
-            originalScenarios = results?.Scenarios?.Take(Utils.MaxResultCollectionItems)
-                                    .Where(item => item is not null).ToList()
-                                ?? new List<ScenarioResult>();
-            knownSecrets = safeScenarios
-                .SelectMany(item => Utils.GetSecretValues(item))
-                .Concat(knownSecrets)
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-
             if (safeScenarios.Count > 0)
             {
                 var minStartDate = safeScenarios.Min(item => item.Start);
@@ -210,41 +200,17 @@ public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareEx
                 for (var i = 0; i < safeScenarios.Count; i++)
                 {
                     var scenarioResult = safeScenarios[i];
-                    var scenarioSecrets = Utils.GetSecretValues(
-                            i < originalScenarios.Count ? originalScenarios[i] : scenarioResult)
-                        .Concat(Utils.GetSensitiveEnvironmentValues(
-                            _options.Configuration?.EnvironmentVariables))
-                        .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(_options.HostEnvironment))
-                        .Concat(Utils.GetTemplateSecretValues(_options.TemplateVariables))
-                        .Concat(new[]
-                        {
-                            _options.Configuration?.FilePath,
-                            _options.Configuration?.Path,
-                            _options.Configuration?.JsonExporterFilePath,
-                        }.OfType<string>())
-                        .Distinct(StringComparer.Ordinal)
-                        .ToArray();
+                    // safeScenarios is the detached, fully sanitized snapshot. Never return to the
+                    // caller-owned graph here: a second enumeration can change values, throw with
+                    // secret-bearing text, or strand the Datadog lifecycle after check/use.
+                    var scenarioSecrets = knownSecrets;
                     Test? test = null;
                     var scenarioFailed = scenarioResult.Status != Status.Passed;
                     try
                     {
-                        // Keep the trace/span association from the runtime Scenario object without
-                        // copying that object graph into the sanitized result.
-                        if (i < originalScenarios.Count && originalScenarios[i]?.Scenario is { } scenario)
-                        {
-                            DatadogMetadata.GetIds(scenario, out var traceId, out var spanId);
-                            test = testSuite.InternalCreateTest(
-                                Utils.SanitizeText(scenarioResult.Name, scenarioSecrets),
-                                scenarioResult.Start,
-                                traceId,
-                                spanId);
-                        }
-                        else
-                        {
-                            test = testSuite.InternalCreateTest(
-                                Utils.SanitizeText(scenarioResult.Name, scenarioSecrets),
-                                scenarioResult.Start);
-                        }
+                        test = testSuite.InternalCreateTest(
+                            Utils.SanitizeText(scenarioResult.Name, scenarioSecrets),
+                            scenarioResult.Start);
 
                         ExportScenario(test, scenarioResult, safeResults, i, scenarioSecrets);
                     }
