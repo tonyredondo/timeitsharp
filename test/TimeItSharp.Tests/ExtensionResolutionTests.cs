@@ -139,6 +139,58 @@ public sealed class ExtensionResolutionTests
     }
 
     [Fact]
+    public void Resolver_disposes_created_extensions_when_a_later_entry_fails()
+    {
+        DisposableExporter.Reset();
+
+        Assert.Throws<InvalidOperationException>(() => ExtensionResolver.Resolve<IExporter>(new[]
+        {
+            new AssemblyLoadInfo { InMemoryType = typeof(DisposableExporter) },
+            new AssemblyLoadInfo { InMemoryType = typeof(AbstractExporter) },
+        }));
+
+        Assert.Equal(1, DisposableExporter.CreatedCount);
+        Assert.Equal(1, DisposableExporter.DisposedCount);
+    }
+
+    [Fact]
+    public void Resolver_disposes_partial_default_extensions_once_by_identity()
+    {
+        DisposableExporter.Reset();
+        var first = new DisposableExporter();
+        var second = new DisposableExporter();
+
+        Assert.Throws<InvalidOperationException>(() => ExtensionResolver.Resolve<IExporter>(
+            assemblyLoadInfos: null,
+            defaultListFunc: () => new List<IExporter> { first, second, second, null! }));
+
+        Assert.Equal(2, DisposableExporter.CreatedCount);
+        Assert.Equal(2, DisposableExporter.DisposedCount);
+        Assert.Equal(new[] { 2, 1 }, DisposableExporter.DisposalOrder);
+    }
+
+    [Fact]
+    public void Resolver_cleanup_failure_does_not_mask_the_primary_failure()
+    {
+        DisposableExporter.Reset(throwOnDispose: true);
+        try
+        {
+            var exception = Assert.Throws<InvalidOperationException>(() => ExtensionResolver.Resolve<IExporter>(new[]
+            {
+                new AssemblyLoadInfo { InMemoryType = typeof(DisposableExporter) },
+                new AssemblyLoadInfo { InMemoryType = typeof(AbstractExporter) },
+            }));
+
+            Assert.Contains("cannot be instantiated", exception.Message);
+            Assert.Equal(1, DisposableExporter.DisposedCount);
+        }
+        finally
+        {
+            DisposableExporter.Reset();
+        }
+    }
+
+    [Fact]
     public void Builder_throws_for_null_config_and_null_arguments_instead_of_silently_ignoring_them()
     {
         Assert.Throws<ArgumentNullException>(() => new ConfigBuilder(null!));
@@ -235,6 +287,49 @@ public sealed class ExtensionResolutionTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    public sealed class DisposableExporter : IExporter, IDisposable
+    {
+        private static bool _throwOnDispose;
+        private readonly int _id;
+
+        public DisposableExporter() => _id = ++CreatedCount;
+
+        public static int CreatedCount { get; private set; }
+        public static int DisposedCount { get; private set; }
+        public static List<int> DisposalOrder { get; } = new();
+        public string Name => nameof(DisposableExporter);
+        public bool Enabled => true;
+
+        public static void Reset(bool throwOnDispose = false)
+        {
+            CreatedCount = 0;
+            DisposedCount = 0;
+            DisposalOrder.Clear();
+            _throwOnDispose = throwOnDispose;
+        }
+
+        public void Initialize(InitOptions options) { }
+        public void Export(TimeitResult results) { }
+
+        public void Dispose()
+        {
+            DisposedCount++;
+            DisposalOrder.Add(_id);
+            if (_throwOnDispose)
+            {
+                throw new InvalidOperationException("dispose failure");
+            }
+        }
+    }
+
+    public abstract class AbstractExporter : IExporter
+    {
+        public string Name => nameof(AbstractExporter);
+        public bool Enabled => true;
+        public void Initialize(InitOptions options) { }
+        public void Export(TimeitResult results) { }
     }
 
     public sealed class ConstructorNamedExporter : IExporter

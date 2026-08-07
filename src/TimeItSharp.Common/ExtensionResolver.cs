@@ -18,48 +18,81 @@ internal static class ExtensionResolver
         string? baseDirectory = null)
         where T : class, INamedExtension
     {
-        if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
+        var result = new List<(T Instance, AssemblyLoadInfo? LoadInfo)>();
+        try
         {
-            return (defaultListFunc?.Invoke() ?? new List<T>())
-                .Select(instance =>
+            if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
+            {
+                foreach (var instance in defaultListFunc?.Invoke() ?? new List<T>())
                 {
                     if (instance is null)
                     {
                         throw new InvalidOperationException($"The default {typeof(T).Name} extension list contains a null entry.");
                     }
 
-                    return (instance, (AssemblyLoadInfo?)null);
-                })
-                .ToList();
-        }
+                    result.Add((instance, null));
+                }
 
-        var result = new List<(T Instance, AssemblyLoadInfo? LoadInfo)>();
-        var loadContext = AssemblyLoadContext.Default;
-        for (var index = 0; index < assemblyLoadInfos.Count; index++)
-        {
-            var loadInfo = assemblyLoadInfos[index];
-            if (loadInfo is null)
-            {
-                throw new InvalidOperationException($"{typeof(T).Name} extension entry at index {index} cannot be null.");
+                return result;
             }
 
-            ValidateSelector<T>(loadInfo, index);
+            var loadContext = AssemblyLoadContext.Default;
+            for (var index = 0; index < assemblyLoadInfos.Count; index++)
+            {
+                var loadInfo = assemblyLoadInfos[index];
+                if (loadInfo is null)
+                {
+                    throw new InvalidOperationException($"{typeof(T).Name} extension entry at index {index} cannot be null.");
+                }
+
+                ValidateSelector<T>(loadInfo, index);
+                try
+                {
+                    var instance = ResolveOne<T>(loadInfo, loadContext, baseDirectory);
+                    result.Add((instance, loadInfo));
+                }
+                catch (Exception ex) when (ex is not InvalidOperationException &&
+                                           ex is not FileNotFoundException &&
+                                           ex is not OutOfMemoryException &&
+                                           ex is not StackOverflowException)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not load {typeof(T).Name} extension at index {index} " +
+                        $"('{loadInfo.Name ?? loadInfo.Type ?? loadInfo.FilePath}').",
+                        ex);
+                }
+            }
+
+            return result;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            DisposeCreated(result);
+            throw;
+        }
+    }
+
+    private static void DisposeCreated<T>(IReadOnlyList<(T Instance, AssemblyLoadInfo? LoadInfo)> instances)
+        where T : class, INamedExtension
+    {
+        var disposed = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        for (var index = instances.Count - 1; index >= 0; index--)
+        {
+            var instance = instances[index].Instance;
+            if (instance is not IDisposable disposable || !disposed.Add(instance))
+            {
+                continue;
+            }
+
             try
             {
-                var instance = ResolveOne<T>(loadInfo, loadContext, baseDirectory);
-                result.Add((instance, loadInfo));
+                disposable.Dispose();
             }
-            catch (Exception ex) when (ex is not InvalidOperationException &&
-                                       ex is not FileNotFoundException)
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
             {
-                throw new InvalidOperationException(
-                    $"Could not load {typeof(T).Name} extension at index {index} " +
-                    $"('{loadInfo.Name ?? loadInfo.Type ?? loadInfo.FilePath}').",
-                    ex);
+                // Cleanup is best effort and must not replace the resolution/validation failure.
             }
         }
-
-        return result;
     }
 
     internal static void ValidateSelector<T>(AssemblyLoadInfo info, int index)
