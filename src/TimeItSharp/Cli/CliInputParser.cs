@@ -361,11 +361,18 @@ public static class CliInputParser
             }
 
             if (current == '\\' && index + 1 < commandLine.Length &&
-                (commandLine[index + 1] == '\'' || commandLine[index + 1] == '"'))
+                commandLine[index + 1] == '\'')
             {
                 token.Append(commandLine[++index]);
                 tokenStarted = true;
                 index++;
+                continue;
+            }
+
+            if (current == '\\')
+            {
+                AppendDoubleQuotedCharacter(commandLine, token, ref index, ref quote);
+                tokenStarted = true;
                 continue;
             }
 
@@ -397,7 +404,7 @@ public static class CliInputParser
         var current = text[index];
         if (current == '"')
         {
-            quote = '\0';
+            quote = quote == '"' ? '\0' : '"';
             index++;
             return;
         }
@@ -425,7 +432,7 @@ public static class CliInputParser
             }
             else
             {
-                quote = '\0';
+                quote = quote == '"' ? '\0' : '"';
             }
 
             index++;
@@ -503,9 +510,17 @@ public static class CliInputParser
             }
 
             if (current == '\\' && index + 1 < commandLine.Length &&
-                (commandLine[index + 1] == '\'' || commandLine[index + 1] == '"'))
+                commandLine[index + 1] == '\'')
             {
                 token.Append(commandLine[++index]);
+                tokenStarted = true;
+                continue;
+            }
+
+            if (current == '\\')
+            {
+                AppendDoubleQuotedCharacter(commandLine, token, ref index, ref quote);
+                index--;
                 tokenStarted = true;
                 continue;
             }

@@ -285,6 +285,26 @@ public sealed class CliInputParserTests
     }
 
     [Fact]
+    public void EvenBackslashesBeforeAQuoteOpenAQuotedSpan()
+    {
+        var commandLine = "foo" + new string('\\', 2) + "\"bar\"";
+
+        var process = CliInputParser.ParseProcessCommand(commandLine);
+
+        Assert.Equal("foo\\bar", process.ProcessName);
+    }
+
+    [Fact]
+    public void OddBackslashesBeforeAQuoteProduceALiteralQuote()
+    {
+        var commandLine = "foo" + new string('\\', 3) + "\"bar";
+
+        var process = CliInputParser.ParseProcessCommand(commandLine);
+
+        Assert.Equal("foo\\\"bar", process.ProcessName);
+    }
+
+    [Fact]
     public void EscapedApostropheCanAppearInExecutableName()
     {
         var process = CliInputParser.ParseProcessCommand("foo\\'bar");
