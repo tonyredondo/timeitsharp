@@ -9,7 +9,12 @@ using Status = TimeItSharp.Common.Results.Status;
 
 namespace TimeItSharp.Common.Exporters;
 
-public sealed class DatadogExporter : IExporter
+internal interface IRunOutcomeAwareExporter
+{
+    void SetRunOutcome(bool succeeded);
+}
+
+public sealed class DatadogExporter : IExporter, IDisposable, IRunOutcomeAwareExporter
 {
     private string? _configName;
     private InitOptions _options;
@@ -18,7 +23,17 @@ public sealed class DatadogExporter : IExporter
     private TestModule? _testModule;
     private readonly FieldInfo? _scopeField = typeof(Test).GetField(
         "_scope", BindingFlags.Instance | BindingFlags.NonPublic);
-    private bool _sessionClosed;
+    private bool _disposed;
+    private bool _ownsTestSession;
+    private bool? _runSucceeded;
+    private bool _exportFailed;
+    private IReadOnlyList<string> _knownSecrets = Array.Empty<string>();
+    private bool _exportCompleted;
+    private int _cleanupStarted;
+    private TestSession? _ambientTestSession;
+    private TestModule? _ambientTestModule;
+    private Test? _ambientTest;
+    private bool _ambientContextCaptured;
 
     public DatadogExporter()
     {
@@ -35,7 +50,7 @@ public sealed class DatadogExporter : IExporter
     public void Initialize(InitOptions options)
     {
         _options = options;
-        if (!Enabled || _sessionClosed)
+        if (!Enabled || _disposed)
         {
             return;
         }
@@ -48,6 +63,7 @@ public sealed class DatadogExporter : IExporter
                 configuration?.JsonExporterFilePath))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        _knownSecrets = templateSecrets;
         _configName = Utils.SanitizeText(configuration?.Name, templateSecrets);
         if (string.IsNullOrEmpty(_configName))
         {
@@ -56,10 +72,22 @@ public sealed class DatadogExporter : IExporter
 
         try
         {
-            _testSession ??= TestSession.InternalGetOrCreate(
-                Utils.SanitizeText(Environment.CommandLine, templateSecrets),
-                Utils.SanitizeText(Environment.CurrentDirectory, templateSecrets),
-                "time-it");
+            if (!_ambientContextCaptured)
+            {
+                _ambientTestSession = TestSession.Current;
+                _ambientTestModule = TestModule.Current;
+                _ambientTest = Test.Current;
+                _ambientContextCaptured = true;
+            }
+
+            if (_testSession is null)
+            {
+                _ownsTestSession = _ambientTestSession is null;
+                _testSession = TestSession.InternalGetOrCreate(
+                    Utils.SanitizeText(Environment.CommandLine, templateSecrets),
+                    Utils.SanitizeText(Environment.CurrentDirectory, templateSecrets),
+                    "time-it");
+            }
             _testModule ??= _testSession.InternalCreateModule(
                 string.IsNullOrEmpty(_configName) ? "config_file" : _configName,
                 "time-it",
@@ -69,6 +97,19 @@ public sealed class DatadogExporter : IExporter
         catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             ReportException(ex, templateSecrets);
+            // A vendored constructor can publish Current before throwing. Recover only objects
+            // created when there was no ambient owner; never adopt or close a caller's session.
+            if (_testSession is null && _ambientTestSession is null && TestSession.Current is { } partialSession)
+            {
+                _testSession = partialSession;
+                _ownsTestSession = true;
+            }
+
+            if (_testModule is null && _ambientTestModule is null && TestModule.Current is { } partialModule)
+            {
+                _testModule = partialModule;
+            }
+
             // Initialization can fail after creating a session or module. Close partial
             // resources here because the engine deliberately skips Export for failed instances.
             try
@@ -82,7 +123,10 @@ public sealed class DatadogExporter : IExporter
 
             try
             {
-                _testSession?.Close(TestStatus.Fail);
+                if (_ownsTestSession)
+                {
+                    _testSession?.Close(TestStatus.Fail);
+                }
             }
             catch (Exception closeError) when (closeError is not OutOfMemoryException && closeError is not StackOverflowException)
             {
@@ -91,14 +135,17 @@ public sealed class DatadogExporter : IExporter
 
             _testModule = null;
             _testSession = null;
-            _sessionClosed = true;
+            RestoreAmbientContext();
+            RestoreAmbientSession();
+            _disposed = true;
+            Interlocked.Exchange(ref _cleanupStarted, 1);
             throw Utils.SanitizeException(ex, templateSecrets);
         }
     }
 
     public void Export(TimeitResult results)
     {
-        if (!Enabled || _sessionClosed)
+        if (!Enabled || _disposed)
         {
             return;
         }
@@ -236,6 +283,8 @@ public sealed class DatadogExporter : IExporter
                                 ReportException(ex, scenarioSecrets);
                             }
                         }
+
+                        Test.Current = _ambientTest;
                     }
                 }
             }
@@ -251,22 +300,10 @@ public sealed class DatadogExporter : IExporter
         {
             TryClose(testSuite, "test suite", exportErrors, knownSecrets);
             TryClose(_testModule, "test module", exportErrors, knownSecrets);
-            var sessionStatus = exportErrors.Count > 0 || safeScenarios.Any(item => item.Status != Status.Passed)
-                ? TestStatus.Fail
-                : TestStatus.Pass;
-            try
-            {
-                testSession.Close(sessionStatus);
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                exportErrors.Add(Utils.SanitizeException(ex, knownSecrets));
-                ReportException(ex, knownSecrets);
-            }
-
-            _sessionClosed = true;
-            _testSession = null;
             _testModule = null;
+            RestoreAmbientContext();
+            _exportFailed |= exportErrors.Count > 0 || safeScenarios.Any(item => item.Status != Status.Passed);
+            _exportCompleted = true;
         }
 
         if (exportErrors.Count == 0 && safeScenarios.All(item => item.Status == Status.Passed))
@@ -282,6 +319,64 @@ public sealed class DatadogExporter : IExporter
         {
             throw new AggregateException("One or more Datadog scenarios could not be exported.", exportErrors);
         }
+    }
+
+    void IRunOutcomeAwareExporter.SetRunOutcome(bool succeeded)
+    {
+        _runSucceeded = succeeded;
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _cleanupStarted, 1) != 0)
+        {
+            return;
+        }
+
+        _disposed = true;
+        var errors = new List<Exception>();
+        var module = _testModule;
+        var session = _testSession;
+        _testModule = null;
+        _testSession = null;
+
+        TryClose(module, "test module", errors, _knownSecrets);
+        RestoreAmbientContext();
+        if (_ownsTestSession && session is not null)
+        {
+            // A missing outcome means Export was skipped or the lifecycle did not reach its
+            // completion hand-off, so failure is the only safe fallback. The engine supplies the
+            // final outcome after OnFinish, allowing cancellation and lifecycle failures to mark
+            // a successfully exported benchmark session as failed.
+            var succeeded = _runSucceeded == true && _exportCompleted && !_exportFailed;
+            try
+            {
+                session.Close(succeeded ? TestStatus.Pass : TestStatus.Fail);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                errors.Add(Utils.SanitizeException(ex, _knownSecrets));
+                ReportException(ex, _knownSecrets);
+            }
+        }
+
+        RestoreAmbientContext();
+        RestoreAmbientSession();
+        if (errors.Count > 0)
+        {
+            throw new AggregateException("One or more Datadog resources could not be closed.", errors);
+        }
+    }
+
+    private void RestoreAmbientContext()
+    {
+        Test.Current = _ambientTest;
+        TestModule.Current = _ambientTestModule;
+    }
+
+    private void RestoreAmbientSession()
+    {
+        TestSession.Current = _ambientTestSession;
     }
 
     private void ExportScenario(

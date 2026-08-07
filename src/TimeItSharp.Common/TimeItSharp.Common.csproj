@@ -34,7 +34,7 @@
     <PackageReference Include="CliWrap" Version="3.10.0" />
     <!-- Keep the BenchmarkDotNet integration and tracer on the same latest stable v2 line.
          Its content files provide the profiler/tracer assets used by the CLI package. -->
-    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="$(DatadogTraceBenchmarkDotNetVersion)" />
+    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="[$(DatadogTraceBenchmarkDotNetVersion)]" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Spectre.Console" Version="0.53.1" />
     <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.8.0">
@@ -48,17 +48,20 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\..\icon.png" Pack="true" PackagePath="\" />
-    <None Include="Package\TimeItSharp.Common.props" Pack="true" PackagePath="build\TimeItSharp.Common.props" />
-    <None Include="Package\TimeItSharp.Common.targets" Pack="true" PackagePath="build\TimeItSharp.Common.targets" />
+    <None Include="build\TimeItSharp.Common.props" Pack="true" PackagePath="build\TimeItSharp.Common.props" />
+    <None Include="build\TimeItSharp.Common.targets" Pack="true" PackagePath="build\TimeItSharp.Common.targets" />
+    <None Include="build\TimeItSharp.Common.props" Pack="true" PackagePath="buildTransitive\TimeItSharp.Common.props" />
+    <None Include="build\TimeItSharp.Common.targets" Pack="true" PackagePath="buildTransitive\TimeItSharp.Common.targets" />
+    <None Include="build\TimeItSharp.Common.assets.props" Pack="true" PackagePath="timeitsharp-assets/build\TimeItSharp.Common.assets.props" />
+    <None Include="build\TimeItSharp.Common.assets.targets" Pack="true" PackagePath="timeitsharp-assets/build\TimeItSharp.Common.assets.targets" />
 
-    <!-- Re-publish the exact v2 package content files from a Common package. A
-         transitive PackageReference alone does not guarantee native content files
-         reach a clean consumer. -->
+    <!-- Re-publish the exact v2 payload under a private package path. The
+         buildTransitive target performs late copies without creating collision-prone
+         contentFiles entries when a consumer also references a v3 Datadog bundle. -->
     <None Include="$(DatadogProfilerPackageRoot)\content\datadog\**\*"
           Condition="Exists('$(DatadogProfilerPackageRoot)\content\datadog')"
           Pack="true"
-          PackagePath="contentFiles\any\any\datadog\%(RecursiveDir)%(Filename)%(Extension)"
-          PackageCopyToOutput="true"
+          PackagePath="timeitsharp-assets/datadog-v2/%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           ExcludeFromSingleFile="true"
           Link="datadog\%(RecursiveDir)%(Filename)%(Extension)"
@@ -71,16 +74,15 @@
     </ProjectReference>
   </ItemGroup>
 
-  <!-- Include the hook in TimeItSharp.Common for consumers that restore only this
-       package. The normal pack flow builds project references first; the no-build
+  <!-- Include the hook as a private package asset for consumers that restore only
+       TimeItSharp.Common; its buildTransitive target copies the file next to the app. The normal pack flow builds project references first; the no-build
        pack mode is also supported after the solution has been built. It must remain
        a file next to the app so Assembly.Location works for a single-file consumer. -->
   <Target Name="IncludeTimeItSharpStartupHookInPackage" BeforeTargets="_GetPackageFiles">
     <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)\..\TimeItSharp.StartupHook\bin\$(Configuration)\netcoreapp3.1\TimeItSharp.StartupHook.dll')">
       <None Include="$(MSBuildProjectDirectory)\..\TimeItSharp.StartupHook\bin\$(Configuration)\netcoreapp3.1\TimeItSharp.StartupHook.dll"
             Pack="true"
-            PackagePath="contentFiles\any\any\TimeItSharp.StartupHook.dll"
-            PackageCopyToOutput="true"
+            PackagePath="timeitsharp-assets/TimeItSharp.StartupHook.dll"
             ExcludeFromSingleFile="true" />
     </ItemGroup>
   </Target>

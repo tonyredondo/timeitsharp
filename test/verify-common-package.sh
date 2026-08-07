@@ -172,4 +172,98 @@ dotnet build "$work_dir/src/Consumer.csproj" --configuration Release --no-restor
 dotnet publish "$work_dir/src/Consumer.csproj" --configuration Release --runtime "$runtime" --self-contained true \
   -p:PublishSingleFile=true -p:PublishTrimmed=true -p:PublishDir="$work_dir/publish/" \
   --configfile "$work_dir/NuGet.config"
+v2_source="$NUGET_PACKAGES/datadog.trace.benchmarkdotnet/2.61.0/contentFiles/any/any/datadog"
+common_payload="$NUGET_PACKAGES/timeitsharp.common/$version/timeitsharp-assets/datadog-v2"
+if [[ ! -d "$v2_source" || ! -d "$common_payload" ]]; then
+  echo "Missing restored v2 or private Common payload." >&2
+  exit 1
+fi
+
+compare_v2_tree() {
+  local destination=$1
+  while IFS= read -r -d '' source_file; do
+    local relative=${source_file#"$v2_source"/}
+    local destination_file="$destination/$relative"
+    if [[ ! -f "$destination_file" ]] || ! cmp -s "$source_file" "$destination_file"; then
+      echo "Datadog v2 content mismatch: $destination_file" >&2
+      exit 1
+    fi
+  done < <(find "$v2_source" -type f -print0)
+}
+
+compare_v2_tree "$common_payload"
+compare_v2_tree "$work_dir/src/bin/Release/net8.0/$runtime/datadog"
+compare_v2_tree "$work_dir/publish/datadog"
+cmp "$NUGET_PACKAGES/timeitsharp.common/$version/timeitsharp-assets/TimeItSharp.StartupHook.dll"     "$work_dir/publish/TimeItSharp.StartupHook.dll"
 "$work_dir/publish/Consumer"
+
+# Package a wrapper whose consumer has no direct Common reference. This proves that the
+# buildTransitive imports carry the private startup hook and v2 payload across a package edge.
+mkdir -p "$work_dir/wrapper" "$work_dir/wrapper-feed" "$work_dir/collision"
+cat > "$work_dir/wrapper/TimeItSharp.Common.TestWrapper.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>TimeItSharp.Common.TestWrapper</PackageId>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TimeItSharp.Common" Version="[$version]" />
+  </ItemGroup>
+</Project>
+EOF
+dotnet pack "$work_dir/wrapper/TimeItSharp.Common.TestWrapper.csproj" --configuration Release   --output "$work_dir/wrapper-feed" --configfile "$work_dir/NuGet.config"
+
+cat > "$work_dir/collision/Collision.csproj" <<EOF
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>$runtime</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="TimeItSharp.Common.TestWrapper" Version="[1.0.0]" />
+    <PackageReference Include="Datadog.Trace.Bundle" Version="[3.50.0]" />
+  </ItemGroup>
+</Project>
+EOF
+cat > "$work_dir/collision/Program.cs" <<'EOF'
+System.Console.WriteLine("wrapper-v3-collision-consumer");
+EOF
+cat > "$work_dir/Collision.NuGet.config" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="wrapper" value="$work_dir/wrapper-feed" />
+    <add key="local" value="$package_dir" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+  </packageSources>
+</configuration>
+EOF
+
+dotnet restore "$work_dir/collision/Collision.csproj" --configfile "$work_dir/Collision.NuGet.config"
+dotnet build "$work_dir/collision/Collision.csproj" --configuration Release --no-restore   --output "$work_dir/collision-bin"
+dotnet publish "$work_dir/collision/Collision.csproj" --configuration Release --no-restore   --output "$work_dir/collision-publish"
+
+v3_source="$NUGET_PACKAGES/datadog.trace.bundle/3.50.0/contentFiles/any/any/datadog"
+if [[ ! -d "$v3_source" ]] || ! find "$v3_source" -iname '*ApiWrapper*' -print -quit | grep -q .; then
+  echo "The v3 collision fixture did not contribute API-wrapper content." >&2
+  exit 1
+fi
+if cmp -s "$v2_source/linux-x64/Datadog.Profiler.Native.so"           "$v3_source/linux-x64/Datadog.Profiler.Native.so"; then
+  echo "The v2/v3 collision fixture is not meaningful: overlapping bytes are equal." >&2
+  exit 1
+fi
+compare_v2_tree "$work_dir/collision-bin/datadog"
+compare_v2_tree "$work_dir/collision-publish/datadog"
+if ! find "$work_dir/collision-publish/datadog" -iname '*ApiWrapper*' -print -quit | grep -q .; then
+  echo "Expected v3-only API-wrapper content was not published." >&2
+  exit 1
+fi
+cmp "$NUGET_PACKAGES/timeitsharp.common/$version/timeitsharp-assets/TimeItSharp.StartupHook.dll"     "$work_dir/collision-publish/TimeItSharp.StartupHook.dll"
+"$work_dir/collision-publish/Collision"
+echo "Wrapper buildTransitive and v2-over-v3 collision behavior verified."

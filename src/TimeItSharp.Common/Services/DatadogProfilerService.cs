@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using CliWrap;
 using DatadogTestLogger.Vendors.Datadog.Trace;
 using DatadogTestLogger.Vendors.Datadog.Trace.Ci;
@@ -19,6 +20,30 @@ public sealed class DatadogProfilerService : IService
     private const int MaximumLoaderRowLength = 16 * 1024;
     private const string TracerProfilerId = "{846F5F1C-F9AE-4B07-969E-05C26BC060D8}";
     private const string NativeProfilerId = "{BD1A650D-AC5D-4896-B64F-D6FA25D6B26A}";
+
+    // SHA-256 digests of the native assets published by Datadog.Trace.BenchmarkDotNet 2.61.0.
+    // This is the provenance boundary for both packaged and inherited profiler homes: matching
+    // names and a valid loader.conf are insufficient because a v3/native replacement can expose
+    // the same layout and profiler CLSID.
+    private static readonly IReadOnlyDictionary<string, string> TrustedProfilerAssetHashes =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["linux-arm64/Datadog.Profiler.Native.so"] = "D7A83C592061620F0960161B5F8E6547F159A6747F14F840B1C5D264414080AE",
+            ["linux-arm64/Datadog.Trace.ClrProfiler.Native.so"] = "E75176556CAFA7462FED44EE380466CE43E79A386693FB0D332F952B60B098DC",
+            ["linux-arm64/loader.conf"] = "A7EDAF020F0F01431BDE4C8F429C88E7AEF3E23B3A710A74B66783AB9ACC13D7",
+            ["linux-musl-x64/Datadog.Profiler.Native.so"] = "C490F81EADF532559F6F0990CF260A1A6CDA2EA0586FCCC2D54E61206062B653",
+            ["linux-musl-x64/Datadog.Trace.ClrProfiler.Native.so"] = "6CF311DC8A30701A86A0A49B529B9766DBA4ABBECEE1A0AB0B4781BE58A13575",
+            ["linux-musl-x64/loader.conf"] = "A7EDAF020F0F01431BDE4C8F429C88E7AEF3E23B3A710A74B66783AB9ACC13D7",
+            ["linux-x64/Datadog.Profiler.Native.so"] = "3A9A8059BD81311C2DE38D4602AA94EA6175EB2901601CD5EADA529A0CC29EE8",
+            ["linux-x64/Datadog.Trace.ClrProfiler.Native.so"] = "91F7ABA5E11750886195C84B0BFE9AB196FBF96C420ACF772BE306A9A90D1409",
+            ["linux-x64/loader.conf"] = "A7EDAF020F0F01431BDE4C8F429C88E7AEF3E23B3A710A74B66783AB9ACC13D7",
+            ["win-x64/Datadog.Profiler.Native.dll"] = "BCC57BE6A8A35AB59D818F570F096AE0CEA1548204CFD088C6C7FA2470892E63",
+            ["win-x64/Datadog.Trace.ClrProfiler.Native.dll"] = "058E5A0D80916DD014C6F15B3B372102C589CFD639D575F2ACD361C2406A5DB5",
+            ["win-x64/loader.conf"] = "6F8F3C4A9A07790791F430BBEFDDD070B5D127FFC8DC8B5F56ACF67B0818ED37",
+            ["win-x86/Datadog.Profiler.Native.dll"] = "07806EC88688852946D50218B05EBC1BF67A51EE7214019CB511C66D69A1EE95",
+            ["win-x86/Datadog.Trace.ClrProfiler.Native.dll"] = "ACEBC5CB4D5FA179FA17F1C562EAA8B4D67C9AE814FFF52124806534FB8123C5",
+            ["win-x86/loader.conf"] = "6F8F3C4A9A07790791F430BBEFDDD070B5D127FFC8DC8B5F56ACF67B0818ED37",
+        };
 
     private bool _environmentConfigured;
     private IReadOnlyDictionary<string, string?>? _profilerEnvironmentVariables;
@@ -122,18 +147,7 @@ public sealed class DatadogProfilerService : IService
 
         if (runProfiler && _profilerEnvironmentVariables is { } profilerEnvironmentVariables)
         {
-            // Preserve command-level options, but never allow an inherited v2/v3 profiler home
-            // or native path to replace the selected v2.61.0 RID assets.
-            var envVar = new Dictionary<string, string?>(profilerEnvironmentVariables);
-            foreach (var kvp in command.EnvironmentVariables)
-            {
-                if (!IsMandatoryProfilerVariable(kvp.Key) &&
-                    !IsProfilerMetadataVariable(kvp.Key))
-                {
-                    envVar[kvp.Key] = kvp.Value;
-                }
-            }
-
+            var envVar = MergeProfilerEnvironment(command.EnvironmentVariables, profilerEnvironmentVariables);
             DatadogMetadata.GetIds(scenario, out _, out var spanId);
             envVar["DD_INTERNAL_CIVISIBILITY_SPANID"] = spanId.ToString();
             command = command.WithEnvironmentVariables(envVar);
@@ -141,23 +155,11 @@ public sealed class DatadogProfilerService : IService
             return;
         }
 
-        // This service owns profiler selection. Remove inherited profiler variables on warmups,
-        // disabled scenarios, and unsupported hosts so a v3 DD_DOTNET_TRACER_HOME cannot be mixed
-        // into a v2 run (or attach unexpectedly when v2 assets are unavailable).
-        var clearedEnvironment = new Dictionary<string, string?>();
-        foreach (var key in command.EnvironmentVariables.Keys)
-        {
-            if (ProfilerEnvironmentVariableNames.Any(name =>
-                    string.Equals(name, key, StringComparison.OrdinalIgnoreCase)))
-            {
-                clearedEnvironment[key] = null;
-            }
-        }
-
-        if (clearedEnvironment.Count > 0)
-        {
-            command = command.WithEnvironmentVariables(clearedEnvironment);
-        }
+        // CliWrap replaces, rather than merges, the command environment. Keep the complete
+        // benchmark environment (including credentials and other sensitive inputs) and add
+        // explicit tombstones for every profiler selector so host values cannot leak into a
+        // warmup, disabled scenario, or unsupported host.
+        command = command.WithEnvironmentVariables(TombstoneProfilerEnvironment(command.EnvironmentVariables));
     }
 
 
@@ -184,19 +186,43 @@ public sealed class DatadogProfilerService : IService
         "DD_INTERNAL_CIVISIBILITY_SPANID",
     ];
 
-    private static bool IsProfilerMetadataVariable(string key)
+    internal static Dictionary<string, string?> MergeProfilerEnvironment(
+        IReadOnlyDictionary<string, string?> commandEnvironment,
+        IReadOnlyDictionary<string, string?> profilerEnvironment)
     {
-        // DD_TAGS and credential-bearing Datadog client settings can arrive from the host snapshot.
-        // Do not let them overwrite the sanitized CI metadata assembled for the selected child.
-        return key.Equals("DD_TAGS", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_API_KEY", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_CLIENT_TOKEN", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_APP_KEY", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_GIT_REPOSITORY_URL", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_GIT_COMMIT_SHA", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_GIT_BRANCH", StringComparison.OrdinalIgnoreCase) ||
-               key.Equals("DD_GIT_TAG", StringComparison.OrdinalIgnoreCase) ||
-               Utils.IsSensitiveEnvironmentVariable(key);
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var environment = new Dictionary<string, string?>(commandEnvironment, comparer);
+
+        // Remove all inherited selectors first. Mandatory values below select only the verified
+        // v2.61 assets. Non-selector values supplied by the benchmark always win, including
+        // DD_API_KEY/DD_CLIENT_TOKEN and custom variables classified as sensitive.
+        foreach (var key in ProfilerEnvironmentVariableNames)
+        {
+            environment[key] = null;
+        }
+
+        foreach (var item in profilerEnvironment)
+        {
+            if (IsMandatoryProfilerVariable(item.Key) || !environment.ContainsKey(item.Key))
+            {
+                environment[item.Key] = item.Value;
+            }
+        }
+
+        return environment;
+    }
+
+    internal static Dictionary<string, string?> TombstoneProfilerEnvironment(
+        IReadOnlyDictionary<string, string?> commandEnvironment)
+    {
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var environment = new Dictionary<string, string?>(commandEnvironment, comparer);
+        foreach (var key in ProfilerEnvironmentVariableNames)
+        {
+            environment[key] = null;
+        }
+
+        return environment;
     }
 
     private static bool IsMandatoryProfilerVariable(string key) =>
@@ -222,10 +248,7 @@ public sealed class DatadogProfilerService : IService
         {
             var benchmarkDotNetVersion = typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser)
                 .Assembly.GetName().Version;
-            if (benchmarkDotNetVersion is null ||
-                benchmarkDotNetVersion.Major != 2 ||
-                benchmarkDotNetVersion.Minor != 61 ||
-                benchmarkDotNetVersion.Build != 0)
+            if (benchmarkDotNetVersion != new Version(2, 61, 0, 0))
             {
                 diagnostic = $"Datadog profiler integration requires BenchmarkDotNet package {DatadogProfilerPackageVersion}; " +
                              $"loaded version is '{benchmarkDotNetVersion?.ToString() ?? "unknown"}'.";
@@ -463,12 +486,10 @@ public sealed class DatadogProfilerService : IService
             // only the current process RID is required for this invocation.
             var win32TracerPath = Path.Combine(monitoringHome, "win-x86", "Datadog.Trace.ClrProfiler.Native.dll");
             var win64TracerPath = Path.Combine(monitoringHome, "win-x64", "Datadog.Trace.ClrProfiler.Native.dll");
-            profiler32Path = File.Exists(win32TracerPath) && IsRegularProfilerFile(win32TracerPath) &&
-                             IsRegularProfilerDirectory(Path.GetDirectoryName(win32TracerPath) ?? string.Empty)
+            profiler32Path = IsTrustedProfilerAsset(win32TracerPath, "win-x86", out _)
                 ? win32TracerPath
                 : null;
-            profiler64Path = File.Exists(win64TracerPath) && IsRegularProfilerFile(win64TracerPath) &&
-                             IsRegularProfilerDirectory(Path.GetDirectoryName(win64TracerPath) ?? string.Empty)
+            profiler64Path = IsTrustedProfilerAsset(win64TracerPath, "win-x64", out _)
                 ? win64TracerPath
                 : null;
         }
@@ -528,6 +549,13 @@ public sealed class DatadogProfilerService : IService
             return false;
         }
 
+        if (!IsTrustedProfilerAsset(selectedTracerPath, rid, out diagnostic) ||
+            !IsTrustedProfilerAsset(selectedProfilerPath, rid, out diagnostic) ||
+            !IsTrustedProfilerAsset(loaderConfig, rid, out diagnostic))
+        {
+            return false;
+        }
+
         if (!LoaderReferencesProfiler(loaderConfig, loaderRid, selectedProfilerPath, out diagnostic))
         {
             return false;
@@ -570,7 +598,8 @@ public sealed class DatadogProfilerService : IService
         {
             var attributes = File.GetAttributes(path);
             return (attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) == 0 &&
-                   new FileInfo(path).LinkTarget is null;
+                   new FileInfo(path).LinkTarget is null &&
+                   HasTrustedDirectoryChain(Path.GetDirectoryName(Path.GetFullPath(path)));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -582,13 +611,73 @@ public sealed class DatadogProfilerService : IService
     {
         try
         {
-            var attributes = File.GetAttributes(path);
-            return (attributes & FileAttributes.Directory) != 0 &&
-                   (attributes & FileAttributes.ReparsePoint) == 0 &&
-                   new DirectoryInfo(path).LinkTarget is null;
+            return HasTrustedDirectoryChain(Path.GetFullPath(path));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
+            return false;
+        }
+    }
+
+    private static bool HasTrustedDirectoryChain(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        for (var directory = new DirectoryInfo(path); directory is not null; directory = directory.Parent)
+        {
+            if (!directory.Exists)
+            {
+                return false;
+            }
+
+            var attributes = directory.Attributes;
+            if ((attributes & FileAttributes.Directory) == 0 ||
+                (attributes & FileAttributes.ReparsePoint) != 0 ||
+                directory.LinkTarget is not null)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsTrustedProfilerAsset(string path, string rid, out string diagnostic)
+    {
+        diagnostic = string.Empty;
+        var assetName = $"{rid}/{Path.GetFileName(path)}";
+        if (!TrustedProfilerAssetHashes.TryGetValue(assetName, out var expectedHash))
+        {
+            diagnostic = $"Datadog profiler asset '{assetName}' is not in the trusted {DatadogProfilerPackageVersion} manifest.";
+            return false;
+        }
+
+        try
+        {
+            if (!IsRegularProfilerFile(path))
+            {
+                diagnostic = $"Datadog profiler asset '{path}' is not a regular file under a trusted directory chain.";
+                return false;
+            }
+
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var sha256 = SHA256.Create();
+            var actualHash = Convert.ToHexString(sha256.ComputeHash(stream));
+            if (!string.Equals(actualHash, expectedHash, StringComparison.Ordinal))
+            {
+                diagnostic =
+                    $"Datadog profiler asset '{path}' does not match the trusted {DatadogProfilerPackageVersion} SHA-256 manifest.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            diagnostic = $"Could not validate Datadog profiler asset '{path}': {ex.Message}";
             return false;
         }
     }
@@ -605,11 +694,10 @@ public sealed class DatadogProfilerService : IService
             }
 
             var fullHome = Path.GetFullPath(monitoringHome);
-            if (!Directory.Exists(fullHome) ||
-                (File.GetAttributes(fullHome) & FileAttributes.ReparsePoint) != 0 ||
-                new DirectoryInfo(fullHome).LinkTarget is not null)
+            if (!IsRegularProfilerDirectory(fullHome))
             {
-                diagnostic = $"Datadog profiler home '{monitoringHome}' is missing or is a reparse point.";
+                diagnostic =
+                    $"Datadog profiler home '{monitoringHome}' is missing or has a symlink/reparse-point ancestor.";
                 return false;
             }
 
@@ -752,24 +840,71 @@ public sealed class DatadogProfilerService : IService
         return RuntimeInformation.OSDescription;
     }
 
-    private static bool IsMuslLinux()
+    internal static bool IsMuslLinux()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             return false;
         }
 
-        if (RuntimeInformation.RuntimeIdentifier.Contains("musl", StringComparison.OrdinalIgnoreCase))
+        // Inspect libraries mapped into this process. Unlike probing well-known loader paths,
+        // this reports the libc actually hosting the current runtime when both glibc and musl
+        // happen to be installed in the same image.
+        try
         {
-            return true;
+            var mappedLibc = DetectMuslFromProcMaps(File.ReadLines("/proc/self/maps").Take(16 * 1024));
+            if (mappedLibc is not null)
+            {
+                return mappedLibc.Value;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // Fall through to an in-process native symbol check.
         }
 
-        // RuntimeIdentifier is not guaranteed to contain the libc flavor for framework-
-        // dependent apps. These are the standard musl dynamic loader locations.
-        return File.Exists("/lib/ld-musl-x86_64.so.1") ||
-               File.Exists("/usr/lib/ld-musl-x86_64.so.1") ||
-               File.Exists("/lib/ld-musl-aarch64.so.1") ||
-               File.Exists("/usr/lib/ld-musl-aarch64.so.1");
+        IntPtr libc = IntPtr.Zero;
+        try
+        {
+            if (NativeLibrary.TryLoad("libc.so.6", out libc))
+            {
+                return !NativeLibrary.TryGetExport(libc, "gnu_get_libc_version", out _);
+            }
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException or NotSupportedException)
+        {
+            // RuntimeIdentifier is the final fallback for restricted /proc containers.
+        }
+        finally
+        {
+            if (libc != IntPtr.Zero)
+            {
+                NativeLibrary.Free(libc);
+            }
+        }
+
+        return RuntimeInformation.RuntimeIdentifier.Contains("musl", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool? DetectMuslFromProcMaps(IEnumerable<string> mappedLibraries)
+    {
+        var sawGlibc = false;
+        foreach (var line in mappedLibraries)
+        {
+            if (line.Contains("ld-musl", StringComparison.OrdinalIgnoreCase) ||
+                line.Contains("libc.musl", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (line.Contains("libc.so.6", StringComparison.OrdinalIgnoreCase) ||
+                line.Contains("ld-linux", StringComparison.OrdinalIgnoreCase))
+            {
+                sawGlibc = true;
+            }
+        }
+
+        return sawGlibc ? false : null;
     }
 
     private static string NormalizeArchitecture(string processArch) =>

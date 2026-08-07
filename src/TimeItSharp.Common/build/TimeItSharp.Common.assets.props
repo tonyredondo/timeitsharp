@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <_TimeItSharpCommonPropsImported>true</_TimeItSharpCommonPropsImported>
+    <TimeItSharpCommonPackageRoot Condition="'$(TimeItSharpCommonPackageRoot)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../..'))</TimeItSharpCommonPackageRoot>
+    <TimeItSharpStartupHookFile Condition="'$(TimeItSharpStartupHookFile)' == ''">$(TimeItSharpCommonPackageRoot)/timeitsharp-assets/TimeItSharp.StartupHook.dll</TimeItSharpStartupHookFile>
+    <TimeItSharpDatadogAssetsDirectory Condition="'$(TimeItSharpDatadogAssetsDirectory)' == ''">$(TimeItSharpCommonPackageRoot)/timeitsharp-assets/datadog-v2</TimeItSharpDatadogAssetsDirectory>
+  </PropertyGroup>
+</Project>

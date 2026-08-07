@@ -102,23 +102,70 @@ jobs:
         if: matrix.tfm == 'net10.0'
         run: |
           python3 - <<'PY'
+          import hashlib
+          import os
+          import xml.etree.ElementTree as ET
           import zipfile
           from pathlib import Path
 
-          package = Path('artifacts/TimeItSharp.0.4.8.nupkg')
-          with zipfile.ZipFile(package) as archive:
-              names = set(archive.namelist())
-          expected = {
-              f'tools/net10.0/any/datadog/{rid}/{name}'
-              for rid in ('linux-x64', 'linux-musl-x64', 'linux-arm64')
-              for name in ('Datadog.Profiler.Native.so', 'Datadog.Trace.ClrProfiler.Native.so', 'loader.conf')
-          }
-          missing = sorted(expected - names)
-          if missing:
-              raise SystemExit(f'Missing profiler assets: {missing}')
-          if any('ApiWrapper' in name or 'Datadog.Trace.Bundle' in name for name in names):
-              raise SystemExit('Found incompatible Datadog v3/API wrapper assets')
-          print('Datadog v2.61 profiler assets verified')
+          version = '0.4.8'
+          upstream_path = Path.home() / '.nuget/packages/datadog.trace.benchmarkdotnet/2.61.0/datadog.trace.benchmarkdotnet.2.61.0.nupkg'
+          common_path = Path(f'artifacts/TimeItSharp.Common.{version}.nupkg')
+          tool_path = Path(f'artifacts/TimeItSharp.{version}.nupkg')
+
+          def files_under(archive, prefix):
+              return {
+                  name[len(prefix):]: archive.read(name)
+                  for name in archive.namelist()
+                  if name.startswith(prefix) and not name.endswith('/')
+              }
+
+          with zipfile.ZipFile(upstream_path) as upstream_archive:
+              expected = files_under(upstream_archive, 'contentFiles/any/any/datadog/')
+          if not expected:
+              raise SystemExit('The restored Datadog 2.61 package has no profiler payload')
+
+          with zipfile.ZipFile(common_path) as common_archive:
+              names = set(common_archive.namelist())
+              actual = files_under(common_archive, 'timeitsharp-assets/datadog-v2/')
+              if set(actual) != set(expected):
+                  raise SystemExit(f'Common private payload differs: missing={sorted(set(expected)-set(actual))}, extra={sorted(set(actual)-set(expected))}')
+              for relative, expected_bytes in expected.items():
+                  if hashlib.sha256(actual[relative]).digest() != hashlib.sha256(expected_bytes).digest():
+                      raise SystemExit(f'Common payload hash mismatch: {relative}')
+              if any(name.startswith('contentFiles/any/any/datadog/') for name in names):
+                  raise SystemExit('Common must not expose profiler bytes as collision-prone contentFiles')
+              required_imports = {
+                  'build/TimeItSharp.Common.props',
+                  'build/TimeItSharp.Common.targets',
+                  'buildTransitive/TimeItSharp.Common.props',
+                  'buildTransitive/TimeItSharp.Common.targets',
+                  'timeitsharp-assets/build/TimeItSharp.Common.assets.props',
+                  'timeitsharp-assets/build/TimeItSharp.Common.assets.targets',
+                  'timeitsharp-assets/TimeItSharp.StartupHook.dll',
+              }
+              if missing := sorted(required_imports - names):
+                  raise SystemExit(f'Missing Common package imports/assets: {missing}')
+              nuspec_name = next(name for name in names if name.endswith('.nuspec'))
+              root = ET.fromstring(common_archive.read(nuspec_name))
+              dependencies = [node for node in root.iter() if node.tag.endswith('dependency') and node.attrib.get('id') == 'Datadog.Trace.BenchmarkDotNet']
+              if not dependencies or any(node.attrib.get('version') != '[2.61.0]' for node in dependencies):
+                  raise SystemExit(f'Datadog dependency is not exact in every nuspec group: {[node.attrib for node in dependencies]}')
+
+          with zipfile.ZipFile(tool_path) as tool_archive:
+              names = set(tool_archive.namelist())
+              for tfm in ('net6.0', 'net10.0'):
+                  actual = files_under(tool_archive, f'tools/{tfm}/any/datadog/')
+                  if set(actual) != set(expected):
+                      raise SystemExit(f'Tool {tfm} profiler content set differs from Datadog 2.61')
+                  for relative, expected_bytes in expected.items():
+                      if hashlib.sha256(actual[relative]).digest() != hashlib.sha256(expected_bytes).digest():
+                          raise SystemExit(f'Tool {tfm} profiler hash mismatch: {relative}')
+              forbidden = ('ApiWrapper', 'Datadog.Trace.Bundle', 'LD_PRELOAD')
+              if any(any(token.lower() in name.lower() for token in forbidden) for name in names):
+                  raise SystemExit('Found incompatible Datadog v3/API-wrapper/preload content')
+
+          print(f'Exact Datadog v2.61 payload verified ({len(expected)} files) in Common and tool packages')
           PY
 
       - uses: actions/upload-artifact@v4
