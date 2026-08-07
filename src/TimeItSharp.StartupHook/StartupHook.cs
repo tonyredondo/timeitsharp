@@ -3,85 +3,170 @@ using TimeItSharp.RuntimeMetrics;
 
 public sealed class StartupHook
 {
+    private static readonly object SyncRoot = new();
     private static RuntimeMetricsWriter? _metricsWriter;
     private static DateTime _startTime;
     private static DateTime _mainMethodStartTime;
+    private static bool _shuttingDown;
 
     public static void Initialize()
     {
-        _startTime = Clock.UtcNow;
-        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is not { Length: > 0 } metricsPath)
+        lock (SyncRoot)
         {
-            return;
-        }
+            // Startup hooks can be initialized more than once by a host. Keep one writer and one
+            // ProcessExit subscription rather than leaking timers and duplicate metrics.
+            if (_metricsWriter is not null || _shuttingDown)
+            {
+                return;
+            }
 
-        var enableMetrics = true;
-        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName) is { Length: > 0 } processName)
-        {
-            var currentProcessName = ProcessHelpers.ProcessName;
-            if (processName.IndexOf(';') == -1)
+            _startTime = Clock.UtcNow;
+            if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsTemporalPathEnvironmentVariable) is not { Length: > 0 } metricsPath)
             {
-                enableMetrics = string.Equals(currentProcessName, processName, StringComparison.OrdinalIgnoreCase);
+                return;
             }
-            else
-            {
-                enableMetrics = processName.Split(';').Any(pName =>
-                    string.Equals(currentProcessName, pName, StringComparison.OrdinalIgnoreCase));
-            }
-        }
 
-        if (!enableMetrics)
-        {
-            return;
-        }
+            var enableMetrics = true;
+            if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsProcessName) is { Length: > 0 } processName)
+            {
+                var currentProcessName = ProcessHelpers.ProcessName;
+                if (processName.IndexOf(';') == -1)
+                {
+                    enableMetrics = string.Equals(currentProcessName, processName, StringComparison.OrdinalIgnoreCase);
+                }
+                else
+                {
+                    enableMetrics = processName.Split(';').Any(pName =>
+                        string.Equals(currentProcessName, pName, StringComparison.OrdinalIgnoreCase));
+                }
+            }
 
-        var frequencyInMs = 200;
-        if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsFrequency) is { Length: > 0 } frequency)
-        {
-            if (frequency == "100")
+            if (!enableMetrics)
             {
-                frequencyInMs = 100;
+                return;
             }
-            else if (frequency == "200")
+
+            const int defaultFrequencyInMs = 200;
+            var frequencyInMs = defaultFrequencyInMs;
+            if (Environment.GetEnvironmentVariable(Constants.TimeItMetricsFrequency) is { Length: > 0 } frequency &&
+                int.TryParse(frequency, out var parsedFrequencyInMs) &&
+                parsedFrequencyInMs > 0)
             {
-                frequencyInMs = 200;
+                frequencyInMs = parsedFrequencyInMs;
             }
-            else if (frequency == "300")
+
+            BinaryFileStorage? storage = null;
+            RuntimeMetricsWriter? writer = null;
+            var processExitSubscribed = false;
+            try
             {
-                frequencyInMs = 300;
+                storage = new BinaryFileStorage(metricsPath);
+                writer = new RuntimeMetricsWriter(storage, TimeSpan.FromMilliseconds(frequencyInMs));
+                writer.PushEvents();
+                AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
+                processExitSubscribed = true;
+                _metricsWriter = writer;
+                _mainMethodStartTime = Clock.UtcNow;
             }
-            else
+            catch
             {
-                frequencyInMs = int.Parse(frequency);
+                // Runtime metrics are supplementary. An invalid/replaced metrics path or an
+                // unavailable event source must never prevent the profiled process from starting.
+                // Dispose both layers when setup fails after opening the file.
+                if (processExitSubscribed)
+                {
+                    try
+                    {
+                        AppDomain.CurrentDomain.ProcessExit -= CurrentDomainOnProcessExit;
+                    }
+                    catch
+                    {
+                        // Best effort only; preserve process startup.
+                    }
+                }
+
+                try
+                {
+                    writer?.Dispose();
+                }
+                catch
+                {
+                    // Best effort only; preserve process startup.
+                }
+
+                try
+                {
+                    storage?.Dispose();
+                }
+                catch
+                {
+                    // Best effort only; preserve process startup.
+                }
+
+                _metricsWriter = null;
             }
         }
-        
-        _metricsWriter = new RuntimeMetricsWriter(new BinaryFileStorage(metricsPath), TimeSpan.FromMilliseconds(frequencyInMs));
-        _metricsWriter.PushEvents();
-        AppDomain.CurrentDomain.ProcessExit += CurrentDomainOnProcessExit;
-        _mainMethodStartTime = Clock.UtcNow;
     }
 
     private static void CurrentDomainOnProcessExit(object? sender, EventArgs e)
     {
-        if (_metricsWriter is null)
+        RuntimeMetricsWriter? metricsWriter;
+        lock (SyncRoot)
+        {
+            if (_shuttingDown)
+            {
+                return;
+            }
+
+            _shuttingDown = true;
+            metricsWriter = _metricsWriter;
+            _metricsWriter = null;
+        }
+
+        if (metricsWriter is null)
         {
             return;
         }
 
-        var mp1 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
-            Constants.ProcessStartTimeUtcMetricName, _startTime.ToBinary());
-        var mp2 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
-            Constants.MainMethodStartTimeUtcMetricName, _mainMethodStartTime.ToBinary());
-        var mp3 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
-            Constants.MainMethodEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
-        _metricsWriter.Storage.WritePayload(in mp1, in mp2, in mp3);
+        try
+        {
+            var mp1 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                Constants.ProcessStartTimeUtcMetricName, _startTime.ToBinary());
+            var mp2 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                Constants.MainMethodStartTimeUtcMetricName, _mainMethodStartTime.ToBinary());
+            var mp3 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                Constants.MainMethodEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            metricsWriter.Storage.WritePayload(in mp1, in mp2, in mp3);
 
-        _metricsWriter.PushEvents();
+            metricsWriter.PushEvents();
 
-        var mp4 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
-            Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
-        _metricsWriter.Storage.WritePayload(in mp4);
-        _metricsWriter.Storage.Dispose();
+            var mp4 = new BinaryFileStorage.MetricPayload(BinaryFileStorage.MetricType.Gauge,
+                Constants.ProcessEndTimeUtcMetricName, Clock.UtcNow.ToBinary());
+            metricsWriter.Storage.WritePayload(in mp4);
+        }
+        catch
+        {
+            // Metrics must never interfere with process shutdown.
+        }
+        finally
+        {
+            try
+            {
+                metricsWriter.Dispose();
+            }
+            catch
+            {
+                // Metrics cleanup must not interfere with process shutdown.
+            }
+
+            try
+            {
+                metricsWriter.Storage.Dispose();
+            }
+            catch
+            {
+                // Metrics cleanup must not interfere with process shutdown.
+            }
+        }
     }
 }

@@ -1,0 +1,286 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Runtime.Loader;
+using TimeItSharp.Common.Configuration;
+
+namespace TimeItSharp.Common;
+
+/// <summary>
+/// Resolves extension declarations consistently for the engine and configuration builder.
+/// </summary>
+internal static class ExtensionResolver
+{
+    [RequiresUnreferencedCode("Loads extension types by name or from an assembly path.")]
+    public static List<(T Instance, AssemblyLoadInfo? LoadInfo)> Resolve<T>(
+        IReadOnlyList<AssemblyLoadInfo>? assemblyLoadInfos,
+        Func<List<T>>? defaultListFunc = null,
+        string? baseDirectory = null)
+        where T : class, INamedExtension
+    {
+        var result = new List<(T Instance, AssemblyLoadInfo? LoadInfo)>();
+        try
+        {
+            if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
+            {
+                foreach (var instance in defaultListFunc?.Invoke() ?? new List<T>())
+                {
+                    if (instance is null)
+                    {
+                        throw new InvalidOperationException($"The default {typeof(T).Name} extension list contains a null entry.");
+                    }
+
+                    result.Add((instance, null));
+                }
+
+                return result;
+            }
+
+            var loadContext = AssemblyLoadContext.Default;
+            for (var index = 0; index < assemblyLoadInfos.Count; index++)
+            {
+                var loadInfo = assemblyLoadInfos[index];
+                if (loadInfo is null)
+                {
+                    throw new InvalidOperationException($"{typeof(T).Name} extension entry at index {index} cannot be null.");
+                }
+
+                ValidateSelector<T>(loadInfo, index);
+                try
+                {
+                    var instance = ResolveOne<T>(loadInfo, loadContext, baseDirectory);
+                    result.Add((instance, loadInfo));
+                }
+                catch (Exception ex) when (ex is not InvalidOperationException &&
+                                           ex is not FileNotFoundException &&
+                                           ex is not OutOfMemoryException &&
+                                           ex is not StackOverflowException)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not load {typeof(T).Name} extension at index {index} " +
+                        $"('{loadInfo.Name ?? loadInfo.Type ?? loadInfo.FilePath}').",
+                        ex);
+                }
+            }
+
+            return result;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+        {
+            DisposeCreated(result);
+            throw;
+        }
+    }
+
+    private static void DisposeCreated<T>(IReadOnlyList<(T Instance, AssemblyLoadInfo? LoadInfo)> instances)
+        where T : class, INamedExtension
+    {
+        var disposed = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        for (var index = instances.Count - 1; index >= 0; index--)
+        {
+            var instance = instances[index].Instance;
+            if (instance is not IDisposable disposable || !disposed.Add(instance))
+            {
+                continue;
+            }
+
+            try
+            {
+                disposable.Dispose();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                // Cleanup is best effort and must not replace the resolution/validation failure.
+            }
+        }
+    }
+
+    internal static void ValidateSelector<T>(AssemblyLoadInfo info, int index)
+        where T : class, INamedExtension
+    {
+        ArgumentNullException.ThrowIfNull(info);
+        var errors = Config.GetAssemblyLoadInfoValidationErrors(
+            info,
+            $"{GetPropertyName(typeof(T))}[{index}]");
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(string.Join("; ", errors));
+        }
+    }
+
+    [RequiresUnreferencedCode("Loads extension types by name or from an assembly path.")]
+    private static T ResolveOne<T>(
+        AssemblyLoadInfo loadInfo,
+        AssemblyLoadContext loadContext,
+        string? baseDirectory)
+        where T : class, INamedExtension
+    {
+        if (loadInfo.InMemoryType is { } inMemoryType)
+        {
+            return CreateInstance<T>(inMemoryType, loadInfo, "in-memory type");
+        }
+
+        if (!string.IsNullOrWhiteSpace(loadInfo.FilePath))
+        {
+            var assemblyPath = ExtensionIdentity.NormalizePath(loadInfo.FilePath, baseDirectory);
+            if (!File.Exists(assemblyPath))
+            {
+                throw new FileNotFoundException("Extension assembly not found.", assemblyPath);
+            }
+
+            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            var extensionType = assembly.GetType(loadInfo.Type!, throwOnError: true);
+            return CreateInstance<T>(extensionType!, loadInfo, $"'{assemblyPath}'");
+        }
+
+        if (!string.IsNullOrWhiteSpace(loadInfo.Name) &&
+            BuiltInExtensionAliases.TryResolve(typeof(T), loadInfo.Name, out var builtInType))
+        {
+            return CreateInstance<T>(builtInType, loadInfo, $"built-in alias '{loadInfo.Name}'");
+        }
+
+        // Name resolution for custom extensions is intentionally exact. Built-in aliases are
+        // handled above and are case-insensitive by contract. First use discovery paths that do
+        // not run constructors. This avoids side effects for the common cases where Name is a
+        // constant/computed property or the requested name is the CLR type name.
+        var candidateTypes = new List<Type>();
+        var matchingTypes = new List<Type>();
+        foreach (var assembly in loadContext.Assemblies)
+        {
+            TypeInfo[] definedTypes;
+            try
+            {
+                definedTypes = assembly.DefinedTypes.ToArray();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                definedTypes = ex.Types
+                    .Where(type => type is not null)
+                    .Select(type => type!.GetTypeInfo())
+                    .ToArray();
+            }
+
+            foreach (var typeInfo in definedTypes)
+            {
+                var type = typeInfo.AsType();
+                if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum ||
+                    !typeof(T).IsAssignableFrom(type))
+                {
+                    continue;
+                }
+
+                candidateTypes.Add(type);
+                if (string.Equals(typeInfo.Name, loadInfo.Name, StringComparison.Ordinal) ||
+                    string.Equals(typeInfo.FullName, loadInfo.Name, StringComparison.Ordinal))
+                {
+                    matchingTypes.Add(type);
+                    continue;
+                }
+
+                try
+                {
+                    if (RuntimeHelpers.GetUninitializedObject(type) is T probe &&
+                        string.Equals(probe.Name, loadInfo.Name, StringComparison.Ordinal))
+                    {
+                        matchingTypes.Add(type);
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+                {
+                    // The getter depends on constructor state. The compatibility fallback below
+                    // will activate candidates only if no side-effect-free match was found.
+                }
+            }
+        }
+
+        Exception? activationError = null;
+        foreach (var matchingType in matchingTypes.Distinct())
+        {
+            try
+            {
+                return CreateInstance<T>(matchingType, loadInfo, $"custom name '{loadInfo.Name}'");
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                activationError ??= ex;
+            }
+        }
+        if (activationError is not null)
+        {
+            throw new InvalidOperationException(
+                $"Could not create {typeof(T).Name} extension named '{loadInfo.Name}'.",
+                activationError);
+        }
+
+        // Historically, Name could be assigned by the constructor. There is no general way to
+        // observe such a value without activation, so retain that compatibility as a last resort.
+        // Stop at the first match and return that same instance: the selected constructor runs
+        // once, and constructors are not run at all when one of the fast paths above succeeds.
+        foreach (var candidateType in candidateTypes.Distinct())
+        {
+            try
+            {
+                var instance = CreateInstance<T>(candidateType, loadInfo, $"custom name '{loadInfo.Name}'");
+                if (string.Equals(instance.Name, loadInfo.Name, StringComparison.Ordinal))
+                {
+                    return instance;
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                // A candidate that cannot be activated (or whose Name cannot be read) is not a
+                // match. Do not let unrelated extensions prevent discovery of a later match.
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Could not find {typeof(T).Name} extension named '{loadInfo.Name}'.");
+    }
+
+
+    [RequiresUnreferencedCode("Creates extension instances through reflection.")]
+    private static T CreateInstance<T>(Type extensionType, AssemblyLoadInfo loadInfo, string source)
+        where T : class, INamedExtension
+    {
+        if (!typeof(T).IsAssignableFrom(extensionType))
+        {
+            throw new InvalidOperationException(
+                $"Type '{extensionType.FullName ?? extensionType.Name}' from {source} does not implement {typeof(T).FullName}.");
+        }
+
+        if (extensionType.IsAbstract || extensionType.IsInterface || extensionType.IsEnum)
+        {
+            throw new InvalidOperationException(
+                $"Type '{extensionType.FullName ?? extensionType.Name}' from {source} cannot be instantiated.");
+        }
+
+        if (Activator.CreateInstance(extensionType) is not T instance)
+        {
+            throw new InvalidOperationException(
+                $"Could not create {typeof(T).Name} extension '{loadInfo.Name ?? loadInfo.Type ?? loadInfo.FilePath}'.");
+        }
+
+        return instance;
+    }
+
+    private static string GetPropertyName(Type extensionContract)
+    {
+        if (extensionContract == typeof(Exporters.IExporter))
+        {
+            return "exporters";
+        }
+
+        if (extensionContract == typeof(Assertors.IAssertor))
+        {
+            return "assertors";
+        }
+
+        if (extensionContract == typeof(Services.IService))
+        {
+            return "services";
+        }
+
+        return "extensions";
+    }
+
+}

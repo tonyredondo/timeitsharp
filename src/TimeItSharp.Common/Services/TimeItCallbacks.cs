@@ -1,3 +1,5 @@
+using System.Runtime.ExceptionServices;
+using System.Threading;
 using CliWrap;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Results;
@@ -6,6 +8,20 @@ namespace TimeItSharp.Common.Services;
 
 public sealed class TimeItCallbacks
 {
+    private readonly object _subscriptionsGate = new();
+
+    internal CancellationToken CancellationToken { get; }
+
+    public TimeItCallbacks()
+        : this(CancellationToken.None)
+    {
+    }
+
+    internal TimeItCallbacks(CancellationToken cancellationToken)
+    {
+        CancellationToken = cancellationToken;
+    }
+
     public delegate void BeforeAllScenariosStartsDelegate(IReadOnlyList<Scenario> scenarios);
 
     public delegate void OnScenarioStartDelegate(ScenarioStartArg scenario);
@@ -13,23 +29,183 @@ public sealed class TimeItCallbacks
     public delegate void OnExecutionStartDelegate(DataPoint dataPoint, TimeItPhase phase, ref Command command);
 
     public delegate void OnExecutionEndDelegate(DataPoint dataPoint, TimeItPhase phase);
-    
+
     public delegate void OnScenarioFinishDelegate(ScenarioResult scenarioResults);
 
     public delegate void AfterAllScenariosFinishesDelegate(IReadOnlyList<ScenarioResult> scenariosResults);
 
     public delegate void OnFinishDelegate();
 
-    public event BeforeAllScenariosStartsDelegate? BeforeAllScenariosStarts;
-    public event OnScenarioStartDelegate? OnScenarioStart;
-    public event OnExecutionStartDelegate? OnExecutionStart;
-    public event OnExecutionEndDelegate? OnExecutionEnd;
-    public event OnScenarioFinishDelegate? OnScenarioFinish;
-    public event AfterAllScenariosFinishesDelegate? AfterAllScenariosFinishes;
-    public event OnFinishDelegate? OnFinish;
+    private BeforeAllScenariosStartsDelegate? _beforeAllScenariosStarts;
+    private OnScenarioStartDelegate? _onScenarioStart;
+    private OnExecutionStartDelegate? _onExecutionStart;
+    private OnExecutionEndDelegate? _onExecutionEnd;
+    private OnScenarioFinishDelegate? _onScenarioFinish;
+    private AfterAllScenariosFinishesDelegate? _afterAllScenariosFinishes;
+    private OnFinishDelegate? _onFinish;
+
+    // Invocation lists are materialized when a callback is added/removed rather than on every
+    // execution. ExecutionStart/ExecutionEnd run once per datapoint and must not allocate merely
+    // to inspect a multicast delegate.
+    private BeforeAllScenariosStartsDelegate[] _beforeAllScenariosStartsCallbacks = Array.Empty<BeforeAllScenariosStartsDelegate>();
+    private OnScenarioStartDelegate[] _onScenarioStartCallbacks = Array.Empty<OnScenarioStartDelegate>();
+    private OnExecutionStartDelegate[] _onExecutionStartCallbacks = Array.Empty<OnExecutionStartDelegate>();
+    private OnExecutionEndDelegate[] _onExecutionEndCallbacks = Array.Empty<OnExecutionEndDelegate>();
+    private OnScenarioFinishDelegate[] _onScenarioFinishCallbacks = Array.Empty<OnScenarioFinishDelegate>();
+    private AfterAllScenariosFinishesDelegate[] _afterAllScenariosFinishesCallbacks = Array.Empty<AfterAllScenariosFinishesDelegate>();
+    private OnFinishDelegate[] _onFinishCallbacks = Array.Empty<OnFinishDelegate>();
+
+    public event BeforeAllScenariosStartsDelegate? BeforeAllScenariosStarts
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _beforeAllScenariosStarts += value;
+                Refresh(ref _beforeAllScenariosStartsCallbacks, _beforeAllScenariosStarts);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _beforeAllScenariosStarts -= value;
+                Refresh(ref _beforeAllScenariosStartsCallbacks, _beforeAllScenariosStarts);
+            }
+        }
+    }
+
+    public event OnScenarioStartDelegate? OnScenarioStart
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioStart += value;
+                Refresh(ref _onScenarioStartCallbacks, _onScenarioStart);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioStart -= value;
+                Refresh(ref _onScenarioStartCallbacks, _onScenarioStart);
+            }
+        }
+    }
+
+    public event OnExecutionStartDelegate? OnExecutionStart
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionStart += value;
+                Refresh(ref _onExecutionStartCallbacks, _onExecutionStart);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionStart -= value;
+                Refresh(ref _onExecutionStartCallbacks, _onExecutionStart);
+            }
+        }
+    }
+
+    public event OnExecutionEndDelegate? OnExecutionEnd
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionEnd += value;
+                Refresh(ref _onExecutionEndCallbacks, _onExecutionEnd);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionEnd -= value;
+                Refresh(ref _onExecutionEndCallbacks, _onExecutionEnd);
+            }
+        }
+    }
+
+    public event OnScenarioFinishDelegate? OnScenarioFinish
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioFinish += value;
+                Refresh(ref _onScenarioFinishCallbacks, _onScenarioFinish);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioFinish -= value;
+                Refresh(ref _onScenarioFinishCallbacks, _onScenarioFinish);
+            }
+        }
+    }
+
+    public event AfterAllScenariosFinishesDelegate? AfterAllScenariosFinishes
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _afterAllScenariosFinishes += value;
+                Refresh(ref _afterAllScenariosFinishesCallbacks, _afterAllScenariosFinishes);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _afterAllScenariosFinishes -= value;
+                Refresh(ref _afterAllScenariosFinishesCallbacks, _afterAllScenariosFinishes);
+            }
+        }
+    }
+
+    public event OnFinishDelegate? OnFinish
+    {
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onFinish += value;
+                Refresh(ref _onFinishCallbacks, _onFinish);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onFinish -= value;
+                Refresh(ref _onFinishCallbacks, _onFinish);
+            }
+        }
+    }
 
     public CallbacksTriggers GetTriggers() => new(this);
-    
+
+    private static void Refresh<TDelegate>(ref TDelegate[] target, TDelegate? callbacks)
+        where TDelegate : Delegate
+    {
+        var snapshot = callbacks is null
+            ? Array.Empty<TDelegate>()
+            : callbacks.GetInvocationList().Cast<TDelegate>().ToArray();
+        Volatile.Write(ref target, snapshot);
+    }
+
     public sealed class CallbacksTriggers
     {
         private readonly TimeItCallbacks _callbacks;
@@ -40,66 +216,273 @@ public sealed class TimeItCallbacks
         }
 
         public void BeforeAllScenariosStarts(IReadOnlyList<Scenario> scenarios)
-            => _callbacks.BeforeAllScenariosStarts?.Invoke(scenarios);
+        {
+            var callbacks = Volatile.Read(ref _callbacks._beforeAllScenariosStartsCallbacks);
+            if (callbacks.Length == 0)
+            {
+                return;
+            }
+
+            Exception? firstException = null;
+            foreach (var callback in callbacks)
+            {
+                try
+                {
+                    callback(scenarios);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    firstException ??= ex;
+                }
+            }
+
+            Rethrow(firstException);
+        }
 
         public void ScenarioStart(ScenarioStartArg scenarioStartArg)
-            => _callbacks.OnScenarioStart?.Invoke(scenarioStartArg);
+        {
+            var callbacks = Volatile.Read(ref _callbacks._onScenarioStartCallbacks);
+            if (callbacks.Length == 0)
+            {
+                return;
+            }
+
+            Exception? firstException = null;
+            foreach (var callback in callbacks)
+            {
+                try
+                {
+                    callback(scenarioStartArg);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    firstException ??= ex;
+                }
+            }
+
+            Rethrow(firstException);
+        }
 
         public void ExecutionStart(DataPoint dataPoint, TimeItPhase phase, ref Command command)
         {
-            if (dataPoint.Scenario?.ParentService is { } parentService)
+            var callbacks = Volatile.Read(ref _callbacks._onExecutionStartCallbacks);
+            if (callbacks.Length == 0)
             {
-                if (_callbacks.OnExecutionStart is { } onExecutionStartEvent)
-                {
-                    foreach (var @delegate in onExecutionStartEvent.GetInvocationList())
-                    {
-                        if (@delegate.Target == parentService)
-                        {
-                            ((OnExecutionStartDelegate)@delegate).Invoke(dataPoint, phase, ref command);
-                        }
-                    }
-                }
+                return;
             }
-            else
-            {
-                _callbacks.OnExecutionStart?.Invoke(dataPoint, phase, ref command);
-            }
+
+            InvokeExecutionStartCallbacks(callbacks, dataPoint, phase, ref command, dataPoint.Scenario?.ParentService);
         }
 
         public void ExecutionEnd(DataPoint dataPoint, TimeItPhase phase)
         {
-            if (dataPoint.Scenario?.ParentService is { } parentService)
+            var callbacks = Volatile.Read(ref _callbacks._onExecutionEndCallbacks);
+            if (callbacks.Length == 0)
             {
-                if (_callbacks.OnExecutionEnd is { } onExecutionEndEvent)
+                return;
+            }
+
+            var parentService = dataPoint.Scenario?.ParentService;
+            Exception? firstException = null;
+            if (parentService is null)
+            {
+                // The single-callback path is common and avoids both GetInvocationList and a
+                // closure/delegate allocation. The array itself is refreshed only at registration.
+                if (callbacks.Length == 1)
                 {
-                    foreach (var @delegate in onExecutionEndEvent.GetInvocationList())
+                    try
                     {
-                        if (@delegate.Target == parentService)
-                        {
-                            ((OnExecutionEndDelegate)@delegate).Invoke(dataPoint, phase);
-                        }
+                        callbacks[0](dataPoint, phase);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        firstException = ex;
+                    }
+
+                    Rethrow(firstException);
+                    return;
+                }
+
+                foreach (var callback in callbacks)
+                {
+                    try
+                    {
+                        callback(dataPoint, phase);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        firstException ??= ex;
                     }
                 }
             }
             else
             {
-                _callbacks.OnExecutionEnd?.Invoke(dataPoint, phase);
+                foreach (var callback in callbacks)
+                {
+                    if (callback.Target != parentService)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        callback(dataPoint, phase);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        firstException ??= ex;
+                    }
+                }
             }
+
+            Rethrow(firstException);
         }
 
         public void ScenarioFinish(ScenarioResult scenarioResults)
-            => _callbacks.OnScenarioFinish?.Invoke(scenarioResults);
+        {
+            var callbacks = Volatile.Read(ref _callbacks._onScenarioFinishCallbacks);
+            if (callbacks.Length == 0)
+            {
+                return;
+            }
+
+            Exception? firstException = null;
+            foreach (var callback in callbacks)
+            {
+                try
+                {
+                    callback(scenarioResults);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    firstException ??= ex;
+                }
+            }
+
+            Rethrow(firstException);
+        }
 
         public void AfterAllScenariosFinishes(IReadOnlyList<ScenarioResult> scenariosResults)
-            => _callbacks.AfterAllScenariosFinishes?.Invoke(scenariosResults);
+        {
+            var callbacks = Volatile.Read(ref _callbacks._afterAllScenariosFinishesCallbacks);
+            if (callbacks.Length == 0)
+            {
+                return;
+            }
+
+            Exception? firstException = null;
+            foreach (var callback in callbacks)
+            {
+                try
+                {
+                    callback(scenariosResults);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    firstException ??= ex;
+                }
+            }
+
+            Rethrow(firstException);
+        }
 
         public void Finish()
-            => _callbacks.OnFinish?.Invoke();
+        {
+            var callbacks = Volatile.Read(ref _callbacks._onFinishCallbacks);
+            if (callbacks.Length == 0)
+            {
+                return;
+            }
+
+            Exception? firstException = null;
+            foreach (var callback in callbacks)
+            {
+                try
+                {
+                    callback();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    firstException ??= ex;
+                }
+            }
+
+            Rethrow(firstException);
+        }
+
+        private static void InvokeExecutionStartCallbacks(
+            OnExecutionStartDelegate[] callbacks,
+            DataPoint dataPoint,
+            TimeItPhase phase,
+            ref Command command,
+            IService? parentService)
+        {
+            Exception? firstException = null;
+            if (parentService is null)
+            {
+                if (callbacks.Length == 1)
+                {
+                    try
+                    {
+                        callbacks[0](dataPoint, phase, ref command);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        firstException = ex;
+                    }
+
+                    Rethrow(firstException);
+                    return;
+                }
+
+                foreach (var callback in callbacks)
+                {
+                    try
+                    {
+                        callback(dataPoint, phase, ref command);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        firstException ??= ex;
+                    }
+                }
+            }
+            else
+            {
+                foreach (var callback in callbacks)
+                {
+                    if (callback.Target != parentService)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        callback(dataPoint, phase, ref command);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        firstException ??= ex;
+                    }
+                }
+            }
+
+            Rethrow(firstException);
+        }
+
+        private static void Rethrow(Exception? exception)
+        {
+            if (exception is not null)
+            {
+                ExceptionDispatchInfo.Capture(exception).Throw();
+            }
+        }
     }
 
     public sealed class ScenarioStartArg
     {
         private readonly List<(IService ServiceAskingForRepeat, int Count)> _repeats;
+        private int _totalRepeatCount;
 
         public Scenario Scenario { get; private set; }
 
@@ -108,13 +491,26 @@ public sealed class TimeItCallbacks
             _repeats = new();
             Scenario = scenario;
         }
-        
+
         public void RepeatScenarioForService(IService serviceAskingForRepeat, int count)
         {
+            ArgumentNullException.ThrowIfNull(serviceAskingForRepeat);
+            if (count <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), count, "A repeated scenario count must be greater than zero.");
+            }
+
+            if (count > Config.MaxIterations - _totalRepeatCount)
+            {
+                throw new ArgumentOutOfRangeException(nameof(count), count,
+                    $"Repeated scenario runs cannot exceed {Config.MaxIterations} in total.");
+            }
+
+            _totalRepeatCount += count;
             _repeats.Add((serviceAskingForRepeat, count));
         }
 
-        internal IEnumerable<(IService ServiceAskingForRepeat, int Count)> GetRepeats()
+        internal IReadOnlyList<(IService ServiceAskingForRepeat, int Count)> GetRepeats()
             => _repeats;
     }
 }

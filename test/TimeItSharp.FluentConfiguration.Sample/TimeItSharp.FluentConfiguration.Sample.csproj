@@ -2,12 +2,15 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
+        <IsPackable>false</IsPackable>
         <TargetFrameworks>net6.0;net7.0;net8.0;net9.0;net10.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
     </PropertyGroup>
 
     <PropertyGroup>
+        <!-- The CI smoke test passes an explicit RID and self-contained=true. Keeping the
+             publish settings here also lets consumers reproduce the trimmed single-file case. -->
         <PublishTrimmed>true</PublishTrimmed>
         <PublishSingleFile>true</PublishSingleFile>
     </PropertyGroup>

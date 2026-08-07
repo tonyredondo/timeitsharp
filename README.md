@@ -11,40 +11,90 @@ dotnet tool install --global TimeItSharp
 
 ### Usage
 ```bash
-dotnet timeit [configuration file.json]
+dotnet timeit [configuration.json]
+dotnet timeit "[command] [arguments]"
 ```
 
-or
+The command form accepts a quoted executable/argument string, including paths containing
+spaces. The command line is parsed by CliWrap: quote an executable path and use double quotes for
+argument boundaries. POSIX-style single-quoted argument values are translated safely; ordinary
+backslashes (including a trailing Windows path slash) are preserved.
 
 ```bash
-dotnet timeit -- "[command]"
+dotnet timeit --command '"/path with spaces/app" --name "a b"'
+dotnet timeit --command "echo 'literal spaces and C:\\temp\\'"
+# For multiple argv values, use -- so TimeItSharp does not consume process options.
+dotnet timeit -- echo --config foo.json
 ```
+
+Configuration files are validated before any process is started; malformed counts,
+statistics, scenarios, and extension entries are reported together.
+
+TimeItSharp classifies a positional value with these rules:
+
+* An existing JSON file (or a missing single `.json` path) is configuration mode.
+* A command containing multiple tokens is command mode, so `echo hello.json` and
+  `echo --config foo.json` never attempt to load a configuration.
+* Use `--config <path>` to force configuration mode, or `--command <line>` to force command
+  mode (including an executable whose name ends in `.json`).
+* `--` ends TimeItSharp's options. Everything after it is passed to the process command, even
+  values such as `--config` or `foo.json`.
 
 ```bash
-❯ dotnet timeit --help
-TimeItSharp v0.1.20
-Description:
-
-Usage:
-  TimeItSharp <configuration file or process name> [options]
-
-Arguments:
-  <configuration file or process name>  The JSON configuration file or process name
-
-Options:
-  --variable <variable>        Variables used to instantiate the configuration file [default: TimeItSharp.Common.TemplateVariables]
-  --count <count>              Number of iterations to run
-  --warmup <warmup>            Number of iterations to warm up
-  --metrics                    Enable Metrics from startup hook [default: True]
-  --json-exporter              Enable JSON exporter [default: False]
-  --datadog-exporter           Enable Datadog exporter [default: False]
-  --datadog-profiler           Enable Datadog profiler [default: False]
-  --first-run-stdout           Show the StdOut and StdErr for the first run [default: False]
-  --process-failed-executions  Include failed executions in the final results [default: False]
-  --debug                      Run timeit in debug mode [default: False]
-  --version                    Show version information
-  -?, -h, --help               Show help and usage information
+dotnet timeit config.json --count 100 --warmup 10 --metrics false
+dotnet timeit --config config.json --count 100
+dotnet timeit --command "echo hello.json" --count 1 --warmup 0
+# Put TimeItSharp options before '--'; command arguments after it are not consumed by TimeItSharp.
+dotnet timeit --count 1 --warmup 0 -- echo hello.json
+# Values are split at the first '=' so additional '=' characters are preserved.
+dotnet timeit config.json --variable "TOKEN=a=b=c"
 ```
+
+#### CLI options
+```text
+  --config <path>                Force configuration-file mode
+  --command <line>               Force process-command mode
+  --variable <key=value>         Variables used to expand configuration values
+  --count <count>                Number of iterations to run
+  --warmup <warmup>              Number of iterations to warm up
+  --metrics <true|false>         Enable metrics from the startup hook (default: true)
+  --json-exporter                Enable JSON exporter
+  --datadog-exporter             Enable Datadog exporter
+  --datadog-profiler             Enable Datadog profiler
+  --first-run-stdout             Show stdout/stderr for the first run
+  --process-failed-executions    Include failed executions in final results
+  --debug                        Run TimeItSharp in debug mode
+```
+
+CLI options also override matching values in a JSON configuration when explicitly supplied.
+In legacy positional mode, a path ending in `.json` is always treated as configuration (even if
+it names an executable); use `--command <line>` or `-- <line>` when the executable itself has
+that suffix. Malformed or missing `.json` paths are never executed as commands.
+Environment variables and built-in JSON/console/Datadog outputs redact names containing passwords,
+secrets, tokens, API keys, private keys, webhooks, recognized database/DSN connection aliases, URI user-info, or authentication values.
+Custom exporters and callback services receive the original result graph by design; they must apply
+their own sanitization before writing logs or external reports. The built-in `ExecuteService` captures
+callback stdout/stderr with a bound and applies the shared sanitizer when `redirectStandardOutput`
+is enabled; arbitrary custom services that write directly to `Console` remain outside that guarantee.
+Opaque literals in configuration, command arguments, callback/process output, or inherited environment
+(for example a password with no secret-like key) cannot be inferred as secrets. Callers should use
+secret-bearing names/templates or avoid sending those values to logs; this is especially important
+when custom services write directly to `Console`.
+
+#### Datadog profiler and package consumers
+
+The profiler integration is pinned to `Datadog.Trace.BenchmarkDotNet` **2.61.0**. It uses
+only that package's `datadog/<rid>` assets (`linux-x64`, `linux-musl-x64`, `linux-arm64`,
+`win-x64`, and `win-x86`) and its `loader.conf`; assets from the Datadog v3 bundle are not
+compatible. Linux musl ARM64 is reported as unsupported because v2.61.0 does not ship a
+`linux-musl-arm64` asset. The profiler reports configured environment/asset status only—an
+actual native attach must be verified by the target runtime.
+
+`TimeItSharp.Common` packages its startup hook and Datadog native assets for clean NuGet
+consumers. The hook is kept outside a single-file bundle. Trimmed single-file publishing is
+supported as a smoke-test scenario, but native AOT is not supported because the
+`netcoreapp3.1` startup hook and extension loading use runtime features that AOT cannot
+preserve automatically.
 
 
 #### Default Configuration when running a command
@@ -175,7 +225,7 @@ Assertors = DefaultAssertor
 ```bash
 dotnet timeit config-example.json
 
-TimeItSharp v0.4.0
+TimeItSharp v0.4.8
 Warmup count: 10
 Max count: 100
 Acceptable relative width: 0,7%
@@ -365,7 +415,7 @@ ExecuteService.AfterAllScenariosFinishes: ProcessId: 58714, ProcessName: echo, D
 
 The json file '/Users/tony.redondo/repos/github/tonyredondo/timeitsharp/src/TimeItSharp/bin/Release/net9.0/jsonexporter_991684479.json' was exported.
 The Datadog exported ran successfully.
-The Datadog profiler could not be attached to the .NET processes.
+Datadog profiler status was reported for the target runtime; native attach is not verified by TimeItSharp.
 *** onFinish ***
 ExecuteService.OnFinish: ProcessId: 58728, ProcessName: echo, Duration: 00:00:00.0022280, ExitCode: 0
 ```

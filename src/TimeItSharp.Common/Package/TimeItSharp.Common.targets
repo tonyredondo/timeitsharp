@@ -1,0 +1,28 @@
+<Project>
+  <!-- NuGet contentFiles are already imported by the generated .nuget.g.props file.
+       Update, rather than Include, them to avoid duplicate-item errors in consumers. -->
+  <ItemGroup>
+    <Content Update="$(TimeItSharpStartupHookFile)" Condition="Exists('$(TimeItSharpStartupHookFile)')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>TimeItSharp.StartupHook.dll</Link>
+    </Content>
+    <None Update="$(TimeItSharpStartupHookFile)" Condition="Exists('$(TimeItSharpStartupHookFile)')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      <Link>TimeItSharp.StartupHook.dll</Link>
+    </None>
+    <Content Update="$(TimeItSharpDatadogAssetsDirectory)\**\*" Condition="Exists('$(TimeItSharpDatadogAssetsDirectory)')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <None Update="$(TimeItSharpDatadogAssetsDirectory)\**\*" Condition="Exists('$(TimeItSharpDatadogAssetsDirectory)')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+  </ItemGroup>
+</Project>

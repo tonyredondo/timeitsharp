@@ -1,6 +1,3 @@
-# This workflow will build a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
-
 name: .NET
 
 on:
@@ -12,46 +9,189 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # Matrix only controls which TFM-specific sample we invoke
     strategy:
       fail-fast: false
       matrix:
+        # net6/net7 remain supported for compatibility but are EOL runtimes.
         tfm: [ net6.0, net7.0, net8.0, net9.0, net10.0 ]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      # Install every SDK once per job (outside matrix vars)
-      - name: Setup .NET SDKs 6/7/8/9
-        uses: actions/setup-dotnet@v3
+      - name: Setup .NET runtimes and pinned SDK
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: |
             6.0.x
             7.0.x
             8.0.x
             9.0.x
-            10.0.x
+            10.0.300
 
-      # Restore & build all target frameworks
       - name: Restore dependencies
         run: dotnet restore
+
       - name: Build (Release)
         run: dotnet build --no-restore -c Release
 
-      # Run TimeItSharp tool sample
-      - name: Run TimeItSharp sample (${{ matrix.tfm }})
+      - name: Run TimeItSharp CLI sample
         if: matrix.tfm == 'net6.0'
         run: ./TimeItSharp config-example.json
         working-directory: src/TimeItSharp/bin/Release/${{ matrix.tfm }}
 
-      # Run the engine sample
       - name: Run TimeItSharp engine sample (${{ matrix.tfm }})
-        run: ./TimeItSharp.FluentConfiguration.Sample
-        working-directory: test/TimeItSharp.FluentConfiguration.Sample/bin/Release/${{ matrix.tfm }}
+        run: dotnet run --project test/TimeItSharp.FluentConfiguration.Sample -c Release --no-build --framework ${{ matrix.tfm }}
 
-      # Publish any .nupkg artifacts
+      - name: Run tests (solution, including CLI parser)
+        if: matrix.tfm == 'net10.0'
+        run: dotnet test TimeItSharp.sln -c Release --no-build --no-restore
+
+      - name: Publish trimmed single-file sample (linux-x64)
+        if: matrix.tfm == 'net10.0'
+        run: |
+          # PublishTrimmed requires an explicit RID/self-contained publish. The
+          # runtime-specific assets are restored and built as part of this publish.
+          dotnet publish test/TimeItSharp.FluentConfiguration.Sample/TimeItSharp.FluentConfiguration.Sample.csproj \
+            -c Release --framework net8.0 --runtime linux-x64 --self-contained true \
+            -p:PublishTrimmed=true -p:PublishSingleFile=true \
+            -p:PublishDir="$RUNNER_TEMP/timeitsharp-sample/"
+          test -x "$RUNNER_TEMP/timeitsharp-sample/TimeItSharp.FluentConfiguration.Sample"
+          "$RUNNER_TEMP/timeitsharp-sample/TimeItSharp.FluentConfiguration.Sample"
+
+      - name: Audit package vulnerabilities
+        if: matrix.tfm == 'net10.0'
+        run: |
+          dotnet list TimeItSharp.sln package --vulnerable --include-transitive --no-restore | tee vulnerability-report.txt
+          # Datadog.Trace.BenchmarkDotNet 2.61.0 is the latest stable v2 integration and
+          # cannot be mixed with the v3 tracer. GHSA-38wr-vpc7 has no fixed v2 release;
+          # keep the advisory visible while failing on any other vulnerability.
+          unexpected_vulnerabilities=$(grep 'https://github.com/advisories/' vulnerability-report.txt | grep -v 'GHSA-38wr-vpc7' || true)
+          if [[ -n "$unexpected_vulnerabilities" ]]; then
+            echo "$unexpected_vulnerabilities"
+            exit 1
+          fi
+          if grep -q 'has the following vulnerable packages' vulnerability-report.txt; then
+            echo 'Accepted compatibility advisory: GHSA-38wr-vpc7 (Datadog.Trace 2.61.0).'
+          fi
+
+      - name: Pack and verify the tool
+        if: matrix.tfm == 'net10.0'
+        run: |
+          rm -f artifacts/*.nupkg
+          dotnet pack TimeItSharp.sln -c Release --no-build -o artifacts
+          dotnet tool install --tool-path "$RUNNER_TEMP/timeitsharp-tool" --add-source artifacts TimeItSharp --version 0.4.8
+          tool="$RUNNER_TEMP/timeitsharp-tool/dotnet-timeit"
+          "$tool" --version
+
+          # Exercise both explicit command forms. Keep metrics and Datadog disabled so this
+          # smoke test is deterministic and cannot contact an external backend.
+          "$tool" --command "echo hello.json" --count 1 --warmup 0 --metrics false > "$RUNNER_TEMP/timeit-command.log"
+          grep -F "Cmd:" "$RUNNER_TEMP/timeit-command.log"
+          "$tool" --count 1 --warmup 0 --metrics false -- echo --config foo.json > "$RUNNER_TEMP/timeit-terminator.log"
+          grep -F "Cmd:" "$RUNNER_TEMP/timeit-terminator.log"
+
+          malformed="$RUNNER_TEMP/timeit-malformed.json"
+          printf '{not-json\n' > "$malformed"
+          if "$tool" --config "$malformed" --metrics false > "$RUNNER_TEMP/timeit-malformed.log" 2>&1; then
+            echo 'Malformed JSON was unexpectedly accepted.' >&2
+            exit 1
+          fi
+          grep -F "An error occurred" "$RUNNER_TEMP/timeit-malformed.log"
+
+      - name: Verify Datadog v2.61 profiler package contract
+        if: matrix.tfm == 'net10.0'
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import xml.etree.ElementTree as ET
+          import zipfile
+          from pathlib import Path
+
+          version = '0.4.8'
+          upstream_path = Path.home() / '.nuget/packages/datadog.trace.benchmarkdotnet/2.61.0/datadog.trace.benchmarkdotnet.2.61.0.nupkg'
+          trace_path = Path.home() / '.nuget/packages/datadog.trace/2.61.0/datadog.trace.2.61.0.nupkg'
+          common_path = Path(f'artifacts/TimeItSharp.Common.{version}.nupkg')
+          tool_path = Path(f'artifacts/TimeItSharp.{version}.nupkg')
+
+          def files_under(archive, prefix):
+              return {
+                  name[len(prefix):]: archive.read(name)
+                  for name in archive.namelist()
+                  if name.startswith(prefix) and not name.endswith('/')
+              }
+
+          with zipfile.ZipFile(upstream_path) as upstream_archive:
+              expected = files_under(upstream_archive, 'contentFiles/any/any/datadog/')
+          with zipfile.ZipFile(trace_path) as trace_archive:
+              for framework in ('net461', 'net6.0', 'netcoreapp3.1', 'netstandard2.0'):
+                  name = f'lib/{framework}/Datadog.Trace.dll'
+                  expected[f'{framework}/Datadog.Trace.dll'] = trace_archive.read(name)
+          if len(expected) != 20:
+              raise SystemExit(f'The restored Datadog 2.61 packages expose {len(expected)} profiler files, expected 20')
+
+          with zipfile.ZipFile(common_path) as common_archive:
+              names = set(common_archive.namelist())
+              actual = files_under(common_archive, 'timeitsharp-assets/datadog-v2/')
+              if set(actual) != set(expected):
+                  raise SystemExit(f'Common private payload differs: missing={sorted(set(expected)-set(actual))}, extra={sorted(set(actual)-set(expected))}')
+              for relative, expected_bytes in expected.items():
+                  if hashlib.sha256(actual[relative]).digest() != hashlib.sha256(expected_bytes).digest():
+                      raise SystemExit(f'Common payload hash mismatch: {relative}')
+              if any(name.startswith('contentFiles/any/any/datadog/') for name in names):
+                  raise SystemExit('Common must not expose profiler bytes as collision-prone contentFiles')
+              required_imports = {
+                  'build/TimeItSharp.Common.props',
+                  'build/TimeItSharp.Common.targets',
+                  'buildTransitive/TimeItSharp.Common.props',
+                  'buildTransitive/TimeItSharp.Common.targets',
+                  'timeitsharp-assets/build/TimeItSharp.Common.assets.props',
+                  'timeitsharp-assets/build/TimeItSharp.Common.assets.targets',
+                  'timeitsharp-assets/TimeItSharp.StartupHook.dll',
+              }
+              if missing := sorted(required_imports - names):
+                  raise SystemExit(f'Missing Common package imports/assets: {missing}')
+              nuspec_name = next(name for name in names if name.endswith('.nuspec'))
+              root = ET.fromstring(common_archive.read(nuspec_name))
+              dependencies = [node for node in root.iter() if node.tag.endswith('dependency') and node.attrib.get('id') == 'Datadog.Trace.BenchmarkDotNet']
+              if not dependencies or any(node.attrib.get('version') != '[2.61.0]' for node in dependencies):
+                  raise SystemExit(f'Datadog dependency is not exact in every nuspec group: {[node.attrib for node in dependencies]}')
+
+          with zipfile.ZipFile(tool_path) as tool_archive:
+              names = set(tool_archive.namelist())
+              for tfm in ('net6.0', 'net10.0'):
+                  actual = files_under(tool_archive, f'tools/{tfm}/any/datadog-v2/')
+                  if set(actual) != set(expected):
+                      raise SystemExit(f'Tool {tfm} profiler content set differs from Datadog 2.61')
+                  for relative, expected_bytes in expected.items():
+                      if hashlib.sha256(actual[relative]).digest() != hashlib.sha256(expected_bytes).digest():
+                          raise SystemExit(f'Tool {tfm} profiler hash mismatch: {relative}')
+              forbidden = ('ApiWrapper', 'Datadog.Trace.Bundle', 'LD_PRELOAD')
+              if any(any(token.lower() in name.lower() for token in forbidden) for name in names):
+                  raise SystemExit('Found incompatible Datadog v3/API-wrapper/preload content')
+
+          print(f'Exact Datadog v2.61 payload verified ({len(expected)} files) in Common and tool packages')
+          PY
+
       - uses: actions/upload-artifact@v4
-        if: matrix.tfm == 'net9.0'
+        if: matrix.tfm == 'net10.0'
         with:
           name: Nugets
-          path: ./**/*.nupkg
+          path: artifacts/*.nupkg
+
+
+  common-package-consumer:
+    name: Common package consumer (trimmed single-file)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.300
+      - uses: actions/download-artifact@v4
+        with:
+          name: Nugets
+          path: artifacts
+      - name: Restore, publish, and run a clean Common package consumer
+        run: TIMEIT_CONSUMER_RUNTIME=linux-x64 test/verify-common-package.sh artifacts 0.4.8

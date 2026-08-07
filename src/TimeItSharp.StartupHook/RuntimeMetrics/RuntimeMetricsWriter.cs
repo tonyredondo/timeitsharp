@@ -17,6 +17,7 @@ internal sealed class RuntimeMetricsWriter : IDisposable
     private TimeSpan _previousSystemCpu;
     private TimeSpan _previousTotalCpu;
     private int _exceptionCounts;
+    private int _isPushing;
 
     internal RuntimeMetricsWriter(BinaryFileStorage storage, TimeSpan delay)
     {
@@ -36,7 +37,7 @@ internal sealed class RuntimeMetricsWriter : IDisposable
 
         try
         {
-            ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var totalCpu, out var userCpu, out var systemCpu, out _, out _);
+            ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var userCpu, out var systemCpu, out var totalCpu, out _, out _);
             _previousUserCpu = userCpu;
             _previousSystemCpu = systemCpu;
             _previousTotalCpu = totalCpu;
@@ -63,12 +64,25 @@ internal sealed class RuntimeMetricsWriter : IDisposable
     public void Dispose()
     {
         AppDomain.CurrentDomain.FirstChanceException -= FirstChanceException;
-        _timer.Dispose();
+        using var timerDisposed = new ManualResetEvent(false);
+        if (_timer.Dispose(timerDisposed))
+        {
+            // ProcessExit closes the backing file immediately after Dispose. Wait until an
+            // in-flight timer callback has released the writer so its final payload cannot race
+            // with BinaryFileStorage.Dispose().
+            timerDisposed.WaitOne();
+        }
+
         _listener?.Dispose();
     }
 
     internal void PushEvents()
     {
+        if (Interlocked.Exchange(ref _isPushing, 1) != 0)
+        {
+            return;
+        }
+
         try
         {
             _listener?.Refresh();
@@ -78,7 +92,7 @@ internal sealed class RuntimeMetricsWriter : IDisposable
                 return;
             }
 
-            ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var newTotalCpu, out var newUserCpu, out var newSystemCpu,
+            ProcessHelpers.GetCurrentProcessRuntimeMetrics(out var newUserCpu, out var newSystemCpu, out var newTotalCpu,
                 out var threadCount, out var memoryUsage);
 
             var userCpu = newUserCpu - _previousUserCpu;
@@ -117,6 +131,10 @@ internal sealed class RuntimeMetricsWriter : IDisposable
         catch
         {
             // .
+        }
+        finally
+        {
+            Volatile.Write(ref _isPushing, 0);
         }
     }
 

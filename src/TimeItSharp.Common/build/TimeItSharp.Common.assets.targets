@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <_TimeItSharpCommonTargetsImported>true</_TimeItSharpCommonTargetsImported>
+  </PropertyGroup>
+
+  <!-- Assets live outside contentFiles and are copied to an isolated datadog-v2 home.
+       A direct v3 bundle keeps its public datadog home without creating a mixed profiler. -->
+  <Target Name="TimeItSharpCopyTrustedAssetsToOutput"
+          AfterTargets="CopyFilesToOutputDirectory"
+          Condition="Exists('$(TimeItSharpDatadogAssetsDirectory)') and '$(TargetDir)' != ''">
+    <ItemGroup>
+      <_TimeItSharpDatadogAsset Include="$(TimeItSharpDatadogAssetsDirectory)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TimeItSharpDatadogAsset)"
+          DestinationFiles="@(_TimeItSharpDatadogAsset->'$(TargetDir)datadog-v2\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(TimeItSharpStartupHookFile)"
+          DestinationFiles="$(TargetDir)TimeItSharp.StartupHook.dll"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(TimeItSharpStartupHookFile)')" />
+  </Target>
+
+  <Target Name="TimeItSharpCopyTrustedAssetsToPublish"
+          AfterTargets="Publish"
+          Condition="Exists('$(TimeItSharpDatadogAssetsDirectory)') and '$(PublishDir)' != ''">
+    <ItemGroup>
+      <_TimeItSharpDatadogPublishAsset Include="$(TimeItSharpDatadogAssetsDirectory)\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_TimeItSharpDatadogPublishAsset)"
+          DestinationFiles="@(_TimeItSharpDatadogPublishAsset->'$(PublishDir)datadog-v2\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="false" />
+    <Copy SourceFiles="$(TimeItSharpStartupHookFile)"
+          DestinationFiles="$(PublishDir)TimeItSharp.StartupHook.dll"
+          SkipUnchangedFiles="false"
+          Condition="Exists('$(TimeItSharpStartupHookFile)')" />
+  </Target>
+</Project>

@@ -21,6 +21,7 @@ public sealed class ScenarioBuilder
     /// <param name="scenario">Existing scenario instance</param>
     public ScenarioBuilder(Scenario scenario)
     {
+        ArgumentNullException.ThrowIfNull(scenario);
         _scenario = scenario;
     }
 
@@ -43,6 +44,7 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithName(string name)
     {
+        ArgumentNullException.ThrowIfNull(name);
         _scenario.Name = name;
         return this;
     }
@@ -99,8 +101,11 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithEnvironmentVariables(Dictionary<string, string> environmentVariables)
     {
+        ArgumentNullException.ThrowIfNull(environmentVariables);
         foreach (var kv in environmentVariables)
         {
+            ArgumentNullException.ThrowIfNull(kv.Key);
+            ArgumentNullException.ThrowIfNull(kv.Value);
             _scenario.EnvironmentVariables[kv.Key] = kv.Value;
         }
 
@@ -115,6 +120,8 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithEnvironmentVariable(string name, string value)
     {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(value);
         _scenario.EnvironmentVariables[name] = value;
         return this;
     }
@@ -126,6 +133,12 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithPathValidations(params string[] pathValidations)
     {
+        ArgumentNullException.ThrowIfNull(pathValidations);
+        foreach (var path in pathValidations)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+        }
+
         _scenario.PathValidations.AddRange(pathValidations);
         return this;
     }
@@ -137,6 +150,7 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithPathValidations(string pathValidation)
     {
+        ArgumentNullException.ThrowIfNull(pathValidation);
         _scenario.PathValidations.Add(pathValidation);
         return this;
     }
@@ -148,6 +162,7 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithTimeout(TimeoutBuilder timeoutBuilder)
     {
+        ArgumentNullException.ThrowIfNull(timeoutBuilder);
         _scenario.Timeout = timeoutBuilder.Build();
         return this;
     }
@@ -159,7 +174,8 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithTimeout(Func<TimeoutBuilder, TimeoutBuilder> timeoutBuilderFunc)
     {
-        return WithTimeout(timeoutBuilderFunc(new TimeoutBuilder(_scenario.Timeout)));
+        ArgumentNullException.ThrowIfNull(timeoutBuilderFunc);
+        return WithTimeout(timeoutBuilderFunc(new TimeoutBuilder(_scenario.Timeout))!);
     }
     
     /// <summary>
@@ -169,8 +185,11 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithTags(Dictionary<string, string> tags)
     {
+        ArgumentNullException.ThrowIfNull(tags);
         foreach (var kv in tags)
         {
+            ArgumentNullException.ThrowIfNull(kv.Key);
+            ArgumentNullException.ThrowIfNull(kv.Value);
             _scenario.Tags[kv.Key] = kv.Value;
         }
 
@@ -185,6 +204,8 @@ public sealed class ScenarioBuilder
     /// <returns>Scenario builder instance</returns>
     public ScenarioBuilder WithTags(string key, string value)
     {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
         _scenario.Tags[key] = value;
         return this;
     }

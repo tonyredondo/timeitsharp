@@ -25,7 +25,7 @@ public class AssemblyLoadInfo
         FilePath = FilePath,
         Type = Type,
         Name = Name,
-        Options = Options,
+        Options = Options is null ? null : new Dictionary<string, JsonElement?>(Options),
         InMemoryType = InMemoryType,
     };
 }

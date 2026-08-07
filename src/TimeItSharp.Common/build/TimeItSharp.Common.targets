@@ -1,0 +1,4 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)../timeitsharp-assets/build/TimeItSharp.Common.assets.targets"
+          Condition="'$(_TimeItSharpCommonTargetsImported)' != 'true' and Exists('$(MSBuildThisFileDirectory)../timeitsharp-assets/build/TimeItSharp.Common.assets.targets')" />
+</Project>

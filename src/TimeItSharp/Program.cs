@@ -3,7 +3,8 @@ using TimeItSharp.Common;
 using System.CommandLine;
 using System.CommandLine.Binding;
 using System.CommandLine.Invocation;
-using System.Text.Json;
+using System.CommandLine.Parsing;
+using TimeItSharp.Cli;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Configuration.Builder;
 using TimeItSharp.Common.Exporters;
@@ -12,7 +13,18 @@ using TimeItSharp.Common.Services;
 var version = typeof(Program).Assembly.GetName().Version!;
 AnsiConsole.MarkupLine("[bold dodgerblue1 underline]TimeItSharp v{0}[/]", $"{version.Major}.{version.Minor}.{version.Build}");
 
-var argument = new Argument<string>("configuration file or process name", "The JSON configuration file or process name");
+var argument = new Argument<string[]>("configuration file or process name", "The JSON configuration file or executable command")
+{
+    Arity = ArgumentArity.ZeroOrMore,
+};
+var configurationPath = new Option<string?>("--config", "Explicitly select a JSON configuration file")
+{
+    Arity = ArgumentArity.ExactlyOne,
+};
+var command = new Option<string?>("--command", "Explicitly select a process command")
+{
+    Arity = ArgumentArity.ExactlyOne,
+};
 var templateVariables = new Option<TemplateVariables>(
     "--variable",
     isDefault: true,
@@ -23,17 +35,11 @@ var templateVariables = new Option<TemplateVariables>(
 
         foreach (var token in result.Tokens)
         {
-            var variableValue = token.Value; ;
+            var variableValue = token.Value;
             var idx = variableValue.IndexOf('=');
             if (idx == -1)
             {
                 AnsiConsole.MarkupLine("[bold red]Unknown format: variable must be of the form[/][bold blue] key=value[/]");
-                continue;
-            }
-
-            if (idx == variableValue.Length - 1)
-            {
-                AnsiConsole.MarkupLine("[bold red]No variable value provided. Skipped.[/]");
                 continue;
             }
 
@@ -43,8 +49,17 @@ var templateVariables = new Option<TemplateVariables>(
                 continue;
             }
 
-            var keyVal = variableValue.Split('=');
-            tvs.Add(keyVal[0], keyVal[1]);
+            // Split only at the first equals sign. Values such as connection strings and
+            // base64 payloads commonly contain additional equals signs.
+            var key = variableValue[..idx].Trim();
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                AnsiConsole.MarkupLine("[bold red]No variable name provided. Skipped.[/]");
+                continue;
+            }
+
+            var value = variableValue[(idx + 1)..];
+            tvs.Add(key, value);
         }
         return tvs;
 
@@ -62,6 +77,8 @@ var debugMode = new Option<bool>("--debug", () => false, "Run timeit in debug mo
 var root = new RootCommand
 {
     argument,
+    configurationPath,
+    command,
     templateVariables,
     count,
     warmup,
@@ -76,8 +93,52 @@ var root = new RootCommand
 
 root.SetHandler(async (context) =>
 {
-    var argumentValue = GetValueForHandlerParameter(argument, context) ?? string.Empty;
-    var templateVariablesValue = GetValueForHandlerParameter(templateVariables, context);
+    var invocationCancellationToken = context.GetCancellationToken();
+    var positionalArguments = GetValueForHandlerParameter(argument, context) ?? Array.Empty<string>();
+    var positionalArgument = CliInputParser.JoinCommandArguments(positionalArguments);
+    var configurationPathValue = GetValueForHandlerParameter(configurationPath, context);
+    var commandValue = GetValueForHandlerParameter(command, context);
+
+    CliInput cliInput;
+    try
+    {
+        if (string.Equals(configurationPathValue, CliInputParser.MissingOptionValue, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("--config requires exactly one value.");
+        }
+
+        if (string.Equals(commandValue, CliInputParser.MissingOptionValue, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("--command requires exactly one value.");
+        }
+
+        if (configurationPathValue is not null && positionalArguments.Length != 0)
+        {
+            throw new ArgumentException("--config cannot be combined with a positional command.");
+        }
+
+        if (commandValue is not null && positionalArguments.Length != 0)
+        {
+            throw new ArgumentException("--command cannot be mixed with unnamed values; put process arguments after --.");
+        }
+
+        cliInput = CliInputParser.Classify(positionalArgument, configurationPathValue, commandValue);
+    }
+    catch (Exception ex)
+    {
+        AnsiConsole.MarkupLine("[red]An error occurred while parsing the TimeItSharp input:[/]");
+        AnsiConsole.WriteException(Utils.SanitizeException(ex,
+            new[] { positionalArgument, configurationPathValue, commandValue }.OfType<string>()));
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    var argumentValue = cliInput.Value;
+    var inputRedactionValues = new[] { argumentValue, configurationPathValue, commandValue }
+        .OfType<string>()
+        .Where(value => value.Length > 0)
+        .ToArray();
+    var templateVariablesValue = GetValueForHandlerParameter(templateVariables, context) ?? new TemplateVariables();
     var countValue = GetValueForHandlerParameter(count, context);
     var warmupValue = GetValueForHandlerParameter(warmup, context);
     var metricsValue = GetValueForHandlerParameter(metrics, context);
@@ -87,22 +148,37 @@ root.SetHandler(async (context) =>
     var showStdOutForFistRunValue = GetValueForHandlerParameter(showStdOutForFistRun, context);
     var processFailedExecutionsValue = GetValueForHandlerParameter(processFailedExecutions, context);
     var debugModeValue = GetValueForHandlerParameter(debugMode, context);
-    
-    var isConfigFile = false;
-    if (File.Exists(argumentValue))
+
+    // Bool options have defaults, so inspect the parse result as well. This lets a JSON
+    // configuration keep an explicitly configured value unless the corresponding CLI flag
+    // was supplied, while still allowing e.g. --metrics false to override it.
+    var metricsSpecified = IsOptionSpecified(metrics, context);
+    var showStdOutForFirstRunSpecified = IsOptionSpecified(showStdOutForFistRun, context);
+    var processFailedExecutionsSpecified = IsOptionSpecified(processFailedExecutions, context);
+    var debugModeSpecified = IsOptionSpecified(debugMode, context);
+    var jsonExporterSpecified = IsOptionSpecified(jsonExporter, context);
+    var datadogExporterSpecified = IsOptionSpecified(datadogExporter, context);
+    var datadogProfilerSpecified = IsOptionSpecified(datadogProfiler, context);
+
+    Config? loadedConfig = null;
+    Exception? configurationLoadError = null;
+    var fileExists = File.Exists(argumentValue);
+    var isConfigurationFile = cliInput.IsConfiguration;
+    if (isConfigurationFile)
     {
         try
         {
-            await using var fstream = File.Open(argumentValue, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-            var config = JsonSerializer.Deserialize(fstream, ConfigContext.Default.Config);
-            isConfigFile = config is not null;
+            loadedConfig = Config.LoadConfiguration(argumentValue);
         }
-        catch
+        catch (Exception ex)
         {
-            // .
+            // A configuration-looking file must not silently be interpreted as an executable
+            // command when it is malformed or inaccessible. Register the requested path before
+            // preserving the exception because filesystem messages often echo it.
+            configurationLoadError = Utils.SanitizeException(ex, inputRedactionValues);
         }
     }
-    else
+    else if (!fileExists && !cliInput.IsExplicit)
     {
         AnsiConsole.MarkupLine("Configuration file not found, trying to run as a process name...");
     }
@@ -111,35 +187,108 @@ root.SetHandler(async (context) =>
 
     try
     {
-        if (isConfigFile)
+        if (configurationLoadError is not null)
         {
-            var config = Config.LoadConfiguration(argumentValue);
-            config.WarmUpCount = warmupValue ?? config.WarmUpCount;
-            config.Count = countValue ?? config.Count;
-            var configBuilder = new ConfigBuilder(config);
-            if (jsonExporterValue)
+            throw configurationLoadError;
+        }
+
+        if (loadedConfig is not null)
+        {
+            var configBuilder = new ConfigBuilder(loadedConfig);
+            if (warmupValue.HasValue)
             {
-                configBuilder.WithExporter<JsonExporter>();
+                configBuilder.Build().WarmUpCount = warmupValue.Value;
             }
 
-            if (datadogExporterValue)
+            if (countValue.HasValue)
             {
-                configBuilder.WithExporter<DatadogExporter>();
+                configBuilder.Build().Count = countValue.Value;
             }
 
-            exitCode = await TimeItEngine.RunAsync(configBuilder, new TimeItOptions(templateVariablesValue))
-                .ConfigureAwait(false);
+            if (metricsSpecified)
+            {
+                configBuilder.WithMetrics(metricsValue);
+            }
+
+            // These options are enabling flags for the command mode, but assigning the value
+            // when explicitly supplied also supports --debug false on a JSON configuration.
+            if (showStdOutForFirstRunSpecified)
+            {
+                configBuilder.Build().ShowStdOutForFirstRun = showStdOutForFistRunValue;
+            }
+
+            if (processFailedExecutionsSpecified)
+            {
+                configBuilder.Build().ProcessFailedDataPoints = processFailedExecutionsValue;
+            }
+
+            if (debugModeSpecified)
+            {
+                configBuilder.Build().DebugMode = debugModeValue;
+            }
+
+            // A non-empty exporter list is an explicit replacement for the built-in defaults.
+            // If an exporter flag is supplied while the list is empty, materialize those defaults
+            // first so true/false overrides behave symmetrically.
+            if (jsonExporterSpecified)
+            {
+                EnsureDefaultExporters(configBuilder);
+                if (jsonExporterValue == true)
+                {
+                    configBuilder.WithExporter<JsonExporter>();
+                }
+                else
+                {
+                    RemoveExporter(configBuilder.Build(), typeof(JsonExporter), "Json", "JsonExporter");
+                    EnsureAtLeastOneExporter(configBuilder);
+                }
+            }
+
+            if (datadogExporterSpecified)
+            {
+                EnsureDefaultExporters(configBuilder);
+                configBuilder.Build().EnableDatadog = datadogExporterValue;
+                if (datadogExporterValue == true)
+                {
+                    configBuilder.WithExporter<DatadogExporter>();
+                }
+                else
+                {
+                    RemoveExporter(configBuilder.Build(), typeof(DatadogExporter), "Datadog", "DatadogExporter");
+                    EnsureAtLeastOneExporter(configBuilder);
+                }
+            }
+
+            var timeitOptions = new TimeItOptions(templateVariablesValue);
+            if (datadogProfilerSpecified)
+            {
+                if (datadogProfilerValue == true)
+                {
+                    configBuilder.WithService<DatadogProfilerService>();
+                    var finalCount = countValue ?? configBuilder.Build().Count;
+                    var extraRunCount = (int)Math.Min((long)finalCount * 40 / 100, int.MaxValue);
+                    timeitOptions = timeitOptions.AddServiceState<DatadogProfilerService>(
+                        new DatadogProfilerConfiguration().WithExtraRun(extraRunCount));
+                }
+                else
+                {
+                    RemoveService(configBuilder.Build(), typeof(DatadogProfilerService),
+                        "DatadogProfiler", "DatadogProfilerService");
+                }
+            }
+
+            // Validate after applying overrides so malformed CLI values are reported before any
+            // extension is loaded or process is started. The engine validates again for library
+            // callers that do not go through this CLI.
+            configBuilder.Build().Validate();
+            exitCode = await TimeItEngine.RunAsync(
+                configBuilder, timeitOptions, invocationCancellationToken).ConfigureAwait(false);
         }
         else
         {
-            var commandLineArray = argumentValue.Split(' ', StringSplitOptions.None);
-            var processName = commandLineArray[0];
-            var processArgs = string.Empty;
-            if (commandLineArray.Length > 1)
-            {
-                processArgs = string.Join(' ', commandLineArray.Skip(1));
-            }
-
+            var processCommand = CliInputParser.ParseProcessCommand(argumentValue);
+            var processName = processCommand.ProcessName;
+            var processArgs = processCommand.ProcessArguments;
             var finalCount = countValue ?? 10;
             var configBuilder = ConfigBuilder.Create()
                 .WithName(argumentValue)
@@ -152,57 +301,62 @@ root.SetHandler(async (context) =>
                 .WithTimeout(t => t.WithMaxDuration((int)TimeSpan.FromMinutes(30).TotalSeconds))
                 .WithScenario(s => s.WithName("Default"));
 
-            if (showStdOutForFistRunValue)
+            if (showStdOutForFistRunValue == true)
             {
-                configBuilder = configBuilder.ShowStdOutForFirstRun();
+                configBuilder.ShowStdOutForFirstRun();
             }
 
-            if (processFailedExecutionsValue)
+            if (processFailedExecutionsValue == true)
             {
-                configBuilder = configBuilder.ProcessFailedDataPoints();
+                configBuilder.ProcessFailedDataPoints();
             }
 
-            if (debugModeValue)
+            if (debugModeValue == true)
             {
-                configBuilder = configBuilder.WithDebugMode();
+                configBuilder.WithDebugMode();
             }
 
-            var timeitOption = new TimeItOptions(templateVariablesValue);
-
-            if (jsonExporterValue)
+            var timeitOptions = new TimeItOptions(templateVariablesValue);
+            if (jsonExporterValue == true)
             {
                 configBuilder.WithExporter<JsonExporter>();
             }
 
-            if (datadogExporterValue)
+            if (datadogExporterValue == true)
             {
+                configBuilder.Build().EnableDatadog = true;
                 configBuilder.WithExporter<DatadogExporter>();
             }
 
-            if (datadogProfilerValue)
+            if (datadogProfilerValue == true)
             {
                 configBuilder.WithService<DatadogProfilerService>();
-                timeitOption = timeitOption.AddServiceState<DatadogProfilerService>(
-                    new DatadogProfilerConfiguration().WithExtraRun(finalCount * 40 / 100));
+                var extraRunCount = (int)Math.Min((long)finalCount * 40 / 100, int.MaxValue);
+                timeitOptions = timeitOptions.AddServiceState<DatadogProfilerService>(
+                    new DatadogProfilerConfiguration().WithExtraRun(extraRunCount));
             }
 
-            exitCode = await TimeItEngine.RunAsync(configBuilder, timeitOption).ConfigureAwait(false);
+            configBuilder.Build().Validate();
+            exitCode = await TimeItEngine.RunAsync(
+                configBuilder, timeitOptions, invocationCancellationToken).ConfigureAwait(false);
         }
     }
     catch (Exception ex)
     {
         AnsiConsole.MarkupLine("[red]An error occurred while running TimeItSharp:[/]");
-        AnsiConsole.WriteException(ex);
+        AnsiConsole.WriteException(Utils.SanitizeException(ex, inputRedactionValues));
         exitCode = 1;
     }
 
-    if (exitCode != 0)
-    {
-        Environment.Exit(exitCode);
-    }
+    Environment.ExitCode = exitCode;
 });
 
-await root.InvokeAsync(args);
+var normalizedArguments = CliInputParser.NormalizeArguments(args);
+var invocationExitCode = await root.InvokeAsync(normalizedArguments);
+if (Environment.ExitCode == 0)
+{
+    Environment.ExitCode = invocationExitCode;
+}
 
 static T? GetValueForHandlerParameter<T>(
     IValueDescriptor<T> symbol,
@@ -216,4 +370,67 @@ static T? GetValueForHandlerParameter<T>(
         Option option => (T?)context.ParseResult.GetValueForOption(option),
         _ => default
     };
+}
+
+static bool IsOptionSpecified<T>(Option<T> option, InvocationContext context)
+{
+    foreach (var child in context.ParseResult.RootCommandResult.Children)
+    {
+        if (child is OptionResult result && result.Option == option && !result.IsImplicit)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void EnsureDefaultExporters(ConfigBuilder configBuilder)
+{
+    var configuration = configBuilder.Build();
+    if (configuration.Exporters is null || configuration.Exporters.Count != 0)
+    {
+        return;
+    }
+
+    // Materialize only the non-Datadog defaults unless the configuration explicitly enabled
+    // Datadog. A declaration itself is now an enablement signal, so adding it unconditionally
+    // would make --json-exporter true/false unexpectedly start CI Visibility.
+    var datadogEnabled = configuration.EnableDatadog;
+    configBuilder
+        .WithExporter<ConsoleExporter>()
+        .WithExporter<JsonExporter>();
+    if (datadogEnabled)
+    {
+        configBuilder.WithExporter<DatadogExporter>();
+    }
+
+    configuration.EnableDatadog = datadogEnabled;
+}
+
+static void EnsureAtLeastOneExporter(ConfigBuilder configBuilder)
+{
+    var configuration = configBuilder.Build();
+    if (configuration.Exporters is { Count: 0 })
+    {
+        configBuilder.WithExporter<ConsoleExporter>();
+    }
+}
+
+static void RemoveExporter(Config configuration, Type exporterType, params string[] names)
+{
+    configuration.Exporters?.RemoveAll(info => IsExtension(info, exporterType, names));
+}
+
+static void RemoveService(Config configuration, Type serviceType, params string[] names)
+{
+    configuration.Services?.RemoveAll(info => IsExtension(info, serviceType, names));
+}
+
+static bool IsExtension(AssemblyLoadInfo? info, Type extensionType, IReadOnlyCollection<string> names)
+{
+    return info is not null &&
+           (info.InMemoryType == extensionType ||
+            string.Equals(info.Type, extensionType.FullName, StringComparison.Ordinal) ||
+            (info.Name is not null && names.Contains(info.Name, StringComparer.OrdinalIgnoreCase)));
 }

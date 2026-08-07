@@ -1,5 +1,4 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.Loader;
 using Spectre.Console;
 using TimeItSharp.Common.Assertors;
 using TimeItSharp.Common.Configuration;
@@ -38,6 +37,7 @@ public static class TimeItEngine
     [RequiresUnreferencedCode("")]
     public static Task<int> RunAsync(ConfigBuilder configBuilder, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
+        ArgumentNullException.ThrowIfNull(configBuilder);
         return RunAsync(configBuilder.Build(), options, cancellationToken);
     }
 
@@ -49,236 +49,532 @@ public static class TimeItEngine
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Exit code of the TimeIt engine</returns>
     [RequiresUnreferencedCode("")]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor, typeof(DatadogProfilerService))]
     public static async Task<int> RunAsync(Config config, TimeItOptions? options = null, CancellationToken? cancellationToken = null)
     {
+        ArgumentNullException.ThrowIfNull(config);
+        // Snapshot the host at RunAsync entry, before extension constructors/Initialize callbacks
+        // can mutate process-wide state. Each child receives a private copy of this snapshot.
+        var environmentVariables = ScenarioProcessor.CaptureEnvironmentVariables();
+        // Validate before cloning: Clone assumes all collections and nested process data are
+        // present, and malformed input should result in a useful configuration error.
+        config.Validate();
         config = config.Clone();
+
         options ??= new TimeItOptions(new TemplateVariables());
         cancellationToken ??= CancellationToken.None;
         var templateVariables = options.TemplateVariables ?? new TemplateVariables();
+        var knownSecretValues = Utils.GetSensitiveEnvironmentValues(config.EnvironmentVariables)
+            .Concat(Utils.GetSensitiveEnvironmentSnapshotValues(environmentVariables))
+            .Concat(Utils.GetTemplateSecretValues(templateVariables))
+            .Concat(config.PathValidations.Take(Utils.MaxTagEntries))
+            .Concat(new[] { config.FilePath, config.Path, config.FileName, config.JsonExporterFilePath }
+                .OfType<string>())
+            .Concat(Utils.GetPathRedactionValues(new[] { config.ProcessName, config.WorkingDirectory }
+                .Concat(config.Scenarios.SelectMany(s => new[] { s.ProcessName, s.WorkingDirectory }))))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
         var statesByType = options.StatesByType;
-
-        // Prepare configuration
-        config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
-
-        // Exporters
-        var exportersInfo = GetFromAssemblyLoadInfoList(
-            config.Exporters,
-            () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() });
-        var exporters = exportersInfo.Select(i => i.Instance).ToList();
-    
-        // Assertors
-        var assertorsInfo = GetFromAssemblyLoadInfoList(
-            config.Assertors,
-            () => new List<IAssertor> { new DefaultAssertor() });
-        var assertors = assertorsInfo.Select(i => i.Instance).ToList();
-        foreach (var assertor in assertorsInfo)
-        {
-            var state = statesByType.GetValueOrDefault(assertor.Instance.GetType());
-            assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state));
-        }
-
-        // Services
-        var timeitCallbacks = new TimeItCallbacks();
+        var timeitCallbacks = new TimeItCallbacks(cancellationToken.Value);
         var callbacksTriggers = timeitCallbacks.GetTriggers();
-        var servicesInfo = GetFromAssemblyLoadInfoList<IService>(config.Services, () => new List<IService> { new NoopService() });
-        var services = servicesInfo.Select(i => i.Instance).ToList();
-        foreach (var service in servicesInfo)
-        {
-            var state = statesByType.GetValueOrDefault(service.Instance.GetType());
-            service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state), timeitCallbacks);
-        }
-
-        // Create scenario processor
-        var processor = new ScenarioProcessor(config, templateVariables, assertors, services, callbacksTriggers);
-
-        AnsiConsole.Profile.Width = Utils.GetSafeWidth();
-        AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
-        AnsiConsole.MarkupLine("[bold aqua]Max count:[/] {0}", config.Count);
-        AnsiConsole.MarkupLine("[bold aqua]Acceptable relative width:[/] {0}%", Math.Round(config.AcceptableRelativeWidth * 100, 2));
-        AnsiConsole.MarkupLine("[bold aqua]Confidence level:[/] {0}%", Math.Round(config.ConfidenceLevel * 100, 2));
-        AnsiConsole.MarkupLine("[bold aqua]Minimum error reduction:[/] {0}%", Math.Round(config.MinimumErrorReduction * 100, 2));
-        AnsiConsole.MarkupLine("[bold aqua]Maximum duration:[/] {0}min", config.MaximumDurationInMinutes);
-        if (config.OverheadThreshold > 0)
-        {
-            AnsiConsole.MarkupLine("[bold aqua]Overhead threshold:[/] {0}%", Math.Round(config.OverheadThreshold * 100, 2));
-        }
-
-        AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
-        AnsiConsole.MarkupLine("[bold aqua]Exporters:[/] {0}", string.Join(", ", exporters.Select(e => e.Name)));
-        AnsiConsole.MarkupLine("[bold aqua]Assertors:[/] {0}", string.Join(", ", assertors.Select(e => e.Name)));
-        AnsiConsole.MarkupLine("[bold aqua]Services:[/] {0}", string.Join(", ", services.Select(e => e.Name)));
-        AnsiConsole.WriteLine();
-
-        // Process scenarios
+        var callbacksInitialized = true;
         var scenariosResults = new List<ScenarioResult>();
         var scenarioWithErrors = 0;
-        if (config is { Count: > 0, Scenarios.Count: > 0 })
+        var exporterErrors = 0;
+        var resolvedExporters = new List<IExporter>();
+        var initializedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+        var disposedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+        var successfullyDisposedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+        var lifecycleErrors = false;
+        var beforeAllAttempted = false;
+        var beforeAllCompleted = false;
+        var afterAllAttempted = false;
+        var scenariosCleaned = false;
+        ScenarioProcessor? processor = null;
+        var engineExitCode = 1;
+
+        try
         {
-            if (config.Scenarios.Any(s => s.IsBaseline))
+            // Prepare configuration before extensions are initialized.
+            config.JsonExporterFilePath = templateVariables.Expand(config.JsonExporterFilePath);
+            ExpandAssemblyLoadInfoValues(config.Exporters, templateVariables);
+            ExpandAssemblyLoadInfoValues(config.Assertors, templateVariables);
+            ExpandAssemblyLoadInfoValues(config.Services, templateVariables);
+
+            // Keep extension loading and initialization inside the lifecycle guard. A custom
+            // service can subscribe callbacks and then fail during initialization; those
+            // callbacks still get a chance to finish in the finally block.
+            var exportersInfo = GetFromAssemblyLoadInfoList(
+                config.Exporters,
+                () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() },
+                config.Path);
+            resolvedExporters.AddRange(exportersInfo.Select(i => i.Instance));
+            var exporters = resolvedExporters;
+            // Resolve first, then enable the private configuration clone based on the actual
+            // instance. This covers aliases, in-memory registrations, and FilePath+Type selectors
+            // without mutating a caller-owned Config or trusting a spoofed type string.
+            if (exportersInfo.Any(item => item.LoadInfo is not null && item.Instance is DatadogExporter))
             {
-                config.Scenarios = config.Scenarios.OrderByDescending(s => s.IsBaseline).ToList();
+                config.EnableDatadog = true;
             }
 
-            callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
-            for(var i = 0; i < config.Scenarios.Count; i++)
+            var assertorsInfo = GetFromAssemblyLoadInfoList(
+                config.Assertors,
+                () => new List<IAssertor> { new DefaultAssertor() },
+                config.Path);
+            foreach (var assertor in assertorsInfo)
             {
-                var scenario = config.Scenarios[i];
+                var state = statesByType.GetValueOrDefault(assertor.Instance.GetType());
+                assertor.Instance.Initialize(new InitOptions(config, assertor.LoadInfo, templateVariables, state) { HostEnvironment = environmentVariables });
+            }
 
-                // Prepare scenario
-                processor.PrepareScenario(scenario);
+            var assertors = assertorsInfo
+                .Where(i => i.Instance.Enabled)
+                .Select(i => i.Instance)
+                .ToList();
 
-                // Process scenario
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                var result = await processor.ProcessScenarioAsync(i, scenario, cancellationToken: cancellationToken.Value).ConfigureAwait(false);
-                if (cancellationToken.Value.IsCancellationRequested)
+            var servicesInfo = GetFromAssemblyLoadInfoList<IService>(
+                config.Services,
+                () => new List<IService> { new NoopService() },
+                config.Path);
+            var services = servicesInfo.Select(i => i.Instance).ToList();
+            foreach (var service in servicesInfo)
+            {
+                var state = statesByType.GetValueOrDefault(service.Instance.GetType());
+                service.Instance.Initialize(new InitOptions(config, service.LoadInfo, templateVariables, state) { HostEnvironment = environmentVariables }, timeitCallbacks);
+            }
+
+            // Initialize exporters before any scenario lifecycle callback. Datadog creates its
+            // session/module here so the benchmark spans contain the target processes; export
+            // later reuses the same initialized instances and never initializes twice.
+            foreach (var exporterInfo in exportersInfo)
+            {
+                try
                 {
-                    return 1;
+                    var state = statesByType.GetValueOrDefault(exporterInfo.Instance.GetType());
+                    exporterInfo.Instance.Initialize(new InitOptions(config, exporterInfo.LoadInfo, templateVariables, state) { HostEnvironment = environmentVariables });
+                    initializedExporters.Add(exporterInfo.Instance);
                 }
-
-                if (result is null || result.Status != Status.Passed)
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    scenarioWithErrors++;
-                }
-
-                if (result is not null)
-                {
-                    scenariosResults.Add(result);
+                    exporterErrors++;
+                    AnsiConsole.MarkupLine(
+                        "[red]Error initializing exporter '{0}':[/]",
+                        Utils.EscapeMarkup(Utils.SanitizeText(exporterInfo.Instance.Name, knownSecretValues)));
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
                 }
             }
 
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
+            processor = new ScenarioProcessor(
+                config,
+                templateVariables,
+                assertors,
+                services,
+                callbacksTriggers,
+                environmentVariables);
 
-            var results = new TimeitResult
+            AnsiConsole.Profile.Width = Utils.GetSafeWidth();
+            AnsiConsole.MarkupLine("[bold aqua]Warmup count:[/] {0}", config.WarmUpCount);
+            AnsiConsole.MarkupLine("[bold aqua]Max count:[/] {0}", config.Count);
+            AnsiConsole.MarkupLine("[bold aqua]Acceptable relative width:[/] {0}%", Math.Round(config.AcceptableRelativeWidth * 100, 2));
+            AnsiConsole.MarkupLine("[bold aqua]Confidence level:[/] {0}%", Math.Round(config.ConfidenceLevel * 100, 2));
+            AnsiConsole.MarkupLine("[bold aqua]Minimum error reduction:[/] {0}%", Math.Round(config.MinimumErrorReduction * 100, 2));
+            AnsiConsole.MarkupLine("[bold aqua]Maximum duration:[/] {0}min", config.MaximumDurationInMinutes);
+            if (config.OverheadThreshold > 0)
             {
-                Scenarios = scenariosResults,
-                Overheads = Utils.GetComparisonTableData(scenariosResults),
-            };
+                AnsiConsole.MarkupLine("[bold aqua]Overhead threshold:[/] {0}%", Math.Round(config.OverheadThreshold * 100, 2));
+            }
 
-            // Export data
-            foreach (var exporter in exportersInfo)
+            AnsiConsole.MarkupLine("[bold aqua]Number of Scenarios:[/] {0}", config.Scenarios.Count);
+            AnsiConsole.MarkupLine(
+                "[bold aqua]Exporters:[/] {0}",
+                Utils.EscapeMarkup(string.Join(", ", exporters.Select(e =>
+                    Utils.SanitizeText(e.Name, knownSecretValues)))));
+            AnsiConsole.MarkupLine(
+                "[bold aqua]Assertors:[/] {0}",
+                Utils.EscapeMarkup(string.Join(", ", assertors.Select(e =>
+                    Utils.SanitizeText(e.Name, knownSecretValues)))));
+            AnsiConsole.MarkupLine(
+                "[bold aqua]Services:[/] {0}",
+                Utils.EscapeMarkup(string.Join(", ", services.Select(e =>
+                    Utils.SanitizeText(e.Name, knownSecretValues)))));
+            AnsiConsole.WriteLine();
+
+            if (config is { Count: > 0, Scenarios.Count: > 0 } &&
+                !cancellationToken.Value.IsCancellationRequested)
             {
-                var state = statesByType.GetValueOrDefault(exporter.Instance.GetType());
-                exporter.Instance.Initialize(new InitOptions(config, exporter.LoadInfo, templateVariables, state));
-                if (exporter.Instance.Enabled)
+                if (config.Scenarios.Any(s => s.IsBaseline))
                 {
-                    exporter.Instance.Export(results);
+                    config.Scenarios = config.Scenarios.OrderByDescending(s => s.IsBaseline).ToList();
+                }
+
+                try
+                {
+                    beforeAllAttempted = true;
+                    callbacksTriggers.BeforeAllScenariosStarts(config.Scenarios);
+                    beforeAllCompleted = true;
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    AnsiConsole.MarkupLine("[red]Error running BeforeAllScenariosStarts:[/]");
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+
+                if (beforeAllCompleted)
+                {
+                    for (var i = 0; i < config.Scenarios.Count; i++)
+                    {
+                        if (cancellationToken.Value.IsCancellationRequested)
+                        {
+                            scenarioWithErrors++;
+                            break;
+                        }
+
+                        var scenario = config.Scenarios[i];
+                        ScenarioResult? result = null;
+                        try
+                        {
+                            processor.PrepareScenario(scenario);
+                            GC.Collect();
+                            GC.WaitForPendingFinalizers();
+                            result = await processor.ProcessScenarioAsync(
+                                i,
+                                scenario,
+                                cancellationToken: cancellationToken.Value).ConfigureAwait(false);
+                        }
+                        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            lifecycleErrors = true;
+                            scenarioWithErrors++;
+                            AnsiConsole.MarkupLine(
+                                "[red]Error processing scenario '{0}':[/]",
+                                Utils.EscapeMarkup(Utils.SanitizeText(scenario.Name, knownSecretValues)));
+                            AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                        }
+
+                        // Add the result before checking cancellation. A command may have
+                        // completed successfully and then requested cancellation from End.
+                        if (result is not null)
+                        {
+                            scenariosResults.Add(result);
+                            if (result.Status != Status.Passed)
+                            {
+                                scenarioWithErrors++;
+                            }
+                        }
+
+                        if (processor.HasLifecycleErrors)
+                        {
+                            lifecycleErrors = true;
+                        }
+
+                        if (result is null)
+                        {
+                            scenarioWithErrors++;
+                            break;
+                        }
+
+                        if (cancellationToken.Value.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                CleanScenarios();
+                if (beforeAllAttempted)
+                {
+                    RunAfterAll();
+                }
+
+                var results = new TimeitResult
+                {
+                    Scenarios = scenariosResults,
+                    Overheads = Utils.GetComparisonTableData(scenariosResults),
+                };
+
+                foreach (var exporter in exportersInfo)
+                {
+                    if (!initializedExporters.Contains(exporter.Instance))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (exporter.Instance.Enabled)
+                        {
+                            exporter.Instance.Export(results);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        exporterErrors++;
+                        AnsiConsole.MarkupLine(
+                            "[red]Error running exporter '{0}':[/]",
+                            Utils.EscapeMarkup(Utils.SanitizeText(exporter.Instance.Name, knownSecretValues)));
+                        AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                    }
                 }
             }
 
-            // Clean scenarios
+            engineExitCode = cancellationToken.Value.IsCancellationRequested ||
+                scenarioWithErrors > 0 || exporterErrors > 0 || lifecycleErrors ? 1 : 0;
+        }
+        finally
+        {
+            // If an unexpected exception interrupted the scenario loop, preserve the same order
+            // as the successful path: ScenarioFinish (inside processor), CleanScenario, AfterAll,
+            // then OnFinish. Each phase is attempted at most once.
+            CleanScenarios();
+            if (beforeAllAttempted)
+            {
+                RunAfterAll();
+            }
+
+            if (callbacksInitialized)
+            {
+                try
+                {
+                    callbacksTriggers.Finish();
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    AnsiConsole.MarkupLine("[red]Error running OnFinish:[/]");
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+            }
+
+            // Finish callbacks may legitimately inspect or recreate metadata. Release only after
+            // they have completed so no static entry survives the run.
             foreach (var scenario in config.Scenarios)
             {
-                processor.CleanScenario(scenario);
+                DatadogMetadata.Release(scenario);
             }
 
-            callbacksTriggers.Finish();
-
-            if (scenarioWithErrors > 0)
+            foreach (var result in scenariosResults)
             {
-                return 1;
+                if (result.Scenario is { } scenario)
+                {
+                    DatadogMetadata.Release(scenario);
+                }
+            }
+
+            // Dispose ordinary exporters first so their cleanup failures become part of the
+            // final outcome observed by Datadog (and any other outcome-aware exporter).
+            DisposeResolvedExporters(outcomeAware: false);
+            NotifyRunOutcome();
+            DisposeResolvedExporters(outcomeAware: true);
+        }
+
+        return cancellationToken.Value.IsCancellationRequested || lifecycleErrors ? 1 : engineExitCode;
+
+        void NotifyRunOutcome()
+        {
+            var succeeded = engineExitCode == 0 &&
+                            !cancellationToken.Value.IsCancellationRequested &&
+                            !lifecycleErrors &&
+                            scenarioWithErrors == 0 &&
+                            exporterErrors == 0;
+            var outcomeAwareExporters = new List<(IExporter Exporter, IRunOutcomeAwareExporter Outcome)>();
+            var seen = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+            foreach (var exporter in resolvedExporters)
+            {
+                if (!seen.Add(exporter) ||
+                    !initializedExporters.Contains(exporter) ||
+                    exporter is not IRunOutcomeAwareExporter outcomeAwareExporter)
+                {
+                    continue;
+                }
+
+                outcomeAwareExporters.Add((exporter, outcomeAwareExporter));
+            }
+
+            var notificationFailed = false;
+            foreach (var item in outcomeAwareExporters)
+            {
+                try
+                {
+                    item.Outcome.SetRunOutcome(succeeded);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    notificationFailed = true;
+                    RecordExporterFinalizationError(item.Exporter, ex);
+                }
+            }
+
+            if (!succeeded || !notificationFailed)
+            {
+                return;
+            }
+
+            // A later setter may fail after earlier exporters observed success. Re-notify every
+            // participant with failure so no successfully updated exporter retains a stale true
+            // outcome. Setter failures remain isolated and cannot skip disposal.
+            foreach (var item in outcomeAwareExporters)
+            {
+                try
+                {
+                    item.Outcome.SetRunOutcome(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    RecordExporterFinalizationError(item.Exporter, ex);
+                }
             }
         }
 
-        return 0;
+        void RecordExporterFinalizationError(IExporter exporter, Exception exception)
+        {
+            lifecycleErrors = true;
+            exporterErrors++;
+            AnsiConsole.MarkupLine("[red]Error finalizing exporter '{0}':[/]",
+                Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
+            AnsiConsole.WriteException(Utils.SanitizeException(exception, knownSecretValues));
+        }
+
+        void DisposeResolvedExporters(bool outcomeAware)
+        {
+            foreach (var exporter in resolvedExporters.AsEnumerable().Reverse())
+            {
+                if ((exporter is IRunOutcomeAwareExporter) != outcomeAware ||
+                    exporter is not IDisposable disposable ||
+                    !disposedExporters.Add(exporter))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    disposable.Dispose();
+                    successfullyDisposedExporters.Add(exporter);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    exporterErrors++;
+                    AnsiConsole.MarkupLine("[red]Error disposing exporter '{0}':[/]",
+                        Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                    if (outcomeAware)
+                    {
+                        RenotifyOpenOutcomeAwareExportersFalse();
+                    }
+                }
+            }
+        }
+
+        void RenotifyOpenOutcomeAwareExportersFalse()
+        {
+            var seen = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+            foreach (var exporter in resolvedExporters)
+            {
+                if (!seen.Add(exporter) ||
+                    successfullyDisposedExporters.Contains(exporter) ||
+                    !initializedExporters.Contains(exporter) ||
+                    exporter is not IRunOutcomeAwareExporter outcomeAwareExporter)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    outcomeAwareExporter.SetRunOutcome(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    RecordExporterFinalizationError(exporter, ex);
+                }
+            }
+
+            // An exporter whose Dispose already completed successfully cannot safely be called
+            // again. Consequently, a later outcome-aware Dispose failure cannot revise the final
+            // close performed by that already-disposed exporter; reverse disposal minimizes this
+            // window for exporters declared earlier (including the primary Datadog exporter).
+        }
+
+        void CleanScenarios()
+        {
+            if (scenariosCleaned || processor is null)
+            {
+                return;
+            }
+
+            scenariosCleaned = true;
+            foreach (var scenario in config.Scenarios)
+            {
+                try
+                {
+                    processor.CleanScenario(scenario);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    AnsiConsole.MarkupLine("[red]Error cleaning scenario:[/]");
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+            }
+        }
+
+        void RunAfterAll()
+        {
+            if (afterAllAttempted)
+            {
+                return;
+            }
+
+            afterAllAttempted = true;
+            try
+            {
+                callbacksTriggers.AfterAllScenariosFinishes(scenariosResults);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                lifecycleErrors = true;
+                AnsiConsole.MarkupLine("[red]Error running AfterAllScenariosFinishes:[/]");
+                AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+            }
+        }
     }
 
-    [RequiresUnreferencedCode("Calls System.Runtime.Loader.AssemblyLoadContext.LoadFromAssemblyPath(String)")]
+    private static void ExpandAssemblyLoadInfoValues(
+        IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
+        TemplateVariables templateVariables)
+    {
+        foreach (var info in assemblyLoadInfos)
+        {
+            if (info is null)
+            {
+                continue;
+            }
+
+            if (info.FilePath is { } filePath)
+            {
+                info.FilePath = templateVariables.Expand(filePath);
+            }
+
+            if (info.Type is { } type)
+            {
+                info.Type = templateVariables.Expand(type);
+            }
+
+            if (info.Name is { } name)
+            {
+                info.Name = templateVariables.Expand(name);
+            }
+        }
+    }
+
+    [RequiresUnreferencedCode("Loads configured extensions by name or assembly path.")]
     private static List<(T Instance, AssemblyLoadInfo? LoadInfo)> GetFromAssemblyLoadInfoList<T>(
         IReadOnlyList<AssemblyLoadInfo> assemblyLoadInfos,
-        Func<List<T>>? defaultListFunc = null)
-        where T : INamedExtension
+        Func<List<T>>? defaultListFunc = null,
+        string? baseDirectory = null)
+        where T : class, INamedExtension
     {
-        if (assemblyLoadInfos is null || assemblyLoadInfos.Count == 0)
-        {
-            return (defaultListFunc?.Invoke() ?? new List<T>()).Select(i => (i, (AssemblyLoadInfo?)null)).ToList();
-        }
-        
-        var resultList = new List<(T, AssemblyLoadInfo?)>();
-        var loadContext = AssemblyLoadContext.Default;
-        foreach (var assemblyLoadInfo in assemblyLoadInfos)
-        {
-            if (assemblyLoadInfo is null)
-            {
-                continue;
-            }
-
-            if (assemblyLoadInfo.InMemoryType is { } inMemoryType)
-            {
-                if (Activator.CreateInstance(inMemoryType) is T instance)
-                {
-                    resultList.Add((instance, assemblyLoadInfo));
-                }
-                else
-                {
-                    AnsiConsole.MarkupLine("[red]Error creating {0}[/]: {1}", typeof(T).Name,
-                        inMemoryType.FullName ?? string.Empty);
-                }
-
-                continue;
-            }
-
-            if (!string.IsNullOrEmpty(assemblyLoadInfo.FilePath))
-            {
-                var assembly = loadContext.LoadFromAssemblyPath(assemblyLoadInfo.FilePath);
-                if (!string.IsNullOrEmpty(assemblyLoadInfo.Type))
-                {
-                    if (assembly.GetType(assemblyLoadInfo.Type, throwOnError: true) is { } type)
-                    {
-                        if (Activator.CreateInstance(type) is T instance)
-                        {
-                            resultList.Add((instance, assemblyLoadInfo));
-                        }
-                        else
-                        {
-                            AnsiConsole.MarkupLine("[red]Error creating {0}[/]: {1}", typeof(T).Name,
-                                type.FullName ?? string.Empty);
-                        }
-                    }
-                }
-            }
-            else if (!string.IsNullOrEmpty(assemblyLoadInfo.Name))
-            {
-                foreach (var assembly in loadContext.Assemblies)
-                {
-                    foreach (var typeInfo in assembly.DefinedTypes)
-                    {
-                        if (typeInfo.IsAbstract || typeInfo.IsInterface || typeInfo.IsEnum)
-                        {
-                            continue;
-                        }
-
-                        foreach (var iface in typeInfo.ImplementedInterfaces)
-                        {
-                            if (iface is null)
-                            {
-                                continue;
-                            }
-
-                            if (iface.FullName == typeof(T).FullName)
-                            {
-                                if (Activator.CreateInstance(typeInfo) is T instance &&
-                                    instance.Name == assemblyLoadInfo.Name)
-                                {
-                                    resultList.Add((instance, assemblyLoadInfo));
-                                    // Let's exit the 3 nested foreach loops
-                                    goto found_and_added;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                AnsiConsole.MarkupLine("[red]Error creating {0}[/]: {1} - Not found", typeof(T).Name, assemblyLoadInfo.Name);
-                
-                found_and_added:
-                {
-                }
-            }
-        }
-
-        return resultList;
+        return ExtensionResolver.Resolve(assemblyLoadInfos, defaultListFunc, baseDirectory);
     }
 }
