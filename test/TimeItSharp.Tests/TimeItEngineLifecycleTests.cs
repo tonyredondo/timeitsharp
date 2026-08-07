@@ -321,6 +321,52 @@ public sealed class TimeItEngineLifecycleTests
     }
 
 
+
+    [Fact]
+    public async Task Resolved_exporter_is_disposed_when_service_initialization_fails_first()
+    {
+        NeverInitializedDisposableExporter.Reset();
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(NeverInitializedDisposableExporter) });
+        config.Services.Add(new AssemblyLoadInfo { InMemoryType = typeof(FailingService) });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => TimeItEngine.RunAsync(config));
+
+        Assert.Equal(1, NeverInitializedDisposableExporter.Created);
+        Assert.Equal(0, NeverInitializedDisposableExporter.Initialized);
+        Assert.Equal(1, NeverInitializedDisposableExporter.Disposed);
+    }
+
+    [Fact]
+    public async Task Ordinary_dispose_failure_forces_false_outcome_before_aware_dispose()
+    {
+        OutcomeRecordingExporter.Reset();
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(ThrowingDisposeExporter) });
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(OutcomeRecordingExporter) });
+
+        var exitCode = await TimeItEngine.RunAsync(config);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(new[] { "outcome:False", "dispose" }, OutcomeRecordingExporter.Events);
+    }
+
+    [Fact]
+    public async Task Outcome_setter_failure_renotifies_previous_exporters_with_failure()
+    {
+        OutcomeRecordingExporter.Reset();
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(OutcomeRecordingExporter) });
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(ThrowingOutcomeExporter) });
+
+        var exitCode = await TimeItEngine.RunAsync(config);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(
+            new[] { "outcome:True", "outcome:False", "dispose" },
+            OutcomeRecordingExporter.Events);
+    }
+
     [Fact]
     public async Task Exporter_receives_failed_final_outcome_after_finish_and_before_dispose()
     {
@@ -522,6 +568,63 @@ public sealed class TimeItEngineLifecycleTests
             {
                 RecordedEvents.Add("dispose");
             }
+        }
+    }
+
+    public sealed class NeverInitializedDisposableExporter : IExporter, IDisposable
+    {
+        private static int _created;
+        private static int _initialized;
+        private static int _disposed;
+
+        public NeverInitializedDisposableExporter() => Interlocked.Increment(ref _created);
+
+        public static int Created => Volatile.Read(ref _created);
+        public static int Initialized => Volatile.Read(ref _initialized);
+        public static int Disposed => Volatile.Read(ref _disposed);
+        public string Name => nameof(NeverInitializedDisposableExporter);
+        public bool Enabled => false;
+
+        public static void Reset()
+        {
+            Volatile.Write(ref _created, 0);
+            Volatile.Write(ref _initialized, 0);
+            Volatile.Write(ref _disposed, 0);
+        }
+
+        public void Initialize(InitOptions options) => Interlocked.Increment(ref _initialized);
+        public void Export(TimeitResult results)
+        {
+        }
+        public void Dispose() => Interlocked.Increment(ref _disposed);
+    }
+
+    public sealed class ThrowingDisposeExporter : IExporter, IDisposable
+    {
+        public string Name => nameof(ThrowingDisposeExporter);
+        public bool Enabled => false;
+        public void Initialize(InitOptions options)
+        {
+        }
+        public void Export(TimeitResult results)
+        {
+        }
+        public void Dispose() => throw new InvalidOperationException("dispose failed");
+    }
+
+    public sealed class ThrowingOutcomeExporter : IExporter, IRunOutcomeAwareExporter, IDisposable
+    {
+        public string Name => nameof(ThrowingOutcomeExporter);
+        public bool Enabled => false;
+        public void Initialize(InitOptions options)
+        {
+        }
+        public void Export(TimeitResult results)
+        {
+        }
+        public void SetRunOutcome(bool succeeded) => throw new InvalidOperationException("outcome failed");
+        public void Dispose()
+        {
         }
     }
 

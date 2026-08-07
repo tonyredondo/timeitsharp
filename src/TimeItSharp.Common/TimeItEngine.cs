@@ -81,7 +81,9 @@ public static class TimeItEngine
         var scenariosResults = new List<ScenarioResult>();
         var scenarioWithErrors = 0;
         var exporterErrors = 0;
+        var resolvedExporters = new List<IExporter>();
         var initializedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+        var disposedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
         var lifecycleErrors = false;
         var beforeAllAttempted = false;
         var beforeAllCompleted = false;
@@ -105,7 +107,8 @@ public static class TimeItEngine
                 config.Exporters,
                 () => new List<IExporter> { new ConsoleExporter(), new JsonExporter(), new DatadogExporter() },
                 config.Path);
-            var exporters = exportersInfo.Select(i => i.Instance).ToList();
+            resolvedExporters.AddRange(exportersInfo.Select(i => i.Instance));
+            var exporters = resolvedExporters;
             // Resolve first, then enable the private configuration clone based on the actual
             // instance. This covers aliases, in-memory registrations, and FilePath+Type selectors
             // without mutating a caller-owned Config or trusting a spoofed type string.
@@ -158,18 +161,6 @@ public static class TimeItEngine
                         "[red]Error initializing exporter '{0}':[/]",
                         Utils.EscapeMarkup(Utils.SanitizeText(exporterInfo.Instance.Name, knownSecretValues)));
                     AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
-                    if (exporterInfo.Instance is IDisposable disposable)
-                    {
-                        try
-                        {
-                            disposable.Dispose();
-                        }
-                        catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
-                                                             disposeError is not StackOverflowException)
-                        {
-                            AnsiConsole.WriteException(Utils.SanitizeException(disposeError, knownSecretValues));
-                        }
-                    }
                 }
             }
 
@@ -370,8 +361,11 @@ public static class TimeItEngine
                 }
             }
 
+            // Dispose ordinary exporters first so their cleanup failures become part of the
+            // final outcome observed by Datadog (and any other outcome-aware exporter).
+            DisposeResolvedExporters(outcomeAware: false);
             NotifyRunOutcome();
-            DisposeInitializedExporters();
+            DisposeResolvedExporters(outcomeAware: true);
         }
 
         return cancellationToken.Value.IsCancellationRequested || lifecycleErrors ? 1 : engineExitCode;
@@ -383,33 +377,71 @@ public static class TimeItEngine
                             !lifecycleErrors &&
                             scenarioWithErrors == 0 &&
                             exporterErrors == 0;
-            foreach (var exporter in initializedExporters)
+            var outcomeAwareExporters = new List<(IExporter Exporter, IRunOutcomeAwareExporter Outcome)>();
+            var seen = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
+            foreach (var exporter in resolvedExporters)
             {
-                if (exporter is not IRunOutcomeAwareExporter outcomeAwareExporter)
+                if (!seen.Add(exporter) ||
+                    !initializedExporters.Contains(exporter) ||
+                    exporter is not IRunOutcomeAwareExporter outcomeAwareExporter)
                 {
                     continue;
                 }
 
+                outcomeAwareExporters.Add((exporter, outcomeAwareExporter));
+            }
+
+            var notificationFailed = false;
+            foreach (var item in outcomeAwareExporters)
+            {
                 try
                 {
-                    outcomeAwareExporter.SetRunOutcome(succeeded);
+                    item.Outcome.SetRunOutcome(succeeded);
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    lifecycleErrors = true;
-                    exporterErrors++;
-                    AnsiConsole.MarkupLine("[red]Error finalizing exporter '{0}':[/]",
-                        Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
-                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                    notificationFailed = true;
+                    RecordExporterFinalizationError(item.Exporter, ex);
+                }
+            }
+
+            if (!succeeded || !notificationFailed)
+            {
+                return;
+            }
+
+            // A later setter may fail after earlier exporters observed success. Re-notify every
+            // participant with failure so no successfully updated exporter retains a stale true
+            // outcome. Setter failures remain isolated and cannot skip disposal.
+            foreach (var item in outcomeAwareExporters)
+            {
+                try
+                {
+                    item.Outcome.SetRunOutcome(false);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    RecordExporterFinalizationError(item.Exporter, ex);
                 }
             }
         }
 
-        void DisposeInitializedExporters()
+        void RecordExporterFinalizationError(IExporter exporter, Exception exception)
         {
-            foreach (var exporter in initializedExporters.Reverse())
+            lifecycleErrors = true;
+            exporterErrors++;
+            AnsiConsole.MarkupLine("[red]Error finalizing exporter '{0}':[/]",
+                Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
+            AnsiConsole.WriteException(Utils.SanitizeException(exception, knownSecretValues));
+        }
+
+        void DisposeResolvedExporters(bool outcomeAware)
+        {
+            foreach (var exporter in resolvedExporters.AsEnumerable().Reverse())
             {
-                if (exporter is not IDisposable disposable)
+                if ((exporter is IRunOutcomeAwareExporter) != outcomeAware ||
+                    exporter is not IDisposable disposable ||
+                    !disposedExporters.Add(exporter))
                 {
                     continue;
                 }
