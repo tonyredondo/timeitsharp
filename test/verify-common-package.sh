@@ -28,9 +28,6 @@ cat > "$work_dir/target/Target.csproj" <<'EOF'
 </Project>
 EOF
 cat > "$work_dir/target/Program.cs" <<'EOF'
-using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
-
 var profilerHome = Environment.GetEnvironmentVariable("DD_DOTNET_TRACER_HOME");
 var enabled = Environment.GetEnvironmentVariable("CORECLR_ENABLE_PROFILING") == "1";
 var marker = Environment.GetEnvironmentVariable("TIMEIT_PROFILER_PROBE");
@@ -40,34 +37,20 @@ if (OperatingSystem.IsLinux() && enabled && !string.IsNullOrWhiteSpace(profilerH
 {
     try
     {
-        // Trigger a commonly instrumented method and allow the managed loader to initialize.
-        using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMilliseconds(250) };
-        try { await client.GetAsync("http://127.0.0.1:1"); } catch { }
-
-        var expectedManaged = Path.Combine(profilerHome, "net6.0", "Datadog.Trace.dll");
-        using var expectedStream = File.OpenRead(expectedManaged);
-        using var peReader = new PEReader(expectedStream);
-        var metadata = peReader.GetMetadataReader();
-        var expectedMvid = metadata.GetGuid(metadata.GetModuleDefinition().Mvid);
-        System.Reflection.Assembly? managed = null;
-        for (var attempt = 0; attempt < 150 && managed is null; attempt++)
-        {
-            managed = AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(assembly => assembly.GetName().Name == "Datadog.Trace");
-            if (managed is null) await Task.Delay(100);
-        }
-
+        // BenchmarkDotNet 2.61 ships the native loader and continuous profiler, but deliberately
+        // not the Bundle-only tracing native/API-wrapper payload. Verify the supported profiler
+        // contract rather than requiring the managed tracer to be loaded by an absent tracer.
+        await Task.Delay(500);
         var maps = await File.ReadAllTextAsync("/proc/self/maps");
-        var expectedTracer = Path.GetFullPath(Environment.GetEnvironmentVariable("CORECLR_PROFILER_PATH")!);
-        var expectedProfiler = Path.Combine(Path.GetDirectoryName(expectedTracer)!, "Datadog.Profiler.Native.so");
-        var location = managed?.Location;
-        var locationIsPrivate = string.IsNullOrEmpty(location) ||
-            Path.GetFullPath(location).StartsWith(Path.GetFullPath(profilerHome) + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-        attached = managed?.ManifestModule.ModuleVersionId == expectedMvid && locationIsPrivate &&
-                   expectedTracer.StartsWith(Path.GetFullPath(profilerHome) + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
-                   maps.Contains(expectedTracer, StringComparison.Ordinal) &&
-                   maps.Contains(expectedProfiler, StringComparison.Ordinal);
-        detail = $"managed={managed?.ManifestModule.ModuleVersionId};expected={expectedMvid};location={location};tracer={expectedTracer};profiler={expectedProfiler}";
+        var expectedLoader = Path.GetFullPath(Environment.GetEnvironmentVariable("CORECLR_PROFILER_PATH")!);
+        var expectedProfiler = Path.Combine(Path.GetDirectoryName(expectedLoader)!, "Datadog.Profiler.Native.so");
+        var loaderMapped = maps.Contains(expectedLoader, StringComparison.Ordinal);
+        var profilerMapped = maps.Contains(expectedProfiler, StringComparison.Ordinal);
+        attached = expectedLoader.StartsWith(
+                       Path.GetFullPath(profilerHome) + Path.DirectorySeparatorChar,
+                       StringComparison.Ordinal) &&
+                   loaderMapped && profilerMapped;
+        detail = $"loader={expectedLoader};loaderMapped={loaderMapped};profiler={expectedProfiler};profilerMapped={profilerMapped}";
     }
     catch (Exception exception)
     {
