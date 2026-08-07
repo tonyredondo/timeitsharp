@@ -8,6 +8,20 @@ namespace TimeItSharp.Common.Services;
 
 public sealed class TimeItCallbacks
 {
+    private readonly object _subscriptionsGate = new();
+
+    internal CancellationToken CancellationToken { get; }
+
+    public TimeItCallbacks()
+        : this(CancellationToken.None)
+    {
+    }
+
+    internal TimeItCallbacks(CancellationToken cancellationToken)
+    {
+        CancellationToken = cancellationToken;
+    }
+
     public delegate void BeforeAllScenariosStartsDelegate(IReadOnlyList<Scenario> scenarios);
 
     public delegate void OnScenarioStartDelegate(ScenarioStartArg scenario);
@@ -43,44 +57,142 @@ public sealed class TimeItCallbacks
 
     public event BeforeAllScenariosStartsDelegate? BeforeAllScenariosStarts
     {
-        add { _beforeAllScenariosStarts += value; Refresh(ref _beforeAllScenariosStartsCallbacks, _beforeAllScenariosStarts); }
-        remove { _beforeAllScenariosStarts -= value; Refresh(ref _beforeAllScenariosStartsCallbacks, _beforeAllScenariosStarts); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _beforeAllScenariosStarts += value;
+                Refresh(ref _beforeAllScenariosStartsCallbacks, _beforeAllScenariosStarts);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _beforeAllScenariosStarts -= value;
+                Refresh(ref _beforeAllScenariosStartsCallbacks, _beforeAllScenariosStarts);
+            }
+        }
     }
 
     public event OnScenarioStartDelegate? OnScenarioStart
     {
-        add { _onScenarioStart += value; Refresh(ref _onScenarioStartCallbacks, _onScenarioStart); }
-        remove { _onScenarioStart -= value; Refresh(ref _onScenarioStartCallbacks, _onScenarioStart); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioStart += value;
+                Refresh(ref _onScenarioStartCallbacks, _onScenarioStart);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioStart -= value;
+                Refresh(ref _onScenarioStartCallbacks, _onScenarioStart);
+            }
+        }
     }
 
     public event OnExecutionStartDelegate? OnExecutionStart
     {
-        add { _onExecutionStart += value; Refresh(ref _onExecutionStartCallbacks, _onExecutionStart); }
-        remove { _onExecutionStart -= value; Refresh(ref _onExecutionStartCallbacks, _onExecutionStart); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionStart += value;
+                Refresh(ref _onExecutionStartCallbacks, _onExecutionStart);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionStart -= value;
+                Refresh(ref _onExecutionStartCallbacks, _onExecutionStart);
+            }
+        }
     }
 
     public event OnExecutionEndDelegate? OnExecutionEnd
     {
-        add { _onExecutionEnd += value; Refresh(ref _onExecutionEndCallbacks, _onExecutionEnd); }
-        remove { _onExecutionEnd -= value; Refresh(ref _onExecutionEndCallbacks, _onExecutionEnd); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionEnd += value;
+                Refresh(ref _onExecutionEndCallbacks, _onExecutionEnd);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onExecutionEnd -= value;
+                Refresh(ref _onExecutionEndCallbacks, _onExecutionEnd);
+            }
+        }
     }
 
     public event OnScenarioFinishDelegate? OnScenarioFinish
     {
-        add { _onScenarioFinish += value; Refresh(ref _onScenarioFinishCallbacks, _onScenarioFinish); }
-        remove { _onScenarioFinish -= value; Refresh(ref _onScenarioFinishCallbacks, _onScenarioFinish); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioFinish += value;
+                Refresh(ref _onScenarioFinishCallbacks, _onScenarioFinish);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onScenarioFinish -= value;
+                Refresh(ref _onScenarioFinishCallbacks, _onScenarioFinish);
+            }
+        }
     }
 
     public event AfterAllScenariosFinishesDelegate? AfterAllScenariosFinishes
     {
-        add { _afterAllScenariosFinishes += value; Refresh(ref _afterAllScenariosFinishesCallbacks, _afterAllScenariosFinishes); }
-        remove { _afterAllScenariosFinishes -= value; Refresh(ref _afterAllScenariosFinishesCallbacks, _afterAllScenariosFinishes); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _afterAllScenariosFinishes += value;
+                Refresh(ref _afterAllScenariosFinishesCallbacks, _afterAllScenariosFinishes);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _afterAllScenariosFinishes -= value;
+                Refresh(ref _afterAllScenariosFinishesCallbacks, _afterAllScenariosFinishes);
+            }
+        }
     }
 
     public event OnFinishDelegate? OnFinish
     {
-        add { _onFinish += value; Refresh(ref _onFinishCallbacks, _onFinish); }
-        remove { _onFinish -= value; Refresh(ref _onFinishCallbacks, _onFinish); }
+        add
+        {
+            lock (_subscriptionsGate)
+            {
+                _onFinish += value;
+                Refresh(ref _onFinishCallbacks, _onFinish);
+            }
+        }
+        remove
+        {
+            lock (_subscriptionsGate)
+            {
+                _onFinish -= value;
+                Refresh(ref _onFinishCallbacks, _onFinish);
+            }
+        }
     }
 
     public CallbacksTriggers GetTriggers() => new(this);

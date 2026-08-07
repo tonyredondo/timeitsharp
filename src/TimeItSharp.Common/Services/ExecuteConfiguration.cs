@@ -47,7 +47,12 @@ public sealed class ExecuteConfiguration
             {
                 processData.RedirectStandardOutput = redirectStandardOutputJsonElement.GetBoolean();
             }
+            if (jsonElement.Value.TryGetProperty("timeoutInSeconds", out var timeoutInSecondsJsonElement))
+            {
+                processData.TimeoutInSeconds = timeoutInSecondsJsonElement.GetInt32();
+            }
 
+            processData.Validate(optionName);
             return processData;
         }
 
@@ -58,9 +63,30 @@ public sealed class ExecuteConfiguration
     {
         public string? ProcessName { get; set; }
         public string? ProcessArguments { get; set; }
+
+        /// <summary>
+        /// Maximum time allowed for this callback process. The default keeps existing
+        /// configurations source-compatible while ensuring a callback cannot block the engine
+        /// lifecycle indefinitely.
+        /// </summary>
+        public int TimeoutInSeconds { get; set; } = 300;
+
+        public const int MaximumTimeoutInSeconds = 4_294_967;
+
         public string? WorkingDirectory { get; set; }
         public bool RedirectStandardOutput { get; set; }
-        
+
+        internal void Validate(string optionName)
+        {
+            if (TimeoutInSeconds <= 0 || TimeoutInSeconds > MaximumTimeoutInSeconds)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(TimeoutInSeconds),
+                    TimeoutInSeconds,
+                    $"ExecuteService.{optionName}.timeoutInSeconds must be between 1 and {MaximumTimeoutInSeconds} seconds.");
+            }
+        }
+
         public Command? CreateCommand(TemplateVariables templateVariables)
         {
             if (string.IsNullOrWhiteSpace(ProcessName))

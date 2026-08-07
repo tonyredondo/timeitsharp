@@ -11,6 +11,7 @@ public sealed class ExecuteService : IService
     private ExecuteConfiguration? _configuration = null;
     private IReadOnlyDictionary<string, string?> _hostEnvironment = new Dictionary<string, string?>();
     private IReadOnlyList<string> _knownSecretValues = Array.Empty<string>();
+    private CancellationToken _cancellationToken;
 
     public string Name => "Execute";
 
@@ -24,6 +25,9 @@ public sealed class ExecuteService : IService
         {
             _configuration = new(options.LoadInfo?.Options);
         }
+
+        ValidateConfiguration(_configuration);
+        _cancellationToken = callbacks.CancellationToken;
 
         var hostEnvironment = options.HostEnvironment ?? ScenarioProcessor.CaptureEnvironmentVariables();
         _hostEnvironment = new System.Collections.ObjectModel.ReadOnlyDictionary<string, string?>(
@@ -46,7 +50,7 @@ public sealed class ExecuteService : IService
             {
                 if (onScenarioStart.CreateCommand(options.TemplateVariables) is { } command)
                 {
-                    ExecuteCommand("OnScenarioStart", command, onScenarioStart.RedirectStandardOutput);
+                    ExecuteCommand("OnScenarioStart", command, onScenarioStart.TimeoutInSeconds, onScenarioStart.RedirectStandardOutput);
                 }
             };
         }
@@ -57,7 +61,7 @@ public sealed class ExecuteService : IService
             {
                 if (onScenarioFinish.CreateCommand(options.TemplateVariables) is { } command)
                 {
-                    ExecuteCommand("OnScenarioFinish", command, onScenarioFinish.RedirectStandardOutput);
+                    ExecuteCommand("OnScenarioFinish", command, onScenarioFinish.TimeoutInSeconds, onScenarioFinish.RedirectStandardOutput);
                 }
             };
         }
@@ -68,7 +72,7 @@ public sealed class ExecuteService : IService
             {
                 if (afterAllScenariosFinishes.CreateCommand(options.TemplateVariables) is { } command)
                 {
-                    ExecuteCommand("AfterAllScenariosFinishes", command, afterAllScenariosFinishes.RedirectStandardOutput);
+                    ExecuteCommand("AfterAllScenariosFinishes", command, afterAllScenariosFinishes.TimeoutInSeconds, afterAllScenariosFinishes.RedirectStandardOutput);
                 }
             };
         }
@@ -79,7 +83,7 @@ public sealed class ExecuteService : IService
             {
                 if (onFinish.CreateCommand(options.TemplateVariables) is { } command)
                 {
-                    ExecuteCommand("OnFinish", command, onFinish.RedirectStandardOutput);
+                    ExecuteCommand("OnFinish", command, onFinish.TimeoutInSeconds, onFinish.RedirectStandardOutput);
                 }
             };
         }
@@ -90,7 +94,7 @@ public sealed class ExecuteService : IService
             {
                 if (onExecutionStart.CreateCommand(options.TemplateVariables) is { } command)
                 {
-                    ExecuteCommand("OnExecutionStart", command, onExecutionStart.RedirectStandardOutput);
+                    ExecuteCommand("OnExecutionStart", command, onExecutionStart.TimeoutInSeconds, onExecutionStart.RedirectStandardOutput);
                 }
             };
         }
@@ -101,9 +105,27 @@ public sealed class ExecuteService : IService
             {
                 if (onExecutionEnd.CreateCommand(options.TemplateVariables) is { } command)
                 {
-                    ExecuteCommand("OnExecutionEnd", command, onExecutionEnd.RedirectStandardOutput);
+                    ExecuteCommand("OnExecutionEnd", command, onExecutionEnd.TimeoutInSeconds, onExecutionEnd.RedirectStandardOutput);
                 }
             };
+        }
+    }
+
+    private static void ValidateConfiguration(ExecuteConfiguration configuration)
+    {
+        var processData = new (string Name, ExecuteConfiguration.ProcessData? Value)[]
+        {
+            (nameof(configuration.OnScenarioStart), configuration.OnScenarioStart),
+            (nameof(configuration.OnScenarioFinish), configuration.OnScenarioFinish),
+            (nameof(configuration.OnExecutionStart), configuration.OnExecutionStart),
+            (nameof(configuration.OnExecutionEnd), configuration.OnExecutionEnd),
+            (nameof(configuration.AfterAllScenariosFinishes), configuration.AfterAllScenariosFinishes),
+            (nameof(configuration.OnFinish), configuration.OnFinish),
+        };
+
+        foreach (var item in processData)
+        {
+            item.Value?.Validate(item.Name);
         }
     }
 
@@ -165,14 +187,24 @@ public sealed class ExecuteService : IService
         }
     }
 
-    private void ExecuteCommand(string optionName, Command command, bool writeToStdOut = false)
+    private void ExecuteCommand(
+        string optionName,
+        Command command,
+        int timeoutInSeconds,
+        bool writeToStdOut = false)
     {
         try
         {
             // Callback processes receive the immutable run-entry environment snapshot rather than
             // whatever a custom extension may have changed in the host after initialization.
             command = command.WithEnvironmentVariables(new Dictionary<string, string?>(_hostEnvironment));
-            var (result, processId, standardOutput, standardError) = ExecuteCapturedSync(command);
+            using var timeoutCts = new CancellationTokenSource();
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutInSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                _cancellationToken,
+                timeoutCts.Token);
+            var (result, processId, standardOutput, standardError) =
+                ExecuteCapturedSync(command, linkedCts.Token);
             if (writeToStdOut)
             {
                 AnsiConsole.WriteLine(

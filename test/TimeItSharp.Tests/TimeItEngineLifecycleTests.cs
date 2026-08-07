@@ -1,3 +1,7 @@
+using CliWrap;
+using System.Diagnostics;
+using System.Reflection;
+using System.Text.Json;
 using TimeItSharp.Common.Assertors;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Exporters;
@@ -258,4 +262,267 @@ public sealed class TimeItEngineLifecycleTests
 
         private static void OnFinish() => FinishCalls++;
     }
+
+    [Fact]
+    public async Task Global_duration_budget_is_not_compared_to_elapsed_time_twice()
+    {
+        var config = new Config
+        {
+            Count = 100,
+            MaximumDurationInMinutes = 1,
+            AcceptableRelativeWidth = double.Epsilon,
+            MinimumErrorReduction = 0,
+            EnableMetrics = false,
+            ProcessName = "echo",
+        };
+        var scenario = new Scenario { Name = "duration-budget" };
+        config.Scenarios.Add(scenario);
+        var callbacks = new TimeItCallbacks();
+        callbacks.OnExecutionStart += DelayExecutionStart;
+        var processor = new ScenarioProcessor(
+            config,
+            new TemplateVariables(),
+            Array.Empty<IAssertor>(),
+            Array.Empty<IService>(),
+            callbacks.GetTriggers(),
+            ScenarioProcessor.CaptureEnvironmentVariables());
+        processor.PrepareScenario(scenario);
+        typeof(ScenarioProcessor)
+            .GetField("_remainingDuration", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(processor, TimeSpan.FromMilliseconds(1_200));
+        var stopwatch = Stopwatch.StartNew();
+
+        await processor.ProcessScenarioAsync(0, scenario, CancellationToken.None);
+
+        stopwatch.Stop();
+        Assert.True(
+            stopwatch.Elapsed >= TimeSpan.FromMilliseconds(900),
+            $"The 1.2 second global budget stopped after only {stopwatch.Elapsed}.");
+    }
+
+    private static void DelayExecutionStart(DataPoint dataPoint, TimeItPhase phase, ref Command command)
+        => Thread.Sleep(50);
+
+    [Fact]
+    public async Task Pre_cancelled_run_disposes_equal_exporter_instances_by_reference()
+    {
+        EqualDisposableExporter.Reset();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(EqualDisposableExporter) });
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(EqualDisposableExporter) });
+
+        var exitCode = await TimeItEngine.RunAsync(config, cancellationToken: cancellation.Token);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(2, EqualDisposableExporter.Created);
+        Assert.Equal(2, EqualDisposableExporter.Disposed);
+    }
+
+
+    [Fact]
+    public async Task Exporter_receives_failed_final_outcome_after_finish_and_before_dispose()
+    {
+        OutcomeRecordingExporter.Reset();
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(OutcomeRecordingExporter) });
+        config.Services.Add(new AssemblyLoadInfo { InMemoryType = typeof(FailingFinishService) });
+
+        var exitCode = await TimeItEngine.RunAsync(config);
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal(new[] { "outcome:False", "dispose" }, OutcomeRecordingExporter.Events);
+    }
+
+    [Fact]
+    public async Task Execute_service_finish_hook_is_bounded()
+    {
+        var executeConfiguration = new ExecuteConfiguration
+        {
+            OnFinish = CreateLongRunningHook(timeoutInSeconds: 1),
+        };
+        var config = CreateConfig();
+        config.Exporters.Add(new AssemblyLoadInfo { InMemoryType = typeof(ConsoleExporter) });
+        config.Services.Add(new AssemblyLoadInfo { InMemoryType = typeof(ExecuteService) });
+        var stopwatch = Stopwatch.StartNew();
+
+        var exitCode = await TimeItEngine.RunAsync(
+            config,
+            new TimeItOptions().AddServiceState<ExecuteService>(executeConfiguration));
+
+        stopwatch.Stop();
+        Assert.Equal(0, exitCode);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(10), $"Hook took {stopwatch.Elapsed}.");
+    }
+
+
+    [Fact]
+    public void Execute_configuration_preserves_existing_json_with_bounded_default()
+    {
+        using var document = JsonDocument.Parse("{ \"processName\": \"echo\" }");
+        var configuration = new ExecuteConfiguration(new Dictionary<string, JsonElement?>
+        {
+            ["onFinish"] = document.RootElement.Clone(),
+        });
+
+        Assert.Equal(300, configuration.OnFinish!.TimeoutInSeconds);
+    }
+
+    [Fact]
+    public void Execute_service_rejects_invalid_programmatic_timeout()
+    {
+        var executeConfiguration = new ExecuteConfiguration
+        {
+            OnFinish = new ExecuteConfiguration.ProcessData
+            {
+                ProcessName = "echo",
+                TimeoutInSeconds = 0,
+            },
+        };
+        var service = new ExecuteService();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => service.Initialize(
+            new InitOptions(new Config(), null, new TemplateVariables(), executeConfiguration),
+            new TimeItCallbacks()));
+
+        Assert.Contains("timeoutInSeconds", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Cancellation_deadlines_are_capped_before_scheduling()
+    {
+        var deadline = ScenarioProcessor.GetCancellationDelay(int.MaxValue);
+
+        Assert.True(deadline > TimeSpan.Zero);
+        Assert.True(deadline + TimeSpan.FromMilliseconds(250) <=
+                    TimeSpan.FromMilliseconds(uint.MaxValue - 1d));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ScenarioProcessor.GetCancellationDelay(double.NaN));
+    }
+
+    private static Config CreateConfig()
+    {
+        var config = new Config
+        {
+            Count = 1,
+            EnableMetrics = false,
+            ProcessName = "echo",
+        };
+        config.Scenarios.Add(new Scenario { Name = "scenario" });
+        return config;
+    }
+
+    private static ExecuteConfiguration.ProcessData CreateLongRunningHook(int timeoutInSeconds)
+    {
+        return OperatingSystem.IsWindows()
+            ? new ExecuteConfiguration.ProcessData
+            {
+                ProcessName = "cmd.exe",
+                ProcessArguments = "/c ping 127.0.0.1 -n 30 > nul",
+                TimeoutInSeconds = timeoutInSeconds,
+            }
+            : new ExecuteConfiguration.ProcessData
+            {
+                ProcessName = "/bin/sh",
+                ProcessArguments = "-c \"sleep 30\"",
+                TimeoutInSeconds = timeoutInSeconds,
+            };
+    }
+
+    public sealed class EqualDisposableExporter : IExporter, IDisposable
+    {
+        private static int _created;
+        private static int _disposed;
+
+        public EqualDisposableExporter() => Interlocked.Increment(ref _created);
+
+        public static int Created => Volatile.Read(ref _created);
+        public static int Disposed => Volatile.Read(ref _disposed);
+        public string Name => nameof(EqualDisposableExporter);
+        public bool Enabled => false;
+
+        public static void Reset()
+        {
+            Volatile.Write(ref _created, 0);
+            Volatile.Write(ref _disposed, 0);
+        }
+
+        public void Initialize(InitOptions options)
+        {
+        }
+
+        public void Export(TimeitResult results)
+        {
+        }
+
+        public void Dispose() => Interlocked.Increment(ref _disposed);
+
+        public override bool Equals(object? obj) => obj is EqualDisposableExporter;
+        public override int GetHashCode() => 1;
+    }
+
+    public sealed class FailingFinishService : IService
+    {
+        public string Name => nameof(FailingFinishService);
+
+        public void Initialize(InitOptions options, TimeItCallbacks callbacks)
+        {
+            callbacks.OnFinish += () => throw new InvalidOperationException("finish failed");
+        }
+
+        public object? GetExecutionServiceData() => null;
+        public object? GetScenarioServiceData() => null;
+    }
+
+    public sealed class OutcomeRecordingExporter : IExporter, IRunOutcomeAwareExporter, IDisposable
+    {
+        private static readonly List<string> RecordedEvents = new();
+
+        public static IReadOnlyList<string> Events
+        {
+            get
+            {
+                lock (RecordedEvents)
+                {
+                    return RecordedEvents.ToArray();
+                }
+            }
+        }
+
+        public string Name => nameof(OutcomeRecordingExporter);
+        public bool Enabled => false;
+
+        public static void Reset()
+        {
+            lock (RecordedEvents)
+            {
+                RecordedEvents.Clear();
+            }
+        }
+
+        public void Initialize(InitOptions options)
+        {
+        }
+
+        public void Export(TimeitResult results)
+        {
+        }
+
+        public void SetRunOutcome(bool succeeded)
+        {
+            lock (RecordedEvents)
+            {
+                RecordedEvents.Add($"outcome:{succeeded}");
+            }
+        }
+
+        public void Dispose()
+        {
+            lock (RecordedEvents)
+            {
+                RecordedEvents.Add("dispose");
+            }
+        }
+    }
+
 }

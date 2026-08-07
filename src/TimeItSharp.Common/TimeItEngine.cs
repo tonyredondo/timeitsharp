@@ -75,13 +75,13 @@ public static class TimeItEngine
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var statesByType = options.StatesByType;
-        var timeitCallbacks = new TimeItCallbacks();
+        var timeitCallbacks = new TimeItCallbacks(cancellationToken.Value);
         var callbacksTriggers = timeitCallbacks.GetTriggers();
         var callbacksInitialized = true;
         var scenariosResults = new List<ScenarioResult>();
         var scenarioWithErrors = 0;
         var exporterErrors = 0;
-        var initializedExporters = new HashSet<IExporter>();
+        var initializedExporters = new HashSet<IExporter>(ReferenceEqualityComparer.Instance);
         var lifecycleErrors = false;
         var beforeAllAttempted = false;
         var beforeAllCompleted = false;
@@ -370,10 +370,40 @@ public static class TimeItEngine
                 }
             }
 
+            NotifyRunOutcome();
             DisposeInitializedExporters();
         }
 
         return cancellationToken.Value.IsCancellationRequested || lifecycleErrors ? 1 : engineExitCode;
+
+        void NotifyRunOutcome()
+        {
+            var succeeded = engineExitCode == 0 &&
+                            !cancellationToken.Value.IsCancellationRequested &&
+                            !lifecycleErrors &&
+                            scenarioWithErrors == 0 &&
+                            exporterErrors == 0;
+            foreach (var exporter in initializedExporters)
+            {
+                if (exporter is not IRunOutcomeAwareExporter outcomeAwareExporter)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    outcomeAwareExporter.SetRunOutcome(succeeded);
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    lifecycleErrors = true;
+                    exporterErrors++;
+                    AnsiConsole.MarkupLine("[red]Error finalizing exporter '{0}':[/]",
+                        Utils.EscapeMarkup(Utils.SanitizeText(exporter.Name, knownSecretValues)));
+                    AnsiConsole.WriteException(Utils.SanitizeException(ex, knownSecretValues));
+                }
+            }
+        }
 
         void DisposeInitializedExporters()
         {

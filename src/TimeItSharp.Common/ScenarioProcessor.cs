@@ -38,6 +38,8 @@ internal sealed class ScenarioProcessor
     private const int MaxMetricNameBytes = 64 * 1024;
     private const int MaxMetricRecords = 100_000;
     private static readonly TimeSpan TimeoutFallbackGrace = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan MaximumCancellationDelay =
+        TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
 
     private TimeSpan _remainingDuration;
     
@@ -349,7 +351,6 @@ internal sealed class ScenarioProcessor
             AnsiConsole.Markup("  [gold3_1]Warming up[/]");
             watch.Restart();
             await RunScenarioAsync(_configuration.WarmUpCount, index, scenario, TimeItPhase.WarmUp, false,
-                stopwatch: watch,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
@@ -365,7 +366,6 @@ internal sealed class ScenarioProcessor
         var scenarioStopwatch = Stopwatch.StartNew();
         watch.Restart();
         var dataPoints = await RunScenarioAsync(_configuration.Count, index, scenario, TimeItPhase.Run, true,
-            stopwatch: watch,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         watch.Stop();
         if (cancellationToken.IsCancellationRequested)
@@ -389,7 +389,6 @@ internal sealed class ScenarioProcessor
             scenario.ParentService = repeat.ServiceAskingForRepeat;
             watch.Restart();
             await RunScenarioAsync(repeat.Count, index, scenario, TimeItPhase.ExtraRun, false,
-                stopwatch: watch,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
             watch.Stop();
             if (cancellationToken.IsCancellationRequested)
@@ -635,7 +634,13 @@ internal sealed class ScenarioProcessor
         }
     }
 
-    private async Task<List<DataPoint>> RunScenarioAsync(int count, int index, Scenario scenario, TimeItPhase phase, bool checkShouldContinue, Stopwatch stopwatch, CancellationToken cancellationToken)
+    private async Task<List<DataPoint>> RunScenarioAsync(
+        int count,
+        int index,
+        Scenario scenario,
+        TimeItPhase phase,
+        bool checkShouldContinue,
+        CancellationToken cancellationToken)
     {
         var minIterations = count / 2.5;
         minIterations = minIterations < 10 ? 10 : minIterations;
@@ -723,7 +728,7 @@ internal sealed class ScenarioProcessor
                     }
 
                     var durations = Utils.RemoveOutliers(dataPoints.Select(GetDuration), threshold: 1.5).ToList();
-                    if (durations.Count >= minIterations || stopwatch.Elapsed >= _remainingDuration)
+                    if (durations.Count >= minIterations || _remainingDuration <= TimeSpan.Zero)
                     {
                         var mean = durations.Average();
                         var stdev = durations.StandardDeviation();
@@ -745,7 +750,7 @@ internal sealed class ScenarioProcessor
                         }
 
                         // Check if the maximum duration is reached
-                        if (stopwatch.Elapsed >= _remainingDuration)
+                        if (_remainingDuration <= TimeSpan.Zero)
                         {
                             AnsiConsole.WriteLine();
                             AnsiConsole.MarkupLine(
@@ -1027,51 +1032,27 @@ internal sealed class ScenarioProcessor
         }
         else
         {
+            // Normalize every timer value before the process is started. CancellationTokenSource
+            // and Task.Delay reject deadlines above their UInt32 millisecond range; discovering
+            // that after launch would leave the target without an owner.
+            var commandTimeout = GetCancellationDelay(cmdTimeout);
+            var fallbackTimeout = commandTimeout + TimeoutFallbackGrace;
             using var cmdCts = new CancellationTokenSource();
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmdCts.Token);
             using var timeoutCts = string.IsNullOrEmpty(timeoutCmdString)
                 ? null
                 : new CancellationTokenSource();
             dataPoint.Start = DateTime.UtcNow;
-            CapturedCommand? capturedCommand = null;
+            Task<CommandExecutionResult>? targetTask = null;
             Task<bool>? timeoutTask = null;
             var targetActive = true;
             var targetGate = new object();
 
             try
             {
-                capturedCommand = StartCapturedCommand(cmd, linkedCts.Token);
-                // Let the configured helper run at the deadline, but keep a short independent
-                // fallback in case it cannot launch or exits unsuccessfully.
-                cmdCts.CancelAfter(TimeSpan.FromSeconds(cmdTimeout) + TimeoutFallbackGrace);
-            }
-            catch (Win32Exception wEx)
-            {
-                Exception ex = wEx;
-                while (ex.InnerException is not null)
-                {
-                    ex = ex.InnerException;
-                }
+                var capturedCommand = StartCapturedCommand(cmd, linkedCts.Token);
+                targetTask = capturedCommand.WaitAsync();
 
-                dataPoint.End = DateTime.UtcNow;
-                dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                dataPoint.Error = ex.Message;
-            }
-            catch (Exception ex) when (ex is OperationCanceledException)
-            {
-                dataPoint.End = DateTime.UtcNow;
-                dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                dataPoint.Error = "Execution cancelled.";
-            }
-            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                dataPoint.End = DateTime.UtcNow;
-                dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                dataPoint.Error = ex.Message;
-            }
-
-            if (capturedCommand is not null)
-            {
                 Action cancelTarget = () =>
                 {
                     lock (targetGate)
@@ -1085,8 +1066,11 @@ internal sealed class ScenarioProcessor
 
                 if (timeoutCts is not null && configuredCommandTimeout > 0)
                 {
+                    // Let the configured helper run at the deadline, but keep a short independent
+                    // fallback in case it cannot launch or exits unsuccessfully.
+                    cmdCts.CancelAfter(fallbackTimeout);
                     timeoutTask = RunCommandTimeoutAsync(
-                        TimeSpan.FromSeconds(cmdTimeout),
+                        commandTimeout,
                         timeoutCmdString,
                         timeoutCmdArguments,
                         cmd.WorkingDirPath ?? workingDirectory,
@@ -1098,61 +1082,90 @@ internal sealed class ScenarioProcessor
                 }
                 else
                 {
-                    cmdCts.CancelAfter(TimeSpan.FromSeconds(cmdTimeout));
+                    cmdCts.CancelAfter(commandTimeout);
+                }
+
+                commandResult = await targetTask.ConfigureAwait(false);
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = commandResult.RunTime;
+                dataPoint.Start = dataPoint.End - dataPoint.Duration;
+                dataPoint.StandardOutput = commandResult.StandardOutput;
+            }
+            catch (Win32Exception wEx)
+            {
+                Exception ex = wEx;
+                while (ex.InnerException is not null)
+                {
+                    ex = ex.InnerException;
+                }
+
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = ex.Message;
+            }
+            catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = cancellationToken.IsCancellationRequested
+                    ? "Execution cancelled."
+                    : "Process timeout.";
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                dataPoint.End = DateTime.UtcNow;
+                dataPoint.Duration = dataPoint.End - dataPoint.Start;
+                dataPoint.Error = ex.Message;
+            }
+            finally
+            {
+                lock (targetGate)
+                {
+                    targetActive = false;
                 }
 
                 try
                 {
-                    commandResult = await capturedCommand.WaitAsync().ConfigureAwait(false);
-                    dataPoint.End = DateTime.UtcNow;
-                    dataPoint.Duration = commandResult.RunTime;
-                    dataPoint.Start = dataPoint.End - dataPoint.Duration;
-                    dataPoint.StandardOutput = commandResult.StandardOutput;
-                }
-                catch (Win32Exception wEx)
-                {
-                    Exception ex = wEx;
-                    while (ex.InnerException is not null)
-                    {
-                        ex = ex.InnerException;
-                    }
-
-                    dataPoint.End = DateTime.UtcNow;
-                    dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                    dataPoint.Error = ex.Message;
-                }
-                catch (Exception ex) when (ex is TaskCanceledException or OperationCanceledException)
-                {
-                    dataPoint.End = DateTime.UtcNow;
-                    dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                    dataPoint.Error = cancellationToken.IsCancellationRequested
-                        ? "Execution cancelled."
-                        : "Process timeout.";
+                    timeoutCts?.Cancel();
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    dataPoint.End = DateTime.UtcNow;
-                    dataPoint.Duration = dataPoint.End - dataPoint.Start;
-                    dataPoint.Error = ex.Message;
+                    // Continue with target ownership even if a helper cancellation callback fails.
                 }
-                finally
+
+                // Any exception after launch transfers here while the linked source is still
+                // alive. Cancel and observe the target task before disposing the sources so a
+                // started process can never outlive the command attempt.
+                if (targetTask is { IsCompleted: false })
                 {
-                    lock (targetGate)
+                    try
                     {
-                        targetActive = false;
+                        cmdCts.Cancel();
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        // Still await below: Cancel callbacks must not relinquish target ownership.
                     }
 
-                    timeoutCts?.Cancel();
-                    if (timeoutTask is not null)
+                    try
                     {
-                        try
-                        {
-                            await timeoutTask.ConfigureAwait(false);
-                        }
-                        catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-                        {
-                            // The helper is supplementary and must not mask the target result.
-                        }
+                        await targetTask.ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        // The original command/setup failure remains the datapoint error.
+                    }
+                }
+
+                if (timeoutTask is not null)
+                {
+                    try
+                    {
+                        await timeoutTask.ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        // The helper is supplementary and must not mask the target result.
                     }
                 }
             }
@@ -1661,6 +1674,23 @@ internal sealed class ScenarioProcessor
         {
             dataPoint.Error = "Execution has failed by the status value = Failed.";
         }
+    }
+
+    internal static TimeSpan GetCancellationDelay(double seconds)
+    {
+        if (!double.IsFinite(seconds) || seconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(seconds),
+                seconds,
+                "A command timeout must be a finite value greater than zero.");
+        }
+
+        // Reserve the fallback grace inside the platform timer limit so adding it is always safe.
+        var maximumCommandDelay = MaximumCancellationDelay - TimeoutFallbackGrace;
+        return seconds >= maximumCommandDelay.TotalSeconds
+            ? maximumCommandDelay
+            : TimeSpan.FromSeconds(seconds);
     }
 
     private async Task<bool> RunCommandTimeoutAsync(
