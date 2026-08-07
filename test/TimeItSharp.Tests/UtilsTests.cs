@@ -173,4 +173,72 @@ public sealed class UtilsTests
         Assert.Contains(Utils.RedactedValue, sanitized, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Sanitizer_redacts_all_authorization_schemes_and_complete_values()
+    {
+        var text = "Authorization: Digest username=alice, response=secret\n" +
+                   "Proxy-Authorization=Custom first second\nordinary=safe";
+
+        var sanitized = Utils.SanitizeText(text);
+
+        Assert.Equal(
+            "Authorization: [REDACTED]\nProxy-Authorization=[REDACTED]\nordinary=safe",
+            sanitized);
+        Assert.DoesNotContain("Digest", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("Custom", sanitized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sanitizer_processes_more_than_512_known_secrets_without_amplification()
+    {
+        var secrets = Enumerable.Range(0, 513).Select(index => $"secret-{index:D4}").ToArray();
+        var sanitized = Utils.SanitizeText($"echo {secrets[^1]}", secrets);
+        var amplified = Utils.SanitizeText(new string('x', 10_000), ["x"]);
+
+        Assert.DoesNotContain(secrets[^1], sanitized, StringComparison.Ordinal);
+        Assert.Equal(Utils.RedactedValue, amplified);
+        Assert.True(amplified.Length <= Utils.MaxExportLogCharacters);
+    }
+
+    [Fact]
+    public void Sanitizer_removes_cr_bidi_and_supplementary_format_controls()
+    {
+        var sanitized = Utils.SanitizeText("a\r\u202Eb\U000E0001\n\t");
+
+        Assert.Equal("ab\n\t", sanitized);
+    }
+
+    [Fact]
+    public void Scenario_sanitizer_redacts_structural_paths_without_heuristics()
+    {
+        var scenario = new ScenarioResult
+        {
+            ProcessName = "tool",
+            WorkingDirectory = "relative-directory",
+            PathValidations = ["relative-file"],
+            Timeout = new TimeItSharp.Common.Configuration.Timeout(1, "helper-tool", "safe"),
+        };
+
+        var safe = Utils.SanitizeScenarioResult(scenario);
+
+        Assert.Equal(Utils.RedactedValue, safe.WorkingDirectory);
+        Assert.Equal(Utils.RedactedValue, Assert.Single(safe.PathValidations));
+        Assert.Equal(Utils.RedactedValue, safe.Timeout.ProcessName);
+        Assert.Equal("tool", safe.ProcessName);
+        Assert.Equal("relative-directory", scenario.WorkingDirectory);
+    }
+
+    [Fact]
+    public void Result_graph_uses_one_global_item_budget_across_nested_collections()
+    {
+        var scenario = new ScenarioResult();
+        scenario.MetricsData["first"] = Enumerable.Range(0, 60_000).Select(index => (double)index).ToList();
+        scenario.MetricsData["second"] = Enumerable.Range(0, 60_000).Select(index => (double)index).ToList();
+
+        var safe = Utils.SanitizeTimeitResult(new TimeitResult { Scenarios = [scenario] });
+        var copied = Assert.Single(safe.Scenarios).MetricsData.Values.Sum(values => values.Count);
+
+        Assert.True(copied < Utils.MaxResultCollectionItems);
+    }
+
 }

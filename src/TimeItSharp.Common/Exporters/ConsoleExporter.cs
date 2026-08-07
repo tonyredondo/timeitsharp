@@ -39,7 +39,12 @@ public sealed class ConsoleExporter : IExporter
                 .Concat(configuration.Scenarios.SelectMany(s => new[] { s.ProcessName, s.WorkingDirectory }))))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var safeResults = Utils.SanitizeTimeitResult(results, _options.TemplateVariables, knownSecrets);
+        var safeResults = Utils.SanitizeTimeitResult(
+            results,
+            _options.TemplateVariables,
+            knownSecrets,
+            maximumScenarios: Utils.MaxConsoleScenarios,
+            maximumOverheadDimension: Utils.MaxConsoleScenarios);
         var scenarios = safeResults.Scenarios ?? Array.Empty<ScenarioResult>();
         if (scenarios.Count == 0)
         {
@@ -125,6 +130,7 @@ public sealed class ConsoleExporter : IExporter
         var additionalMetrics = scenarios
             .SelectMany(s => s.AdditionalMetrics.Select(item => new { item.Key, item.Value, ScenarioResult = s }))
             .GroupBy(item => item.Key)
+            .Take(Utils.MaxConsoleMetrics)
             .ToList();
 
         var columnList = new List<string>
@@ -155,7 +161,7 @@ public sealed class ConsoleExporter : IExporter
         for (var idx = 0; idx < resultsList.Count; idx++)
         {
             var result = resultsList[idx];
-            var totalNum = result.MetricsData.Count;
+            var totalNum = Math.Min(result.MetricsData.Count, Utils.MaxConsoleMetrics);
             if (totalNum > 0)
             {
                 var outliersValue = result.Outliers.Count > 0
@@ -186,7 +192,8 @@ public sealed class ConsoleExporter : IExporter
 
                 summaryTable.AddRow(rowList.ToArray());
 
-                var orderedMetricsData = result.MetricsData.OrderBy(item => item.Key).ToList();
+                var orderedMetricsData = result.MetricsData.OrderBy(item => item.Key)
+                    .Take(Utils.MaxConsoleMetrics).ToList();
                 for (var i = 0; i < totalNum; i++)
                 {
                     var item = orderedMetricsData[i];
@@ -206,7 +213,7 @@ public sealed class ConsoleExporter : IExporter
                     while (metricsThreshold < 3.0d)
                     {
                         itemResult = Utils.RemoveOutliers(finiteMetricValues, metricsThreshold).ToList();
-                        metricsOutliers = finiteMetricValues.Where(d => !itemResult.Contains(d)).ToList();
+                        metricsOutliers = GetExcludedValues(finiteMetricValues, itemResult);
                         var outliersPercent = ((double)metricsOutliers.Count / finiteMetricValues.Count) * 100;
                         if (outliersPercent < 20)
                         {
@@ -215,7 +222,7 @@ public sealed class ConsoleExporter : IExporter
                             if (itemResult.Count == 0)
                             {
                                 itemResult = previousResult;
-                                metricsOutliers = finiteMetricValues.Where(d => !itemResult.Contains(d)).ToList();
+                                metricsOutliers = GetExcludedValues(finiteMetricValues, itemResult);
                             }
                             break;
                         }
@@ -227,7 +234,7 @@ public sealed class ConsoleExporter : IExporter
                     if (itemResult.Count == 0)
                     {
                         itemResult = previousResult.Count > 0 ? previousResult : finiteMetricValues;
-                        metricsOutliers = finiteMetricValues.Where(d => !itemResult.Contains(d)).ToList();
+                        metricsOutliers = GetExcludedValues(finiteMetricValues, itemResult);
                     }
 
                     var mMean = itemResult.Mean();
@@ -380,42 +387,54 @@ public sealed class ConsoleExporter : IExporter
         }
     }
 
+    private static List<double> GetExcludedValues(
+        IReadOnlyList<double> source, IReadOnlyCollection<double> included)
+    {
+        var includedValues = included.ToHashSet();
+        return source.Where(value => !includedValues.Contains(value)).ToList();
+    }
+
     private static Dictionary<string, ScenarioResult> CreateDistributionSeries(
         IReadOnlyList<ScenarioResult> scenarios)
     {
         var result = new Dictionary<string, ScenarioResult>(StringComparer.Ordinal);
+        var nextSuffix = new Dictionary<string, int>(StringComparer.Ordinal);
         if (scenarios is null)
         {
             return result;
         }
+
         for (var index = 0; index < scenarios.Count; index++)
         {
-            if (scenarios[index] is null)
+            var scenario = scenarios[index];
+            if (scenario is null || !scenario.Durations.Any(double.IsFinite))
             {
                 continue;
             }
 
-            // Failed/path-validation scenarios are still shown in the summary, but they do not
-            // have a distribution to plot. Do not create an empty series that later reaches Min
-            // or Max during separate-chart rendering.
-            if (!scenarios[index].Durations.Any(double.IsFinite))
-            {
-                continue;
-            }
-
-            var name = string.IsNullOrWhiteSpace(scenarios[index].Name)
+            var name = string.IsNullOrWhiteSpace(scenario.Name)
                 ? $"Scenario {index + 1}"
-                : scenarios[index].Name;
-            var key = name;
-            var suffix = 2;
-            while (!result.TryAdd(key, scenarios[index]))
+                : scenario.Name;
+            if (result.TryAdd(name, scenario))
+            {
+                nextSuffix[name] = 2;
+                continue;
+            }
+
+            var suffix = nextSuffix.TryGetValue(name, out var storedSuffix) ? storedSuffix : 2;
+            string key;
+            do
             {
                 key = $"{name} ({suffix++})";
-            }
+            } while (result.ContainsKey(key));
+
+            nextSuffix[name] = suffix;
+            result.Add(key, scenario);
         }
 
         return result;
     }
+
 
     static void GenerateDistributionChart(Dictionary<string, ScenarioResult> dataSeriesDict, int numBins)
     {

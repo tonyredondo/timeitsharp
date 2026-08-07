@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text.Json;
 using TimeItSharp.Common.Configuration;
 using TimeItSharp.Common.Exporters;
@@ -216,6 +217,136 @@ public sealed class ExporterTests
         var exception = Record.Exception(() => exporter.Export(new TimeitResult { Scenarios = [valid, failed] }));
 
         Assert.Null(exception);
+    }
+
+    [Fact]
+    public void Json_exporter_detaches_stateful_tag_getters_once()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"timeitsharp-export-{Guid.NewGuid():N}.json");
+        var value = new StatefulTagValue();
+        var scenario = new ScenarioResult
+        {
+            Name = "scenario",
+            Tags = new Dictionary<string, object> { ["payload"] = value },
+        };
+        var exporter = CreateJsonExporter(outputPath);
+
+        try
+        {
+            exporter.Export(new TimeitResult { Scenarios = [scenario] });
+            var json = File.ReadAllText(outputPath);
+
+            Assert.Equal(1, value.GetterCalls);
+            Assert.DoesNotContain(StatefulTagValue.FirstSecret, json, StringComparison.Ordinal);
+            Assert.DoesNotContain(StatefulTagValue.SecondSecret, json, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public void Json_exporter_keeps_discovered_secrets_and_hides_throwing_enumerator_errors()
+    {
+        var outputPath = Path.Combine(Path.GetTempPath(), $"timeitsharp-export-{Guid.NewGuid():N}.json");
+        var scenario = new ScenarioResult
+        {
+            Name = "scenario",
+            Error = ThrowingValues.YieldedSecret,
+            Tags = new Dictionary<string, object> { ["payload"] = new ThrowingValues() },
+        };
+        var exporter = CreateJsonExporter(outputPath);
+
+        try
+        {
+            var exception = Record.Exception(() =>
+                exporter.Export(new TimeitResult { Scenarios = [scenario] }));
+            var json = File.ReadAllText(outputPath);
+
+            Assert.Null(exception);
+            Assert.DoesNotContain(ThrowingValues.YieldedSecret, json, StringComparison.Ordinal);
+            Assert.DoesNotContain(ThrowingValues.ExceptionSecret, json, StringComparison.Ordinal);
+            Assert.Contains(Utils.RedactedValue, json, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
+    }
+
+    [Fact]
+    public void Json_exporter_preserves_restrictive_unix_destination_mode()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var outputPath = Path.Combine(Path.GetTempPath(), $"timeitsharp-export-{Guid.NewGuid():N}.json");
+        File.WriteAllText(outputPath, "[]");
+        File.SetUnixFileMode(outputPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var exporter = CreateJsonExporter(outputPath);
+
+        try
+        {
+            exporter.Export(new TimeitResult { Scenarios = [new ScenarioResult { Name = "scenario" }] });
+
+            Assert.Equal(
+                UnixFileMode.UserRead | UnixFileMode.UserWrite,
+                File.GetUnixFileMode(outputPath) &
+                (UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                 UnixFileMode.GroupRead | UnixFileMode.GroupWrite |
+                 UnixFileMode.OtherRead | UnixFileMode.OtherWrite));
+        }
+        finally
+        {
+            File.Delete(outputPath);
+        }
+    }
+
+    private static JsonExporter CreateJsonExporter(string outputPath)
+    {
+        var exporter = new JsonExporter();
+        exporter.Initialize(new InitOptions(
+            new Config { JsonExporterFilePath = outputPath },
+            null,
+            new TemplateVariables(),
+            null));
+        return exporter;
+    }
+
+    private sealed class StatefulTagValue
+    {
+        internal const string FirstSecret = "first-stateful-secret";
+        internal const string SecondSecret = "second-stateful-secret";
+
+        public int GetterCalls { get; private set; }
+
+        public object Value
+        {
+            get
+            {
+                GetterCalls++;
+                return GetterCalls == 1
+                    ? new Dictionary<string, object> { ["password"] = FirstSecret }
+                    : new Dictionary<string, object> { ["echo"] = SecondSecret };
+            }
+        }
+    }
+
+    private sealed class ThrowingValues : IEnumerable<object>
+    {
+        internal const string YieldedSecret = "yielded-before-throw-secret";
+        internal const string ExceptionSecret = "secret-only-in-exception";
+
+        public IEnumerator<object> GetEnumerator()
+        {
+            yield return new Dictionary<string, object> { ["password"] = YieldedSecret };
+            throw new InvalidOperationException(ExceptionSecret);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
 }

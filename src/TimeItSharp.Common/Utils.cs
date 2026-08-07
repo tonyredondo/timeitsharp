@@ -232,8 +232,11 @@ internal static class Utils
     // Result graphs can be supplied by custom assertors/exporters. Keep detached copies bounded
     // even when a hostile extension reports an absurdly large matrix or collection.
     internal const int MaxResultCollectionItems = 100_000;
+    internal const int MaxResultGraphCharacters = 4 * 1024 * 1024;
     internal const int MaxOverheadRows = 1024;
     internal const int MaxOverheadColumns = 1024;
+    internal const int MaxConsoleScenarios = 64;
+    internal const int MaxConsoleMetrics = 256;
     private const int MaxSanitizationAssignmentSeparators = 128;
 
     internal sealed class SanitizationBudget
@@ -247,10 +250,24 @@ internal static class Utils
             _remainingCharacters = maxCharacters;
         }
 
-        public bool TryConsumeItem() => _remainingItems-- > 0;
+        public bool TryConsumeItem()
+        {
+            if (_remainingItems <= 0)
+            {
+                return false;
+            }
+
+            _remainingItems--;
+            return true;
+        }
 
         public string LimitText(string value)
         {
+            if (_remainingCharacters <= 0)
+            {
+                return string.Empty;
+            }
+
             if (value.Length <= _remainingCharacters)
             {
                 _remainingCharacters -= value.Length;
@@ -258,17 +275,66 @@ internal static class Utils
             }
 
             const string marker = "[TAG TRUNCATED]";
-            var length = Math.Max(0, _remainingCharacters - marker.Length);
+            var remaining = _remainingCharacters;
+            var markerLength = Math.Min(marker.Length, remaining);
+            var valueLength = Math.Max(0, remaining - markerLength);
             _remainingCharacters = 0;
-            return value[..length] + marker;
+            return value[..valueLength] + marker[..markerLength];
         }
     }
 
     private sealed class SecretTraversalBudget
     {
-        public int Remaining = MaxTagCollectionItems;
+        public int Remaining = MaxResultCollectionItems;
 
-        public bool TryConsume() => Remaining-- > 0;
+        public bool TryConsume()
+        {
+            if (Remaining <= 0)
+            {
+                return false;
+            }
+
+            Remaining--;
+            return true;
+        }
+    }
+
+    private sealed class ResultGraphBudget
+    {
+        private int _remainingItems = MaxResultCollectionItems;
+        private int _remainingCharacters = MaxResultGraphCharacters;
+
+        public bool TryConsumeItem()
+        {
+            if (_remainingItems <= 0)
+            {
+                return false;
+            }
+
+            _remainingItems--;
+            return true;
+        }
+
+        public string LimitText(string? value)
+        {
+            if (string.IsNullOrEmpty(value) || _remainingCharacters <= 0)
+            {
+                return string.Empty;
+            }
+
+            if (value.Length <= _remainingCharacters)
+            {
+                _remainingCharacters -= value.Length;
+                return value;
+            }
+
+            const string marker = "[RESULT TRUNCATED]";
+            var remaining = _remainingCharacters;
+            var markerLength = Math.Min(marker.Length, remaining);
+            var valueLength = Math.Max(0, remaining - markerLength);
+            _remainingCharacters = 0;
+            return value[..valueLength] + marker[..markerLength];
+        }
     }
 
     private static readonly Regex SensitiveAssignment = new(
@@ -291,7 +357,7 @@ internal static class Utils
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex AuthorizationValue = new(
-        "(?<key>\\b(?:authorization|proxy-authorization)\\b)(?<separator>\\s*[:=]\\s*)(?<scheme>bearer|basic)\\s+(?<value>[^\\s,;&}>]+)",
+        "(?<key>\\b(?:authorization|proxy-authorization)\\b)(?<separator>\\s*[:=]\\s*)(?<value>[^\\r\\n]*)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>
@@ -397,8 +463,7 @@ internal static class Utils
         // Handle authorization headers before generic assignment redaction so the scheme and the
         // credential token are replaced together.
         var sanitized = AuthorizationValue.Replace(value, match =>
-            match.Groups["key"].Value + match.Groups["separator"].Value +
-            match.Groups["scheme"].Value + " " + RedactedValue);
+            match.Groups["key"].Value + match.Groups["separator"].Value + RedactedValue);
 
         // Nested build arguments can hide more than one assignment (foo=Password=...). Repeat a
         // bounded number of passes so the first outer match cannot suppress the inner credential.
@@ -472,8 +537,7 @@ internal static class Utils
         // Header credentials contain a scheme and token; the generic key/value expression would
         // otherwise redact only the scheme and leave the token after a space.
         sanitized = AuthorizationValue.Replace(sanitized, match =>
-            match.Groups["key"].Value + match.Groups["separator"].Value +
-            match.Groups["scheme"].Value + " " + RedactedValue);
+            match.Groups["key"].Value + match.Groups["separator"].Value + RedactedValue);
 
         // Redact URI user-info passwords.  This is intentionally independent from the key/value
         // regex because a password in a connection URL has no standalone property name.
@@ -482,25 +546,63 @@ internal static class Utils
 
         if (knownSecretValues is not null)
         {
-            foreach (var secret in knownSecretValues
-                         .Take(MaxTagCollectionItems)
+            foreach (var secret in EnumerateSafely(knownSecretValues, MaxResultCollectionItems)
                          .Where(item => !string.IsNullOrEmpty(item) && item.Length <= MaxExportLogCharacters)
                          .Distinct(StringComparer.Ordinal)
                          .OrderByDescending(item => item.Length))
             {
-                // Even one-character credentials must not be emitted.  Values are collected only
-                // from sensitive environment/tag/argument/template sources, so conservative
-                // replacement is preferable to allowing a known secret through a text sink.
+                // Secret replacement must never turn a bounded source string into a much larger
+                // result (for example, replacing a one-character secret thousands of times).
                 if (secret == RedactedValue)
                 {
                     continue;
                 }
 
-                sanitized = sanitized.Replace(secret, RedactedValue, StringComparison.Ordinal);
+                sanitized = ReplaceSecretBounded(
+                    sanitized,
+                    secret,
+                    Math.Min(MaxExportLogCharacters, Math.Max(value.Length, RedactedValue.Length)));
+                if (sanitized == RedactedValue)
+                {
+                    break;
+                }
             }
         }
 
+        if (sanitized.Length > MaxExportLogCharacters)
+        {
+            return RedactedValue;
+        }
+
         return StripTerminalControls(sanitized);
+    }
+
+    private static string ReplaceSecretBounded(string value, string secret, int maximumLength)
+    {
+        var first = value.IndexOf(secret, StringComparison.Ordinal);
+        if (first < 0)
+        {
+            return value;
+        }
+
+        if (secret.Length < RedactedValue.Length)
+        {
+            var occurrences = 0;
+            for (var index = first; index >= 0;)
+            {
+                occurrences++;
+                index = value.IndexOf(secret, index + secret.Length, StringComparison.Ordinal);
+            }
+
+            var resultingLength = (long)value.Length +
+                                  (long)occurrences * (RedactedValue.Length - secret.Length);
+            if (resultingLength > maximumLength)
+            {
+                return RedactedValue;
+            }
+        }
+
+        return value.Replace(secret, RedactedValue, StringComparison.Ordinal);
     }
 
     private static string StripTerminalControls(string value)
@@ -544,9 +646,19 @@ internal static class Utils
                 continue;
             }
 
-            if ((current < ' ' && current is not '\t' and not '\r' and not '\n') ||
-                (current >= '\u007f' && current <= '\u009f'))
+            if (current == '\r' ||
+                (current < ' ' && current is not '\t' and not '\n') ||
+                (current >= '\u007f' && current <= '\u009f') ||
+                char.GetUnicodeCategory(value, index) == UnicodeCategory.Format)
             {
+                // CR can rewrite a terminal line, and Unicode format characters include bidi
+                // overrides/isolates which can visually disguise the text that follows.
+                if (char.IsHighSurrogate(current) && index + 1 < value.Length &&
+                    char.IsLowSurrogate(value[index + 1]))
+                {
+                    index++;
+                }
+
                 continue;
             }
 
@@ -639,9 +751,10 @@ internal static class Utils
     internal static IReadOnlyList<string> GetPathRedactionValues(IEnumerable<string?> values)
     {
         ArgumentNullException.ThrowIfNull(values);
-        return values.Take(MaxResultCollectionItems)
-            .Where(value => !string.IsNullOrEmpty(value) && value.Length <= MaxExportLogCharacters &&
-                            LooksLikePath(value))
+        return EnumerateSafely(values, MaxResultCollectionItems)
+            // These values come from structural path fields.  They must be treated as paths even
+            // when relative, extensionless, or otherwise not recognizable by a heuristic.
+            .Where(value => !string.IsNullOrEmpty(value) && value.Length <= MaxExportLogCharacters)
             .Select(value => value!)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -652,7 +765,8 @@ internal static class Utils
         return Spectre.Console.Markup.Escape(value ?? string.Empty);
     }
 
-    internal static IReadOnlyList<string> GetSecretValues(ScenarioResult? source)
+    internal static IReadOnlyList<string> GetSecretValues(
+        ScenarioResult? source, IReadOnlyDictionary<string, object>? detachedTags = null)
     {
         var values = new HashSet<string>(StringComparer.Ordinal);
         if (source is null)
@@ -662,7 +776,7 @@ internal static class Utils
 
         if (source.EnvironmentVariables is not null)
         {
-            foreach (var item in source.EnvironmentVariables.Take(MaxResultCollectionItems))
+            foreach (var item in EnumerateSafely(source.EnvironmentVariables, MaxResultCollectionItems))
             {
                 if (IsSensitiveEnvironmentVariable(item.Key) && !string.IsNullOrEmpty(item.Value) &&
                     item.Value.Length <= MaxExportLogCharacters)
@@ -674,7 +788,7 @@ internal static class Utils
 
         if (source.PathValidations is not null)
         {
-            foreach (var path in source.PathValidations.Take(MaxTagEntries)
+            foreach (var path in EnumerateSafely(source.PathValidations, MaxTagEntries)
                          .Where(path => !string.IsNullOrEmpty(path) && path.Length <= MaxExportLogCharacters))
             {
                 values.Add(path);
@@ -694,9 +808,10 @@ internal static class Utils
             values.Add(source.ProcessName);
         }
 
-        if (source.Tags is not null)
+        var tags = detachedTags ?? source.Tags;
+        if (tags is not null)
         {
-            foreach (var item in source.Tags.Take(MaxTagEntries))
+            foreach (var item in EnumerateSafely(tags, MaxTagEntries))
             {
                 AddSensitiveValues(item.Value, item.Key, values, 0,
                     new HashSet<object>(ReferenceEqualityComparer.Instance), new SecretTraversalBudget());
@@ -719,7 +834,7 @@ internal static class Utils
     {
         return environmentVariables is null
             ? Array.Empty<string>()
-            : environmentVariables.Take(MaxResultCollectionItems)
+            : EnumerateSafely(environmentVariables, MaxResultCollectionItems)
                 .Where(item => IsSensitiveEnvironmentVariable(item.Key) && !string.IsNullOrEmpty(item.Value) &&
                                item.Value.Length <= MaxExportLogCharacters)
                 .Select(item => item.Value)
@@ -732,7 +847,7 @@ internal static class Utils
     {
         return environmentVariables is null
             ? Array.Empty<string>()
-            : environmentVariables.Take(MaxTagCollectionItems)
+            : EnumerateSafely(environmentVariables, MaxResultCollectionItems)
                 .Where(item => IsSensitiveEnvironmentVariable(item.Key) &&
                                !string.IsNullOrEmpty(item.Value) &&
                                item.Value.Length <= MaxExportLogCharacters)
@@ -743,20 +858,49 @@ internal static class Utils
 
     internal static IReadOnlyList<string> GetTemplateSecretValues(TemplateVariables? templateVariables)
     {
-        return templateVariables?.EntriesForSanitization.Take(MaxResultCollectionItems)
-                   // Template values are user-controlled and may contain credentials even when the
-                   // variable name is innocuous (including the built-in CWD location).
-                   .Where(item => !string.IsNullOrEmpty(item.Value) &&
-                                  item.Value.Length <= MaxExportLogCharacters)
-                   .Select(item => item.Value)
-                   .Distinct(StringComparer.Ordinal)
-                   .ToArray()
-               ?? Array.Empty<string>();
+        if (templateVariables is null)
+        {
+            return Array.Empty<string>();
+        }
+
+        return EnumerateSafely(templateVariables.EntriesForSanitization, MaxResultCollectionItems)
+            // Template values are user-controlled and may contain credentials even when the
+            // variable name is innocuous (including the built-in CWD location).
+            .Where(item => !string.IsNullOrEmpty(item.Value) &&
+                           item.Value.Length <= MaxExportLogCharacters)
+            .Select(item => item.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string SanitizeResultText(
+        string? value, IEnumerable<string>? knownSecretValues, ResultGraphBudget budget)
+    {
+        return budget.LimitText(SanitizeText(value, knownSecretValues));
+    }
+
+    private static string RedactStructuralValue(string? value, ResultGraphBudget budget)
+    {
+        return string.IsNullOrEmpty(value) ? string.Empty : budget.LimitText(RedactedValue);
     }
 
     internal static ScenarioResult SanitizeScenarioResult(ScenarioResult? source,
         TemplateVariables? templateVariables = null,
         IEnumerable<string>? additionalSecretValues = null)
+    {
+        var graphBudget = new ResultGraphBudget();
+        var detachedTags = source is null ? null : DetachTags(source.Tags, graphBudget);
+        return SanitizeScenarioResultCore(
+            source, detachedTags, templateVariables, additionalSecretValues, graphBudget);
+    }
+
+    private static ScenarioResult SanitizeScenarioResultCore(
+        ScenarioResult? source,
+        IReadOnlyDictionary<string, object>? detachedTags,
+        TemplateVariables? templateVariables,
+        IEnumerable<string>? additionalSecretValues,
+        ResultGraphBudget graphBudget,
+        IReadOnlyList<string>? completeSecretSnapshot = null)
     {
         if (source is null)
         {
@@ -768,30 +912,36 @@ internal static class Utils
             };
         }
 
-        var knownSecretsSet = new HashSet<string>(GetSecretValues(source), StringComparer.Ordinal);
-        if (additionalSecretValues is not null)
+        IReadOnlyList<string> knownSecrets;
+        if (completeSecretSnapshot is not null)
         {
-            foreach (var value in additionalSecretValues.Take(MaxResultCollectionItems))
+            knownSecrets = completeSecretSnapshot;
+        }
+        else
+        {
+            var knownSecretsSet = new HashSet<string>(
+                GetSecretValues(source, detachedTags), StringComparer.Ordinal);
+            foreach (var value in EnumerateSafely(additionalSecretValues, MaxResultCollectionItems))
             {
                 if (!string.IsNullOrEmpty(value))
                 {
                     knownSecretsSet.Add(value);
                 }
             }
-        }
 
-        foreach (var value in GetTemplateSecretValues(templateVariables))
-        {
-            knownSecretsSet.Add(value);
-        }
+            foreach (var value in GetTemplateSecretValues(templateVariables))
+            {
+                knownSecretsSet.Add(value);
+            }
 
-        var knownSecrets = knownSecretsSet.ToArray();
+            knownSecrets = knownSecretsSet.ToArray();
+        }
         var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal);
         if (source.EnvironmentVariables is not null)
         {
-            foreach (var item in source.EnvironmentVariables.Take(MaxTagEntries))
+            foreach (var item in EnumerateWithinGraph(source.EnvironmentVariables, MaxTagEntries, graphBudget))
             {
-                var key = SanitizeText(item.Key, knownSecrets);
+                var key = SanitizeResultText(item.Key, knownSecrets, graphBudget);
                 if (string.IsNullOrEmpty(key) || key.Length > MaxTagCharacters)
                 {
                     continue;
@@ -799,32 +949,32 @@ internal static class Utils
 
                 var safeValue = IsSensitiveEnvironmentVariable(item.Key)
                     ? RedactedValue
-                    : SanitizeText(item.Value, knownSecrets);
+                    : SanitizeResultText(item.Value, knownSecrets, graphBudget);
                 environmentVariables[key] = safeValue.Length > MaxTagCharacters
                     ? RedactedValue
                     : safeValue;
             }
         }
 
-        var safeTags = SanitizeTags(source.Tags, templateVariables, knownSecrets);
+        var safeTags = SanitizeTags(detachedTags, templateVariables, knownSecrets, graphBudget);
         var safeTimeout = source.Timeout is null
             ? new Configuration.Timeout()
             : new Configuration.Timeout(
                 source.Timeout.MaxDuration,
-                SanitizeText(source.Timeout.ProcessName, knownSecrets),
-                SanitizeText(source.Timeout.ProcessArguments, knownSecrets));
+                RedactStructuralValue(source.Timeout.ProcessName, graphBudget),
+                SanitizeResultText(source.Timeout.ProcessArguments, knownSecrets, graphBudget));
 
         var safeMetricsData = new Dictionary<string, List<double>>(StringComparer.Ordinal);
         if (source.MetricsData is not null)
         {
-            foreach (var item in source.MetricsData.Take(MaxResultCollectionItems))
+            foreach (var item in EnumerateWithinGraph(source.MetricsData, MaxResultCollectionItems, graphBudget))
             {
                 if (string.IsNullOrWhiteSpace(item.Key) || IsSensitiveEnvironmentVariable(item.Key))
                 {
                     continue;
                 }
 
-                var safeMetricName = SanitizeText(item.Key, knownSecrets);
+                var safeMetricName = SanitizeResultText(item.Key, knownSecrets, graphBudget);
                 if (safeMetricName.Length > MaxTagCharacters)
                 {
                     continue;
@@ -832,18 +982,18 @@ internal static class Utils
 
                 safeMetricsData[safeMetricName] = item.Value is null
                     ? new List<double>()
-                    : item.Value.Take(MaxResultCollectionItems).Where(double.IsFinite).ToList();
+                    : EnumerateWithinGraph(item.Value, MaxResultCollectionItems, graphBudget).Where(double.IsFinite).ToList();
             }
         }
 
         var safeData = new List<DataPoint>();
         if (source.Data is not null)
         {
-            foreach (var item in source.Data.Take(MaxResultCollectionItems))
+            foreach (var item in EnumerateWithinGraph(source.Data, MaxResultCollectionItems, graphBudget))
             {
                 if (item is not null)
                 {
-                    safeData.Add(SanitizeDataPoint(item, knownSecrets));
+                    safeData.Add(SanitizeDataPoint(item, knownSecrets, graphBudget));
                 }
             }
         }
@@ -854,31 +1004,33 @@ internal static class Utils
             // graphs, can retain secrets, and are ignored by the JSON model in any case.
             Scenario = null,
             ParentService = null,
-            Name = SanitizeText(source.Name, knownSecrets),
+            Name = SanitizeResultText(source.Name, knownSecrets, graphBudget),
             IsBaseline = source.IsBaseline,
-            ProcessName = SanitizeText(source.ProcessName, knownSecrets),
-            ProcessArguments = SanitizeText(source.ProcessArguments, knownSecrets),
-            WorkingDirectory = SanitizeText(source.WorkingDirectory, knownSecrets),
+            ProcessName = LooksLikePath(source.ProcessName ?? string.Empty)
+                ? RedactStructuralValue(source.ProcessName, graphBudget)
+                : SanitizeResultText(source.ProcessName, knownSecrets, graphBudget),
+            ProcessArguments = SanitizeResultText(source.ProcessArguments, knownSecrets, graphBudget),
+            WorkingDirectory = RedactStructuralValue(source.WorkingDirectory, graphBudget),
             EnvironmentVariables = environmentVariables,
             PathValidations = source.PathValidations is null
                 ? new List<string>()
-                : source.PathValidations.Take(MaxResultCollectionItems).Where(item => item is not null)
-                    .Select(item => SanitizeText(item, knownSecrets)).ToList(),
+                : EnumerateWithinGraph(source.PathValidations, MaxResultCollectionItems, graphBudget).Where(item => item is not null)
+                    .Select(item => RedactStructuralValue(item, graphBudget)).ToList(),
             Timeout = safeTimeout,
             Tags = safeTags,
             Start = source.Start,
             End = source.End,
             Duration = source.Duration < TimeSpan.Zero ? TimeSpan.Zero : source.Duration,
-            Error = SanitizeText(source.Error, knownSecrets),
+            Error = SanitizeResultText(source.Error, knownSecrets, graphBudget),
             WarmUpCount = source.WarmUpCount,
             Count = source.Count,
             Data = safeData,
             Durations = source.Durations is null
                 ? new List<double>()
-                : source.Durations.Take(MaxResultCollectionItems).Where(double.IsFinite).ToList(),
+                : EnumerateWithinGraph(source.Durations, MaxResultCollectionItems, graphBudget).Where(double.IsFinite).ToList(),
             Outliers = source.Outliers is null
                 ? new List<double>()
-                : source.Outliers.Take(MaxResultCollectionItems).Where(double.IsFinite).ToList(),
+                : EnumerateWithinGraph(source.Outliers, MaxResultCollectionItems, graphBudget).Where(double.IsFinite).ToList(),
             Mean = FiniteOrZero(source.Mean),
             Median = FiniteOrZero(source.Median),
             Max = FiniteOrZero(source.Max),
@@ -888,110 +1040,328 @@ internal static class Utils
             P99 = FiniteOrZero(source.P99),
             P95 = FiniteOrZero(source.P95),
             P90 = FiniteOrZero(source.P90),
-            Ci99 = source.Ci99 is null ? Array.Empty<double>() : source.Ci99.Take(MaxResultCollectionItems).Where(double.IsFinite).ToArray(),
-            Ci95 = source.Ci95 is null ? Array.Empty<double>() : source.Ci95.Take(MaxResultCollectionItems).Where(double.IsFinite).ToArray(),
-            Ci90 = source.Ci90 is null ? Array.Empty<double>() : source.Ci90.Take(MaxResultCollectionItems).Where(double.IsFinite).ToArray(),
+            Ci99 = source.Ci99 is null
+                ? Array.Empty<double>()
+                : EnumerateWithinGraph(source.Ci99, MaxResultCollectionItems, graphBudget)
+                    .Where(double.IsFinite).ToArray(),
+            Ci95 = source.Ci95 is null
+                ? Array.Empty<double>()
+                : EnumerateWithinGraph(source.Ci95, MaxResultCollectionItems, graphBudget)
+                    .Where(double.IsFinite).ToArray(),
+            Ci90 = source.Ci90 is null
+                ? Array.Empty<double>()
+                : EnumerateWithinGraph(source.Ci90, MaxResultCollectionItems, graphBudget)
+                    .Where(double.IsFinite).ToArray(),
             IsBimodal = source.IsBimodal,
             PeakCount = source.PeakCount,
-            Metrics = CopyFiniteMetrics(source.Metrics, knownSecrets),
+            Metrics = CopyFiniteMetrics(source.Metrics, knownSecrets, graphBudget),
             MetricsData = safeMetricsData,
-            AdditionalMetrics = CopyFiniteMetrics(source.AdditionalMetrics, knownSecrets),
+            AdditionalMetrics = CopyFiniteMetrics(source.AdditionalMetrics, knownSecrets, graphBudget),
             Status = source.Status,
             OutliersThreshold = FiniteOrZero(source.OutliersThreshold),
-            LastStandardOutput = SanitizeOutput(source.LastStandardOutput, knownSecrets),
+            LastStandardOutput = graphBudget.LimitText(
+                SanitizeOutput(source.LastStandardOutput, knownSecrets)),
         };
     }
 
     internal static TimeitResult SanitizeTimeitResult(TimeitResult? source,
         TemplateVariables? templateVariables = null,
-        IEnumerable<string>? additionalSecretValues = null)
+        IEnumerable<string>? additionalSecretValues = null,
+        int maximumScenarios = MaxResultCollectionItems,
+        int maximumOverheadDimension = MaxOverheadRows)
     {
-        var scenarios = new List<ScenarioResult>();
-        if (source?.Scenarios is not null)
+        var graphBudget = new ResultGraphBudget();
+        var capturedScenarios = new List<(ScenarioResult Source, Dictionary<string, object> Tags)>();
+        foreach (var item in EnumerateWithinGraph(
+                     source?.Scenarios,
+                     Math.Clamp(maximumScenarios, 0, MaxResultCollectionItems), graphBudget))
         {
-            foreach (var item in source.Scenarios.Take(MaxResultCollectionItems))
+            if (item is not null)
             {
-                if (item is null)
+                capturedScenarios.Add((item, DetachTags(item.Tags, graphBudget)));
+            }
+        }
+
+        // Materialize caller-provided secrets once. A stateful/throwing enumerable is never read
+        // again, and discoveries made before it stops remain available to every scenario.
+        var globalSecrets = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var secret in EnumerateSafely(additionalSecretValues, MaxResultCollectionItems)
+                     .Concat(GetTemplateSecretValues(templateVariables)))
+        {
+            if (!string.IsNullOrEmpty(secret) && secret.Length <= MaxExportLogCharacters)
+            {
+                globalSecrets.Add(secret);
+            }
+        }
+
+        foreach (var captured in capturedScenarios)
+        {
+            foreach (var secret in GetSecretValues(captured.Source, captured.Tags))
+            {
+                if (!string.IsNullOrEmpty(secret) && secret.Length <= MaxExportLogCharacters)
                 {
-                    continue;
+                    globalSecrets.Add(secret);
                 }
+            }
+        }
 
-                var fallbackSecrets = new HashSet<string>(StringComparer.Ordinal);
-                try
+        var secrets = globalSecrets.ToArray();
+        var scenarios = new List<ScenarioResult>(capturedScenarios.Count);
+        foreach (var captured in capturedScenarios)
+        {
+            try
+            {
+                scenarios.Add(SanitizeScenarioResultCore(
+                    captured.Source, captured.Tags, templateVariables, secrets, graphBudget,
+                    completeSecretSnapshot: secrets));
+            }
+            catch (Exception sanitizationError) when (sanitizationError is not OutOfMemoryException &&
+                                                       sanitizationError is not StackOverflowException)
+            {
+                // Never render text from an untrusted getter/enumerator exception. It can contain
+                // both a previously discovered secret and a second value which was never yielded.
+                var safeName = SanitizeResultText(captured.Source.Name, secrets, graphBudget);
+                scenarios.Add(new ScenarioResult
                 {
-                    foreach (var secret in GetSecretValues(item))
-                    {
-                        if (!string.IsNullOrEmpty(secret))
-                        {
-                            fallbackSecrets.Add(secret);
-                        }
-                    }
-
-                    if (additionalSecretValues is not null)
-                    {
-                        foreach (var secret in additionalSecretValues)
-                        {
-                            if (!string.IsNullOrEmpty(secret))
-                            {
-                                fallbackSecrets.Add(secret);
-                            }
-                        }
-                    }
-
-                    foreach (var secret in GetTemplateSecretValues(templateVariables))
-                    {
-                        fallbackSecrets.Add(secret);
-                    }
-
-                    scenarios.Add(SanitizeScenarioResult(item, templateVariables, fallbackSecrets));
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    // One malformed custom tag/collection must not suppress all other scenarios.
-                    // The fallback contains no source object graph and uses all secrets collected
-                    // before the throwing getter so a malformed custom graph cannot bypass policy.
-                    string safeName;
-                    try
-                    {
-                        safeName = SanitizeText(item.Name, fallbackSecrets);
-                    }
-                    catch (Exception nameError) when (nameError is not OutOfMemoryException &&
-                                                       nameError is not StackOverflowException)
-                    {
-                        safeName = string.Empty;
-                    }
-
-                    scenarios.Add(new ScenarioResult
-                    {
-                        Name = safeName,
-                        Status = TimeItSharp.Common.Results.Status.Failed,
-                        Error = SanitizeException(ex, fallbackSecrets).Message,
-                    });
-                }
+                    Name = safeName,
+                    Status = TimeItSharp.Common.Results.Status.Failed,
+                    Error = "Scenario result could not be sanitized.",
+                });
             }
         }
 
         OverheadResult[][]? overheads = null;
         if (source?.Overheads is not null)
         {
-            var rowCount = Math.Min(source.Overheads.Length, MaxOverheadRows);
-            overheads = new OverheadResult[rowCount][];
-            for (var i = 0; i < rowCount; i++)
+            var maximumRows = Math.Min(source.Overheads.Length,
+                Math.Clamp(maximumOverheadDimension, 0, MaxOverheadRows));
+            var rows = new List<OverheadResult[]>(maximumRows);
+            for (var i = 0; i < maximumRows && graphBudget.TryConsumeItem(); i++)
             {
                 var row = source.Overheads[i];
                 if (row is null)
                 {
-                    overheads[i] = Array.Empty<OverheadResult>();
+                    rows.Add(Array.Empty<OverheadResult>());
                     continue;
                 }
 
-                overheads[i] = row.Take(MaxOverheadColumns).Select(item => new OverheadResult(
-                    FiniteOrZero(item.OverheadPercentage),
-                    FiniteOrZero(item.DeltaValue))).ToArray();
+                var safeRow = new List<OverheadResult>(Math.Min(row.Length, MaxOverheadColumns));
+                foreach (var item in EnumerateWithinGraph(
+                             row, Math.Min(maximumOverheadDimension, MaxOverheadColumns), graphBudget))
+                {
+                    safeRow.Add(new OverheadResult(
+                        FiniteOrZero(item.OverheadPercentage), FiniteOrZero(item.DeltaValue)));
+                }
+
+                rows.Add(safeRow.ToArray());
             }
+
+            overheads = rows.ToArray();
         }
 
         return new TimeitResult { Scenarios = scenarios, Overheads = overheads };
+    }
+
+
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Extension-defined tag objects are detached best-effort; missing trimmed properties are safely omitted.")]
+    private static object? DetachValue(object? value, ResultGraphBudget budget, int depth = 0,
+        HashSet<object>? visited = null)
+    {
+        if (value is null || depth > 32 || !budget.TryConsumeItem())
+        {
+            return value is null ? null : RedactedValue;
+        }
+
+        if (value is string text)
+        {
+            return budget.LimitText(text);
+        }
+
+        if (value is JsonElement element)
+        {
+            try
+            {
+                return element.Clone();
+            }
+            catch (Exception jsonError) when (jsonError is not OutOfMemoryException &&
+                                               jsonError is not StackOverflowException)
+            {
+                return RedactedValue;
+            }
+        }
+
+        if (value is DateTime or DateTimeOffset or TimeSpan or Guid or decimal or
+            double or float or int or uint or long or ulong or short or ushort or byte or sbyte or bool)
+        {
+            return value;
+        }
+
+        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+        if (!value.GetType().IsValueType && !visited.Add(value))
+        {
+            return RedactedValue;
+        }
+
+        if (value is IDictionary dictionary)
+        {
+            var detached = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var item in EnumerateDictionarySafely(dictionary, MaxResultCollectionItems))
+            {
+                if (!budget.TryConsumeItem())
+                {
+                    break;
+                }
+
+                string key;
+                try
+                {
+                    key = budget.LimitText(Convert.ToString(item.Key, CultureInfo.InvariantCulture));
+                }
+                catch (Exception conversionError) when (conversionError is not OutOfMemoryException &&
+                                                         conversionError is not StackOverflowException)
+                {
+                    continue;
+                }
+
+                if (key.Length > 0)
+                {
+                    detached[key] = DetachValue(item.Value, budget, depth + 1, visited);
+                }
+            }
+
+            return detached;
+        }
+
+        if (value is IEnumerable enumerable && value is not string)
+        {
+            var detached = new List<object?>();
+            IEnumerator? enumerator;
+            try
+            {
+                enumerator = enumerable.GetEnumerator();
+            }
+            catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                      enumerationError is not StackOverflowException)
+            {
+                return detached;
+            }
+
+            try
+            {
+                while (budget.TryConsumeItem())
+                {
+                    bool moved;
+                    try
+                    {
+                        moved = enumerator.MoveNext();
+                    }
+                    catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                              enumerationError is not StackOverflowException)
+                    {
+                        break;
+                    }
+
+                    if (!moved)
+                    {
+                        break;
+                    }
+
+                    object? current;
+                    try
+                    {
+                        current = enumerator.Current;
+                    }
+                    catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                              enumerationError is not StackOverflowException)
+                    {
+                        break;
+                    }
+
+                    detached.Add(DetachValue(current, budget, depth + 1, visited));
+                }
+            }
+            finally
+            {
+                if (enumerator is IDisposable disposable)
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
+                                                          disposeError is not StackOverflowException)
+                    {
+                    }
+                }
+            }
+
+            return detached;
+        }
+
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        foreach (var property in value.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                     .Where(item => item.CanRead && item.GetIndexParameters().Length == 0))
+        {
+            if (!budget.TryConsumeItem())
+            {
+                break;
+            }
+
+            object? propertyValue;
+            try
+            {
+                // Read exactly once.  Secret discovery and output sanitization both operate on
+                // this detached value, so a stateful getter cannot change between check and use.
+                propertyValue = property.GetValue(value);
+            }
+            catch (Exception propertyError) when (propertyError is not OutOfMemoryException &&
+                                                   propertyError is not StackOverflowException)
+            {
+                continue;
+            }
+
+            result[budget.LimitText(property.Name)] =
+                DetachValue(propertyValue, budget, depth + 1, visited);
+        }
+
+        if (result.Count > 0)
+        {
+            return result;
+        }
+
+        try
+        {
+            return budget.LimitText(Convert.ToString(value, CultureInfo.InvariantCulture));
+        }
+        catch (Exception conversionError) when (conversionError is not OutOfMemoryException &&
+                                                 conversionError is not StackOverflowException)
+        {
+            return RedactedValue;
+        }
+    }
+
+    private static Dictionary<string, object> DetachTags(
+        IReadOnlyDictionary<string, object>? source, ResultGraphBudget budget)
+    {
+        var result = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var item in EnumerateSafely(source, MaxTagEntries))
+        {
+            if (!budget.TryConsumeItem())
+            {
+                break;
+            }
+
+            var key = budget.LimitText(item.Key);
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            result[key] = DetachValue(item.Value, budget) ?? RedactedValue;
+        }
+
+        return result;
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2075",
@@ -1057,7 +1427,7 @@ internal static class Utils
         if (value is IDictionary dictionary)
         {
             var result = new Dictionary<string, object?>(StringComparer.Ordinal);
-            foreach (DictionaryEntry item in dictionary)
+            foreach (var item in EnumerateDictionarySafely(dictionary, MaxResultCollectionItems))
             {
                 var originalKey = Convert.ToString(item.Key, CultureInfo.InvariantCulture) ?? string.Empty;
                 var itemKey = SanitizeText(originalKey, knownSecretValues);
@@ -1091,7 +1461,7 @@ internal static class Utils
         if (value is IEnumerable enumerable && value is not string)
         {
             var result = new List<object?>();
-            foreach (var item in enumerable)
+            foreach (var item in EnumerateObjectsSafely(enumerable, MaxResultCollectionItems))
             {
                 if (budget is not null && !budget.TryConsumeItem())
                 {
@@ -1214,7 +1584,7 @@ internal static class Utils
             case IDictionary dictionary:
                 builder.Append('{');
                 var firstProperty = true;
-                foreach (DictionaryEntry item in dictionary)
+                foreach (var item in EnumerateDictionarySafely(dictionary, MaxResultCollectionItems))
                 {
                     var key = SanitizeText(
                         Convert.ToString(item.Key, CultureInfo.InvariantCulture), knownSecretValues);
@@ -1238,7 +1608,7 @@ internal static class Utils
             case IEnumerable enumerable when value is not string:
                 builder.Append('[');
                 var firstItem = true;
-                foreach (var item in enumerable)
+                foreach (var item in EnumerateObjectsSafely(enumerable, MaxResultCollectionItems))
                 {
                     if (!firstItem)
                     {
@@ -1293,6 +1663,219 @@ internal static class Utils
     private static string TrimMetadataKey(string key)
     {
         return key.Trim().Trim('"', '\'').TrimStart('-', '/');
+    }
+
+    private static IEnumerable<T> EnumerateWithinGraph<T>(
+        IEnumerable<T>? source, int maximumItems, ResultGraphBudget budget)
+    {
+        foreach (var item in EnumerateSafely(source, maximumItems))
+        {
+            if (!budget.TryConsumeItem())
+            {
+                yield break;
+            }
+
+            yield return item;
+        }
+    }
+
+    private static IEnumerable<T> EnumerateSafely<T>(IEnumerable<T>? source, int maximumItems)
+    {
+        if (source is null || maximumItems <= 0)
+        {
+            yield break;
+        }
+
+        IEnumerator<T> enumerator;
+        try
+        {
+            enumerator = source.GetEnumerator();
+        }
+        catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                  enumerationError is not StackOverflowException)
+        {
+            yield break;
+        }
+
+        try
+        {
+            for (var index = 0; index < maximumItems; index++)
+            {
+                bool moved;
+                try
+                {
+                    moved = enumerator.MoveNext();
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    yield break;
+                }
+
+                if (!moved)
+                {
+                    yield break;
+                }
+
+                T current;
+                try
+                {
+                    current = enumerator.Current;
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    yield break;
+                }
+
+                yield return current;
+            }
+        }
+        finally
+        {
+            try
+            {
+                enumerator.Dispose();
+            }
+            catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
+                                                  disposeError is not StackOverflowException)
+            {
+                // An untrusted enumerator cannot make an export fail or expose its exception text.
+            }
+        }
+    }
+
+    private static IEnumerable<object?> EnumerateObjectsSafely(
+        IEnumerable source, int maximumItems)
+    {
+        IEnumerator enumerator;
+        try
+        {
+            enumerator = source.GetEnumerator();
+        }
+        catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                  enumerationError is not StackOverflowException)
+        {
+            yield break;
+        }
+
+        try
+        {
+            for (var index = 0; index < maximumItems; index++)
+            {
+                bool moved;
+                try
+                {
+                    moved = enumerator.MoveNext();
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    yield break;
+                }
+
+                if (!moved)
+                {
+                    yield break;
+                }
+
+                object? current;
+                try
+                {
+                    current = enumerator.Current;
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    yield break;
+                }
+
+                yield return current;
+            }
+        }
+        finally
+        {
+            if (enumerator is IDisposable disposable)
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
+                                                      disposeError is not StackOverflowException)
+                {
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<DictionaryEntry> EnumerateDictionarySafely(
+        IDictionary dictionary, int maximumItems)
+    {
+        if (maximumItems <= 0)
+        {
+            yield break;
+        }
+
+        IDictionaryEnumerator enumerator;
+        try
+        {
+            enumerator = dictionary.GetEnumerator();
+        }
+        catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                  enumerationError is not StackOverflowException)
+        {
+            yield break;
+        }
+
+        try
+        {
+            for (var index = 0; index < maximumItems; index++)
+            {
+                bool moved;
+                try
+                {
+                    moved = enumerator.MoveNext();
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    yield break;
+                }
+
+                if (!moved)
+                {
+                    yield break;
+                }
+
+                DictionaryEntry current;
+                try
+                {
+                    current = enumerator.Entry;
+                }
+                catch (Exception enumerationError) when (enumerationError is not OutOfMemoryException &&
+                                                          enumerationError is not StackOverflowException)
+                {
+                    yield break;
+                }
+
+                yield return current;
+            }
+        }
+        finally
+        {
+            if (enumerator is IDisposable disposable)
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch (Exception disposeError) when (disposeError is not OutOfMemoryException &&
+                                                      disposeError is not StackOverflowException)
+                {
+                }
+            }
+        }
     }
 
     private static bool IsNonFiniteNumber(object? value)
@@ -1407,7 +1990,7 @@ internal static class Utils
 
         if (value is IDictionary dictionary)
         {
-            foreach (DictionaryEntry item in dictionary)
+            foreach (var item in EnumerateDictionarySafely(dictionary, MaxResultCollectionItems))
             {
                 AddSensitiveValues(item.Value,
                     Convert.ToString(item.Key, CultureInfo.InvariantCulture), values, depth + 1, visited, budget);
@@ -1415,7 +1998,7 @@ internal static class Utils
         }
         else if (value is IEnumerable enumerable && value is not string)
         {
-            foreach (var item in enumerable)
+            foreach (var item in EnumerateObjectsSafely(enumerable, MaxResultCollectionItems))
             {
                 AddSensitiveValues(item, null, values, depth + 1, visited, budget);
             }
@@ -1497,14 +2080,14 @@ internal static class Utils
 
         if (value is IDictionary dictionary)
         {
-            foreach (DictionaryEntry item in dictionary)
+            foreach (var item in EnumerateDictionarySafely(dictionary, MaxResultCollectionItems))
             {
                 AddStringValues(item.Value, values, depth + 1, visited, budget);
             }
         }
         else if (value is IEnumerable enumerable)
         {
-            foreach (var item in enumerable)
+            foreach (var item in EnumerateObjectsSafely(enumerable, MaxResultCollectionItems))
             {
                 AddStringValues(item, values, depth + 1, visited, budget);
             }
@@ -1607,7 +2190,8 @@ internal static class Utils
     private static Dictionary<string, object> SanitizeTags(
         IReadOnlyDictionary<string, object>? source,
         TemplateVariables? templateVariables,
-        IReadOnlyList<string> knownSecrets)
+        IReadOnlyList<string> knownSecrets,
+        ResultGraphBudget graphBudget)
     {
         var result = new Dictionary<string, object>(StringComparer.Ordinal);
         if (source is null)
@@ -1615,11 +2199,12 @@ internal static class Utils
             return result;
         }
 
-        foreach (var item in source.Take(MaxTagEntries))
+        var budget = new SanitizationBudget(MaxTagCollectionItems, MaxTagCharacters);
+        foreach (var item in EnumerateSafely(source, MaxTagEntries))
         {
             var key = item.Key ?? string.Empty;
             key = templateVariables is null ? key : templateVariables.Expand(key);
-            key = SanitizeText(key, knownSecrets);
+            key = graphBudget.LimitText(SanitizeText(key, knownSecrets));
             if (key.Length > 1024)
             {
                 key = key[..1024];
@@ -1630,7 +2215,6 @@ internal static class Utils
                 continue;
             }
 
-            var budget = new SanitizationBudget(MaxTagCollectionItems, MaxTagCharacters);
             var value = SanitizeValue(item.Value, key, knownSecrets, budget: budget);
             if (value is null && IsNonFiniteNumber(item.Value))
             {
@@ -1639,7 +2223,23 @@ internal static class Utils
 
             if (value is string stringValue && templateVariables is not null)
             {
-                value = budget.LimitText(SanitizeText(templateVariables.Expand(stringValue), knownSecrets));
+                value = graphBudget.LimitText(
+                    budget.LimitText(SanitizeText(templateVariables.Expand(stringValue), knownSecrets)));
+            }
+
+            if (value is IDictionary or IList)
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(
+                        SerializeSanitizedValue(value, knownSecrets));
+                    value = document.RootElement.Clone();
+                }
+                catch (Exception serializationError) when (serializationError is not OutOfMemoryException &&
+                                                             serializationError is not StackOverflowException)
+                {
+                    value = RedactedValue;
+                }
             }
 
             result[key] = value!;
@@ -1648,25 +2248,28 @@ internal static class Utils
         return result;
     }
 
-    private static DataPoint SanitizeDataPoint(DataPoint source, IReadOnlyList<string> knownSecrets)
+    private static DataPoint SanitizeDataPoint(
+        DataPoint source, IReadOnlyList<string> knownSecrets, ResultGraphBudget graphBudget)
     {
-        var metrics = CopyFiniteMetrics(source.Metrics, knownSecrets);
+        var metrics = CopyFiniteMetrics(source.Metrics, knownSecrets, graphBudget);
         var response = source.AssertResults;
-        var message = SanitizeText(response.Message, knownSecrets);
+        var message = SanitizeResultText(response.Message, knownSecrets, graphBudget);
         return new DataPoint
         {
             Start = source.Start,
             End = source.End,
             Duration = source.Duration < TimeSpan.Zero ? TimeSpan.Zero : source.Duration,
             Metrics = metrics,
-            StandardOutput = SanitizeOutput(source.StandardOutput, knownSecrets),
+            StandardOutput = graphBudget.LimitText(
+                SanitizeOutput(source.StandardOutput, knownSecrets)),
             Scenario = null,
             AssertResults = new Assertors.AssertResponse(response.Status, response.ShouldContinue, message),
         };
     }
 
     private static Dictionary<string, double> CopyFiniteMetrics(
-        IReadOnlyDictionary<string, double>? source, IReadOnlyList<string> knownSecrets)
+        IReadOnlyDictionary<string, double>? source, IReadOnlyList<string> knownSecrets,
+        ResultGraphBudget graphBudget)
     {
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
         if (source is null)
@@ -1674,7 +2277,7 @@ internal static class Utils
             return result;
         }
 
-        foreach (var item in source.Take(MaxResultCollectionItems))
+        foreach (var item in EnumerateWithinGraph(source, MaxResultCollectionItems, graphBudget))
         {
             if (!double.IsFinite(item.Value) || string.IsNullOrWhiteSpace(item.Key) ||
                 IsSensitiveEnvironmentVariable(item.Key))
@@ -1682,7 +2285,7 @@ internal static class Utils
                 continue;
             }
 
-            var key = SanitizeText(item.Key, knownSecrets);
+            var key = SanitizeResultText(item.Key, knownSecrets, graphBudget);
             if (!string.IsNullOrWhiteSpace(key) && key.Length <= MaxTagCharacters)
             {
                 result[key] = item.Value;
