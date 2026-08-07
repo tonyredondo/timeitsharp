@@ -739,9 +739,10 @@ overhead; los valores de secretos se descubren con presupuesto de recorrido. Las
 de JSON/Datadog se registran antes de operaciones de filesystem y se incluyen en la redacción de
 excepciones. Los nombres de conexión/DSN reconocidos, controles ANSI/OSC y excepciones de getters
 se filtran en los sinks integrados. La validación local final pasó: build Release de la solución,
-74 pruebas Common, 31 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
-timeout y callback output. `NU1903` de `Datadog.Trace` 2.61.0 continúa siendo el advisory
-exacto documentado y Linux trimmed consumer permanece validación exclusiva de CI.
+125 pruebas Common, 58 pruebas CLI, verificador de paquete Common/trim y smoke tests de quoting,
+timeout, callback output, consumo transitivo y aislamiento de assets Datadog v2/v3. `NU1903` de
+`Datadog.Trace` 2.61.0 continúa siendo el advisory exacto documentado; el attach real del profiler
+Linux permanece como aserción específica de CI.
 
 
 ### 13.19 Endurecimiento adicional verificado durante la revisión adversarial
@@ -755,9 +756,12 @@ eliminan también controles C1 además de ANSI/OSC/C0.
 La configuración limita escenarios, iteraciones, warmups, extensiones, variables, tags y
 validaciones de rutas. Las repeticiones extra tienen un límite agregado y consumen el presupuesto de
 duración; cada comando también queda sujeto al deadline global cuando no hay timeout específico.
-La tabla de comparación y la materialización previa de escenarios en exporters tienen límites
-independientes. La CLI conserva rutas `.json` ausentes con espacios y ordena correctamente los
-tokens situados antes y después de `--`.
+La tabla de comparación y la materialización de escenarios en exporters comparten presupuestos
+globales de elementos y caracteres, evitando productos multiplicativos. La CLI trata todo positional
+legacy terminado en `.json` como configuración —los comandos ambiguos deben usar `--command` o
+`--`— y conserva exactamente las fronteras argv situadas después de `--`. La resolución de comandos
+simples nunca sondea nombres combinados en el CWD; sólo las rutas explícitas pueden usar probing de
+filesystem para recuperar ejecutables con espacios.
 
 
 La carga de configuración también rechaza archivos mayores de 16 MiB y limita strings, opciones
@@ -770,3 +774,42 @@ Las variables de plantilla están acotadas por número, tamaño de nombre/valor 
 expansión no puede amplificar una ruta, tag o argumento más allá del límite de texto compartido.
 El release de metadata Datadog se ejecuta después de `OnFinish`, incluyendo metadata recreada por
 ese callback.
+
+
+### 13.20 Cierre del segundo pase adversarial
+
+La clasificación y tokenización CLI ya no dependen de prefijos existentes en el directorio de
+trabajo. Los argumentos discretos posteriores a `--` conservan sus fronteras, incluyendo espacios,
+apóstrofes, rutas UNC y secuencias CRT de backslashes/comillas. `--config` y `--command` requieren
+un valor, no pueden consumir otra opción por accidente y reciben el token de cancelación de la
+invocación. El modo positional legacy reserva cualquier valor terminado en `.json` para
+configuración; los comandos cuyo texto termine así deben declararse explícitamente.
+
+Los deadlines se validan contra el rango común soportado por `CancellationTokenSource` y también se
+acotan defensivamente en runtime antes de iniciar procesos. El presupuesto global se carga una sola
+vez, los callbacks de `ExecuteService` combinan timeout y cancelación del engine, y toda ruta mata y
+espera procesos iniciados. Todos los exporters resueltos se disponen por identidad de referencia,
+incluso si falla antes un servicio/assertor; primero se dispone el cleanup ordinario, después se
+notifica el outcome definitivo y finalmente se cierran exporters outcome-aware como Datadog.
+
+Los sinks integrados consumen un snapshot separado de lectura única. Los controles terminales se
+eliminan antes y después de la redacción estructural; Authorization se oculta para cualquier scheme;
+las fuentes de secretos sobre presupuesto o con enumeradores hostiles fallan cerradas; y los
+presupuestos de elementos/caracteres y el tamaño posterior a sustituciones son globales. JSON usa
+reemplazo atómico con temporales `0600`; net7+ restaura el modo Unix previo y net6 conserva el
+fallback restrictivo `0600` cuando no existe una API portable para leerlo. La correlación trace/span
+Datadog se captura como tuplas de valor durante la única enumeración, sin retener el grafo runtime.
+
+El profiler usa un home privado de exactamente veinte assets 2.61.0: dieciséis binarios/configs del
+paquete BenchmarkDotNet y cuatro `Datadog.Trace.dll` administrados. Se comprueban conjunto exacto,
+SHA-256, versión, archivos regulares y todos los ancestros; homes v3, mixtos, corruptos, con extras o
+reparse se rechazan. Los targets `build` y `buildTransitive` copian tarde el home v2 aislado y el
+startup hook externo, de modo que wrappers y consumidores con Bundle v3 no mezclan payloads. La
+detección musl compara basenames mapeados exactos y Windows anuncia únicamente el bitness compatible
+con el loader seleccionado.
+
+Validación final sobre el HEAD combinado: build Release net6.0–net10.0 con 0 errores; 125/125 pruebas
+Common y 58/58 CLI; tres `.nupkg`; consumer Common trimmed/single-file con startup hook y métricas;
+consumer mediante paquete wrapper; aislamiento y hashes v2 frente a Bundle v3; XML, YAML, shell y
+`git diff --check`. Permanece únicamente el advisory aceptado `NU1903` de Datadog.Trace 2.61.0
+(`GHSA-38wr-vpc7-2mp4`) y el attach nativo real Linux se ejecuta de forma platform-gated en CI.
