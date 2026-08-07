@@ -17,6 +17,8 @@
          Do not replace this with a v3 bundle: its native ABI and loader contract differ. -->
     <DatadogTraceBenchmarkDotNetVersion>2.61.0</DatadogTraceBenchmarkDotNetVersion>
     <DatadogProfilerPackageRoot>$(NuGetPackageRoot)datadog.trace.benchmarkdotnet\$(DatadogTraceBenchmarkDotNetVersion)</DatadogProfilerPackageRoot>
+    <DatadogTracePackageRoot Condition="'$(PkgDatadog_Trace)' != ''">$(PkgDatadog_Trace)</DatadogTracePackageRoot>
+    <DatadogTracePackageRoot Condition="'$(DatadogTracePackageRoot)' == ''">$(NuGetPackageRoot)datadog.trace\$(DatadogTraceBenchmarkDotNetVersion)</DatadogTracePackageRoot>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -34,7 +36,8 @@
     <PackageReference Include="CliWrap" Version="3.10.0" />
     <!-- Keep the BenchmarkDotNet integration and tracer on the same latest stable v2 line.
          Its content files provide the profiler/tracer assets used by the CLI package. -->
-    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="[$(DatadogTraceBenchmarkDotNetVersion)]" />
+    <PackageReference Include="Datadog.Trace.BenchmarkDotNet" Version="[$(DatadogTraceBenchmarkDotNetVersion)]" ExcludeAssets="contentFiles" />
+    <PackageReference Include="Datadog.Trace" Version="[$(DatadogTraceBenchmarkDotNetVersion)]" PrivateAssets="all" GeneratePathProperty="true" />
     <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
     <PackageReference Include="Spectre.Console" Version="0.53.1" />
     <PackageReference Include="IgnoresAccessChecksToGenerator" Version="0.8.0">
@@ -64,8 +67,20 @@
           PackagePath="timeitsharp-assets/datadog-v2/%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           ExcludeFromSingleFile="true"
-          Link="datadog\%(RecursiveDir)%(Filename)%(Extension)"
-          TargetPath="datadog\%(RecursiveDir)%(Filename)%(Extension)" />
+          Link="datadog-v2\%(RecursiveDir)%(Filename)%(Extension)"
+          TargetPath="datadog-v2\%(RecursiveDir)%(Filename)%(Extension)" />
+
+    <!-- The native loader resolves managed tracer assemblies from these exact framework
+         folders. Re-publish all four v2.61 variants so a direct v3 bundle cannot leave a
+         mixed native-v2/managed-v3 profiler home. -->
+    <None Include="$(DatadogTracePackageRoot)\lib\**\Datadog.Trace.dll"
+          Condition="Exists('$(DatadogTracePackageRoot)\lib')"
+          Pack="true"
+          PackagePath="timeitsharp-assets/datadog-v2/%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true"
+          Link="datadog-v2\%(RecursiveDir)%(Filename)%(Extension)"
+          TargetPath="datadog-v2\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

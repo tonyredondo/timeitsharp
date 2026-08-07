@@ -37,12 +37,17 @@ public sealed class DatadogProfilerService : IService
             ["linux-x64/Datadog.Profiler.Native.so"] = "3A9A8059BD81311C2DE38D4602AA94EA6175EB2901601CD5EADA529A0CC29EE8",
             ["linux-x64/Datadog.Trace.ClrProfiler.Native.so"] = "91F7ABA5E11750886195C84B0BFE9AB196FBF96C420ACF772BE306A9A90D1409",
             ["linux-x64/loader.conf"] = "A7EDAF020F0F01431BDE4C8F429C88E7AEF3E23B3A710A74B66783AB9ACC13D7",
+            ["osx/loader.conf"] = "A7EDAF020F0F01431BDE4C8F429C88E7AEF3E23B3A710A74B66783AB9ACC13D7",
             ["win-x64/Datadog.Profiler.Native.dll"] = "BCC57BE6A8A35AB59D818F570F096AE0CEA1548204CFD088C6C7FA2470892E63",
             ["win-x64/Datadog.Trace.ClrProfiler.Native.dll"] = "058E5A0D80916DD014C6F15B3B372102C589CFD639D575F2ACD361C2406A5DB5",
             ["win-x64/loader.conf"] = "6F8F3C4A9A07790791F430BBEFDDD070B5D127FFC8DC8B5F56ACF67B0818ED37",
             ["win-x86/Datadog.Profiler.Native.dll"] = "07806EC88688852946D50218B05EBC1BF67A51EE7214019CB511C66D69A1EE95",
             ["win-x86/Datadog.Trace.ClrProfiler.Native.dll"] = "ACEBC5CB4D5FA179FA17F1C562EAA8B4D67C9AE814FFF52124806534FB8123C5",
             ["win-x86/loader.conf"] = "6F8F3C4A9A07790791F430BBEFDDD070B5D127FFC8DC8B5F56ACF67B0818ED37",
+            ["net461/Datadog.Trace.dll"] = "F5DA8823D46D275AB06D4748A49521894ED2EF6F607BAA5BBAD225D2563A56AD",
+            ["net6.0/Datadog.Trace.dll"] = "27DE362C525CDBC0356FFFD1E026E1C291F2B0A0DC5DC43BFBE30DCF30FBF419",
+            ["netcoreapp3.1/Datadog.Trace.dll"] = "8B4498E0A0882818F28E1DD77ACE80AB95197889AC101A223954D2B96D23550F",
+            ["netstandard2.0/Datadog.Trace.dll"] = "61E285BF54DD2AE2829EEB8ED08F3AD1BF6ABFA96D52A70CE6E56B5F7CCC5AD4",
         };
 
     private bool _environmentConfigured;
@@ -423,18 +428,18 @@ public sealed class DatadogProfilerService : IService
         _hostEnvironment.TryGetValue("DD_DOTNET_TRACER_HOME", out var configuredHome);
         yield return configuredHome;
 
-        // Then locate the content files supplied by Datadog.Trace.BenchmarkDotNet. Assembly.Location
-        // is empty in single-file hosts, and a relative/CWD candidate would let an attacker win
-        // profiler selection by planting a `datadog` directory in the working directory.
+        // Then locate TimeItSharp's isolated, exact v2 home. Assembly.Location is empty in
+        // single-file hosts, and a relative/CWD candidate would let an attacker win profiler
+        // selection by planting a profiler directory in the working directory.
         var assemblyLocation = typeof(Datadog.Trace.BenchmarkDotNet.DatadogDiagnoser).Assembly.Location;
         if (!string.IsNullOrWhiteSpace(assemblyLocation) && Path.IsPathRooted(assemblyLocation))
         {
-            yield return Path.Combine(Path.GetDirectoryName(assemblyLocation) ?? string.Empty, "datadog");
+            yield return Path.Combine(Path.GetDirectoryName(assemblyLocation) ?? string.Empty, "datadog-v2");
         }
 
         if (Path.IsPathRooted(AppDomain.CurrentDomain.BaseDirectory))
         {
-            yield return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "datadog");
+            yield return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "datadog-v2");
         }
     }
 
@@ -481,17 +486,17 @@ public sealed class DatadogProfilerService : IService
             selectedProfilerPath = Path.Combine(monitoringHome, rid, "Datadog.Profiler.Native.dll");
             loaderConfig = Path.Combine(monitoringHome, rid, "loader.conf");
 
-            // Both Windows assets are part of the v2 package. Keep the optional path when it
-            // exists so a 64-bit process can still launch a 32-bit child (and vice versa), but
-            // only the current process RID is required for this invocation.
-            var win32TracerPath = Path.Combine(monitoringHome, "win-x86", "Datadog.Trace.ClrProfiler.Native.dll");
-            var win64TracerPath = Path.Combine(monitoringHome, "win-x64", "Datadog.Trace.ClrProfiler.Native.dll");
-            profiler32Path = IsTrustedProfilerAsset(win32TracerPath, "win-x86", out _)
-                ? win32TracerPath
-                : null;
-            profiler64Path = IsTrustedProfilerAsset(win64TracerPath, "win-x64", out _)
-                ? win64TracerPath
-                : null;
+            // loader.conf is RID-relative. Advertising both bitness paths with the selected
+            // RID's single loader file can make a cross-bitness child resolve an incoherent row.
+            // Support only the host/current-child contract and leave the opposite path tombstoned.
+            if (normalizedArch == "x86")
+            {
+                profiler32Path = selectedTracerPath;
+            }
+            else
+            {
+                profiler64Path = selectedTracerPath;
+            }
         }
         else if (string.Equals(osPlatform, "Linux", StringComparison.OrdinalIgnoreCase))
         {
@@ -546,6 +551,11 @@ public sealed class DatadogProfilerService : IService
                 $"Datadog.Trace.BenchmarkDotNet {DatadogProfilerPackageVersion} has no complete profiler asset set for RID '{rid}'. " +
                 $"Selected architecture: {processArch}; missing {string.Join(", ", missingAssets)}. " +
                 "The profiler was not enabled.";
+            return false;
+        }
+
+        if (!TryValidateProfilerHomeAssets(monitoringHome, out diagnostic))
+        {
             return false;
         }
 
@@ -645,10 +655,100 @@ public sealed class DatadogProfilerService : IService
         return true;
     }
 
-    private static bool IsTrustedProfilerAsset(string path, string rid, out string diagnostic)
+    private static bool TryValidateProfilerHomeAssets(string monitoringHome, out string diagnostic)
     {
         diagnostic = string.Empty;
-        var assetName = $"{rid}/{Path.GetFileName(path)}";
+        try
+        {
+            var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var discovered = new Dictionary<string, string>(pathComparer);
+            var pending = new Stack<string>();
+            pending.Push(monitoringHome);
+            var entryCount = 0;
+            while (pending.Count > 0)
+            {
+                var directory = pending.Pop();
+                foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+                {
+                    if (++entryCount > 4096)
+                    {
+                        diagnostic = $"Datadog profiler home '{monitoringHome}' exceeds the trusted content limit.";
+                        return false;
+                    }
+
+                    var attributes = File.GetAttributes(entry);
+                    if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    {
+                        diagnostic = $"Datadog profiler home '{monitoringHome}' contains a symlink or reparse point '{entry}'.";
+                        return false;
+                    }
+
+                    if ((attributes & FileAttributes.Directory) != 0)
+                    {
+                        if (new DirectoryInfo(entry).LinkTarget is not null)
+                        {
+                            diagnostic = $"Datadog profiler home '{monitoringHome}' contains a linked directory '{entry}'.";
+                            return false;
+                        }
+
+                        pending.Push(entry);
+                        continue;
+                    }
+
+                    var fileName = Path.GetFileName(entry);
+                    if (fileName.Contains("ApiWrapper", StringComparison.OrdinalIgnoreCase) ||
+                        fileName.Contains("Datadog.Trace.Bundle", StringComparison.OrdinalIgnoreCase))
+                    {
+                        diagnostic = $"Datadog profiler home '{monitoringHome}' contains incompatible v3 asset '{entry}'.";
+                        return false;
+                    }
+
+                    var relative = Path.GetRelativePath(monitoringHome, entry)
+                        .Replace(Path.DirectorySeparatorChar, '/');
+                    if (!discovered.TryAdd(relative, entry))
+                    {
+                        diagnostic = $"Datadog profiler home '{monitoringHome}' contains duplicate asset '{relative}'.";
+                        return false;
+                    }
+                }
+            }
+
+            var expected = new HashSet<string>(TrustedProfilerAssetHashes.Keys, pathComparer);
+            if (!expected.SetEquals(discovered.Keys))
+            {
+                var missing = expected.Except(discovered.Keys, pathComparer)
+                    .OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToArray();
+                var unexpected = discovered.Keys.Except(expected, pathComparer)
+                    .OrderBy(item => item, StringComparer.OrdinalIgnoreCase).ToArray();
+                diagnostic =
+                    $"Datadog profiler home '{monitoringHome}' does not contain the exact {DatadogProfilerPackageVersion} asset set. " +
+                    $"Missing: {string.Join(", ", missing)}; unexpected: {string.Join(", ", unexpected)}.";
+                return false;
+            }
+
+            foreach (var asset in discovered)
+            {
+                if (!IsTrustedProfilerAssetByManifestPath(asset.Value, asset.Key, out diagnostic))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            diagnostic = $"Could not validate Datadog profiler assets under '{monitoringHome}': {ex.Message}";
+            return false;
+        }
+    }
+
+    private static bool IsTrustedProfilerAsset(string path, string rid, out string diagnostic) =>
+        IsTrustedProfilerAssetByManifestPath(path, $"{rid}/{Path.GetFileName(path)}", out diagnostic);
+
+    private static bool IsTrustedProfilerAssetByManifestPath(string path, string assetName, out string diagnostic)
+    {
+        diagnostic = string.Empty;
         if (!TrustedProfilerAssetHashes.TryGetValue(assetName, out var expectedHash))
         {
             diagnostic = $"Datadog profiler asset '{assetName}' is not in the trusted {DatadogProfilerPackageVersion} manifest.";
@@ -891,20 +991,58 @@ public sealed class DatadogProfilerService : IService
         var sawGlibc = false;
         foreach (var line in mappedLibraries)
         {
-            if (line.Contains("ld-musl", StringComparison.OrdinalIgnoreCase) ||
-                line.Contains("libc.musl", StringComparison.OrdinalIgnoreCase))
+            var pathStart = line.IndexOf('/');
+            if (pathStart < 0)
+            {
+                continue;
+            }
+
+            var mappedPath = line[pathStart..].Trim();
+            const string deletedSuffix = " (deleted)";
+            if (mappedPath.EndsWith(deletedSuffix, StringComparison.Ordinal))
+            {
+                mappedPath = mappedPath[..^deletedSuffix.Length];
+            }
+
+            var fileName = Path.GetFileName(mappedPath);
+            if (IsSharedObjectName(fileName, "ld-musl-") ||
+                IsSharedObjectName(fileName, "libc.musl-"))
             {
                 return true;
             }
 
-            if (line.Contains("libc.so.6", StringComparison.OrdinalIgnoreCase) ||
-                line.Contains("ld-linux", StringComparison.OrdinalIgnoreCase))
+            if (fileName.Equals("libc.so.6", StringComparison.Ordinal) ||
+                IsSharedObjectName(fileName, "ld-linux-"))
             {
                 sawGlibc = true;
             }
         }
 
         return sawGlibc ? false : null;
+    }
+
+    private static bool IsSharedObjectName(string fileName, string prefix)
+    {
+        if (!fileName.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var soIndex = fileName.IndexOf(".so", prefix.Length, StringComparison.Ordinal);
+        if (soIndex <= prefix.Length)
+        {
+            return false;
+        }
+
+        var suffix = fileName[(soIndex + 3)..];
+        if (suffix.Length == 0)
+        {
+            return true;
+        }
+
+        return suffix[0] == '.' && suffix.Length > 1 &&
+               suffix[1..].Split('.').All(segment =>
+                   segment.Length > 0 && segment.All(char.IsDigit));
     }
 
     private static string NormalizeArchitecture(string processArch) =>

@@ -3,8 +3,8 @@
     <_TimeItSharpCommonTargetsImported>true</_TimeItSharpCommonTargetsImported>
   </PropertyGroup>
 
-  <!-- Assets live outside contentFiles to avoid NETSDK1152 collisions. Explicit late copies
-       make the pinned v2 payload win if a direct v3 package contributes the same names. -->
+  <!-- Assets live outside contentFiles and are copied to an isolated datadog-v2 home.
+       A direct v3 bundle keeps its public datadog home without creating a mixed profiler. -->
   <Target Name="TimeItSharpCopyTrustedAssetsToOutput"
           AfterTargets="CopyFilesToOutputDirectory"
           Condition="Exists('$(TimeItSharpDatadogAssetsDirectory)') and '$(TargetDir)' != ''">
@@ -12,7 +12,7 @@
       <_TimeItSharpDatadogAsset Include="$(TimeItSharpDatadogAssetsDirectory)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(_TimeItSharpDatadogAsset)"
-          DestinationFiles="@(_TimeItSharpDatadogAsset->'$(TargetDir)datadog\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_TimeItSharpDatadogAsset->'$(TargetDir)datadog-v2\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(TimeItSharpStartupHookFile)"
           DestinationFiles="$(TargetDir)TimeItSharp.StartupHook.dll"
@@ -27,7 +27,7 @@
       <_TimeItSharpDatadogPublishAsset Include="$(TimeItSharpDatadogAssetsDirectory)\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(_TimeItSharpDatadogPublishAsset)"
-          DestinationFiles="@(_TimeItSharpDatadogPublishAsset->'$(PublishDir)datadog\%(RecursiveDir)%(Filename)%(Extension)')"
+          DestinationFiles="@(_TimeItSharpDatadogPublishAsset->'$(PublishDir)datadog-v2\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="false" />
     <Copy SourceFiles="$(TimeItSharpStartupHookFile)"
           DestinationFiles="$(PublishDir)TimeItSharp.StartupHook.dll"
